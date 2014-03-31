@@ -13,6 +13,7 @@ version <next>:
 - OpenEXR image decoder
 - support encoding and decoding 4-channel SGI images
 - support decoding 16-bit RLE SGI images
+- asettb filter
 
 
 version 10:
