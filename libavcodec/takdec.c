@@ -391,7 +391,7 @@ static void decode_filter_coeffs(TAKDecContext *s, int filter_order, int size,
         }
     }
 
-    filter_tmp[0] = predictors[0] << 6;
+    filter_tmp[0] = predictors[0] * (1 << 6);
     for (i = 1; i < filter_order; i++) {
         int *p1 = &filter_tmp[0];
         int *p2 = &filter_tmp[i - 1];
@@ -404,7 +404,7 @@ static void decode_filter_coeffs(TAKDecContext *s, int filter_order, int size,
             p2--;
         }
 
-        filter_tmp[i] = predictors[i] << 6;
+        filter_tmp[i] = predictors[i] * (1 << 6);
     }
 
     a = 1 << (32 - (15 - filter_quant));

@@ -120,7 +120,7 @@ static int cyuv_decode_frame(AVCodecContext *avctx,
         /* reset predictors */
         cur_byte = buf[stream_ptr++];
         u_plane[u_ptr++] = u_pred = cur_byte & 0xF0;
-        y_plane[y_ptr++] = y_pred = (cur_byte & 0x0F) << 4;
+        y_plane[y_ptr++] = y_pred = (cur_byte & 0x0F) * (1 << 4);
 
         cur_byte = buf[stream_ptr++];
         v_plane[v_ptr++] = v_pred = cur_byte & 0xF0;

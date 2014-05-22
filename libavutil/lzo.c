@@ -155,16 +155,16 @@ int av_lzo1x_decode(void *out, int *outlen, const void *in, int *inlen)
         if (x > 15) {
             if (x > 63) {
                 cnt  = (x >> 5) - 1;
-                back = (GETB(c) << 3) + ((x >> 2) & 7) + 1;
+                back = (GETB(c) * (1 << 3)) + ((x >> 2) & 7) + 1;
             } else if (x > 31) {
                 cnt  = get_len(&c, x, 31);
                 x    = GETB(c);
-                back = (GETB(c) << 6) + (x >> 2) + 1;
+                back = (GETB(c) * (1 << 6)) + (x >> 2) + 1;
             } else {
                 cnt   = get_len(&c, x, 7);
-                back  = (1 << 14) + ((x & 8) << 11);
+                back  = (1 << 14) + ((x & 8) * (1 << 11));
                 x     = GETB(c);
-                back += (GETB(c) << 6) + (x >> 2);
+                back += (GETB(c) * (1 << 6)) + (x >> 2);
                 if (back == (1 << 14)) {
                     if (cnt != 1)
                         c.error |= AV_LZO_ERROR;
@@ -178,10 +178,10 @@ int av_lzo1x_decode(void *out, int *outlen, const void *in, int *inlen)
             if (x > 15)
                 continue;
             cnt  = 1;
-            back = (1 << 11) + (GETB(c) << 2) + (x >> 2) + 1;
+            back = (1 << 11) + (GETB(c) * (1 << 2)) + (x >> 2) + 1;
         } else {
             cnt  = 0;
-            back = (GETB(c) << 2) + (x >> 2) + 1;
+            back = (GETB(c) * (1 << 2)) + (x >> 2) + 1;
         }
         copy_backptr(&c, back, cnt + 2);
         state =

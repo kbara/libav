@@ -33,7 +33,7 @@ static void dct_unquantize_h263_intra_mmx(MpegEncContext *s,
 {
     x86_reg level, qmul, qadd, nCoeffs;
 
-    qmul = qscale << 1;
+    qmul = qscale * (1 << 1);
 
     assert(s->block_last_index[n]>=0 || s->h263_aic);
 
@@ -108,7 +108,7 @@ static void dct_unquantize_h263_inter_mmx(MpegEncContext *s,
 {
     x86_reg qmul, qadd, nCoeffs;
 
-    qmul = qscale << 1;
+    qmul = qscale * (1 << 1);
     qadd = (qscale - 1) | 1;
 
     assert(s->block_last_index[n]>=0 || s->h263_aic);

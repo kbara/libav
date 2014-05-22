@@ -401,7 +401,8 @@ static av_cold int wmavoice_decode_init(AVCodecContext *ctx)
     for (n = 0; n < s->lsps; n++)
         s->prev_lsps[n] = M_PI * (n + 1.0) / (s->lsps + 1.0);
 
-    init_get_bits(&s->gb, ctx->extradata + 22, (ctx->extradata_size - 22) << 3);
+    init_get_bits(&s->gb, ctx->extradata + 22,
+		  (ctx->extradata_size - 22) * (1 << 3));
     if (decode_vbmtree(&s->gb, s->vbm_tree) < 0) {
         av_log(ctx, AV_LOG_ERROR, "Invalid VBM tree; broken extradata?\n");
         return AVERROR_INVALIDDATA;
@@ -421,7 +422,7 @@ static av_cold int wmavoice_decode_init(AVCodecContext *ctx)
 
     if (s->min_pitch_val < 1 || s->history_nsamples > MAX_SIGNAL_HISTORY) {
         int min_sr = ((((1 << 8) - 50) * 400) + 0xFF) >> 8,
-            max_sr = ((((MAX_SIGNAL_HISTORY - 8) << 8) + 205) * 2000 / 37) >> 8;
+            max_sr = ((((MAX_SIGNAL_HISTORY - 8) * (1 << 8)) + 205) * 2000 / 37) >> 8;
 
         av_log(ctx, AV_LOG_ERROR,
                "Unsupported samplerate %d (min=%d, max=%d)\n",
@@ -1358,7 +1359,7 @@ static void synth_block_fcb_acb(WMAVoiceContext *s, GetBitContext *gb,
             int pitch_sh16 = (s->last_pitch_val << 16) +
                              s->pitch_diff_sh16 * abs_idx;
             int pitch      = (pitch_sh16 + 0x6FFF) >> 16;
-            int idx_sh16   = ((pitch << 16) - pitch_sh16) * 8 + 0x58000;
+            int idx_sh16   = ((pitch * (1 << 16)) - pitch_sh16) * 8 + 0x58000;
             idx            = idx_sh16 >> 16;
             if (s->pitch_diff_sh16) {
                 if (s->pitch_diff_sh16 > 0) {
@@ -1496,7 +1497,7 @@ static int synth_frame(AVCodecContext *ctx, GetBitContext *gb, int frame_idx,
 
         /* "pitch-diff-per-sample" for calculation of pitch per sample */
         s->pitch_diff_sh16 =
-            ((cur_pitch_val - s->last_pitch_val) << 16) / MAX_FRAMESIZE;
+            ((cur_pitch_val - s->last_pitch_val) * (1 << 16)) / MAX_FRAMESIZE;
     }
 
     /* Global gain (if silence) and pitch-adaptive window coordinates */
@@ -1543,12 +1544,12 @@ static int synth_frame(AVCodecContext *ctx, GetBitContext *gb, int frame_idx,
                 block_pitch -= t1;
                 if (block_pitch < t2) {
                     bl_pitch_sh2 =
-                        (s->block_conv_table[1] << 2) + (block_pitch << 1);
+                        (s->block_conv_table[1] << 2) + (block_pitch * (1 << 1));
                 } else {
                     block_pitch -= t2;
                     if (block_pitch < t3) {
                         bl_pitch_sh2 =
-                            (s->block_conv_table[2] + block_pitch) << 2;
+                            (s->block_conv_table[2] + block_pitch) * (1 << 2);
                     } else
                         bl_pitch_sh2 = s->block_conv_table[3] << 2;
                 }
@@ -1558,7 +1559,7 @@ static int synth_frame(AVCodecContext *ctx, GetBitContext *gb, int frame_idx,
         }
 
         case ACB_TYPE_ASYMMETRIC: {
-            bl_pitch_sh2 = pitch[n] << 2;
+            bl_pitch_sh2 = pitch[n] * (1 << 2);
             break;
         }
 
@@ -1933,7 +1934,7 @@ static void copy_bits(PutBitContext *pb,
     if ((rmn_bits = FFMIN(rmn_bits, nbits)) > 0)
         put_bits(pb, rmn_bits, get_bits(gb, rmn_bits));
     avpriv_copy_bits(pb, data + size - rmn_bytes,
-                 FFMIN(nbits - rmn_bits, rmn_bytes << 3));
+                 FFMIN(nbits - rmn_bits, rmn_bytes * (1 << 3)));
 }
 
 /**
@@ -1964,7 +1965,7 @@ static int wmavoice_decode_packet(AVCodecContext *ctx, void *data,
         *got_frame_ptr = 0;
         return 0;
     }
-    init_get_bits(&s->gb, avpkt->data, size << 3);
+    init_get_bits(&s->gb, avpkt->data, size * (1 << 3));
 
     /* size == ctx->block_align is used to indicate whether we are dealing with
      * a new packet or a packet of which we already read the packet header
@@ -2008,8 +2009,8 @@ static int wmavoice_decode_packet(AVCodecContext *ctx, void *data,
         return cnt >> 3;
     } else if ((s->sframe_cache_size = pos) > 0) {
         /* rewind bit reader to start of last (incomplete) superframe... */
-        init_get_bits(gb, avpkt->data, size << 3);
-        skip_bits_long(gb, (size << 3) - pos);
+        init_get_bits(gb, avpkt->data, size * (1 << 3));
+        skip_bits_long(gb, (size * (1 << 3)) - pos);
         assert(get_bits_left(gb) == pos);
 
         /* ...and cache it for spillover in next packet */

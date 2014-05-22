@@ -723,18 +723,18 @@ av_cold int ff_yuv2rgb_c_init_tables(SwsContext *c, const int inv_table[4],
     c->ugCoeff = roundToInt16(cgu * 8192) * 0x0001000100010001ULL;
     c->yOffset = roundToInt16(oy  *    8) * 0x0001000100010001ULL;
 
-    c->yuv2rgb_y_coeff   = (int16_t)roundToInt16(cy  << 13);
-    c->yuv2rgb_y_offset  = (int16_t)roundToInt16(oy  <<  9);
-    c->yuv2rgb_v2r_coeff = (int16_t)roundToInt16(crv << 13);
-    c->yuv2rgb_v2g_coeff = (int16_t)roundToInt16(cgv << 13);
-    c->yuv2rgb_u2g_coeff = (int16_t)roundToInt16(cgu << 13);
-    c->yuv2rgb_u2b_coeff = (int16_t)roundToInt16(cbu << 13);
+    c->yuv2rgb_y_coeff   = (int16_t)roundToInt16(cy * (1 << 13));
+    c->yuv2rgb_y_offset  = (int16_t)roundToInt16(oy * (1 << 9));
+    c->yuv2rgb_v2r_coeff = (int16_t)roundToInt16(crv * (1 << 13));
+    c->yuv2rgb_v2g_coeff = (int16_t)roundToInt16(cgv * (1 << 13));
+    c->yuv2rgb_u2g_coeff = (int16_t)roundToInt16(cgu * (1 << 13));
+    c->yuv2rgb_u2b_coeff = (int16_t)roundToInt16(cbu * (1 << 13));
 
     //scale coefficients by cy
-    crv = ((crv << 16) + 0x8000) / cy;
-    cbu = ((cbu << 16) + 0x8000) / cy;
-    cgu = ((cgu << 16) + 0x8000) / cy;
-    cgv = ((cgv << 16) + 0x8000) / cy;
+    crv = ((crv * (1 << 16)) + 0x8000) / cy;
+    cbu = ((cbu * (1 << 16)) + 0x8000) / cy;
+    cgu = ((cgu * (1 << 16)) + 0x8000) / cy;
+    cgv = ((cgv * (1 << 16)) + 0x8000) / cy;
 
     av_free(c->yuvTable);
 
@@ -760,9 +760,9 @@ av_cold int ff_yuv2rgb_c_init_tables(SwsContext *c, const int inv_table[4],
         yb = -(384 << 16) - oy;
         for (i = 0; i < 1024 - 110; i++) {
             int yval                = av_clip_uint8((yb + 0x8000) >> 16);
-            y_table[i + 110]        = (yval >> 7)        << rbase;
-            y_table[i +  37 + 1024] = ((yval + 43) / 85) << gbase;
-            y_table[i + 110 + 2048] = (yval >> 7)        << bbase;
+            y_table[i + 110]        = (yval >> 7) * (1 << rbase);
+            y_table[i +  37 + 1024] = ((yval + 43) / 85) * (1 << gbase);
+            y_table[i + 110 + 2048] = (yval >> 7) * (1 << bbase);
             yb += cy;
         }
         fill_table(c->table_rV, 1, crv, y_table + yoffs);
@@ -779,9 +779,9 @@ av_cold int ff_yuv2rgb_c_init_tables(SwsContext *c, const int inv_table[4],
         yb = -(384 << 16) - oy;
         for (i = 0; i < 1024 - 38; i++) {
             int yval               = av_clip_uint8((yb + 0x8000) >> 16);
-            y_table[i + 16]        = ((yval + 18) / 36) << rbase;
-            y_table[i + 16 + 1024] = ((yval + 18) / 36) << gbase;
-            y_table[i + 37 + 2048] = ((yval + 43) / 85) << bbase;
+            y_table[i + 16]        = ((yval + 18) / 36) * (1 << rbase);
+            y_table[i + 16 + 1024] = ((yval + 18) / 36) * (1 << gbase);
+            y_table[i + 37 + 2048] = ((yval + 43) / 85) * (1 << bbase);
             yb += cy;
         }
         fill_table(c->table_rV, 1, crv, y_table + yoffs);

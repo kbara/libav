@@ -458,7 +458,7 @@ int ff_h264_decode_seq_parameter_set(H264Context *h)
             int hsub   = (sps->chroma_format_idc == 1 ||
                           sps->chroma_format_idc == 2) ? 1 : 0;
             int step_x = 1 << hsub;
-            int step_y = (2 - sps->frame_mbs_only_flag) << vsub;
+            int step_y = (2 - sps->frame_mbs_only_flag) * (1 << vsub);
 
             if (crop_left & (0x1F >> (sps->bit_depth_luma > 8)) &&
                 !(h->avctx->flags & CODEC_FLAG_UNALIGNED)) {

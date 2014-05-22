@@ -758,7 +758,7 @@ static int inverse_quant_coeff(IMCContext *q, IMCChannel *chctx,
                 else
                     chctx->CWdecoded[j] = -quantizer[max_size - chctx->codewords[j] - 8 - 1] * chctx->flcoeffs6[i];
             }else{
-                quantizer = imc_quantizer1[((stream_format_code & 2) >> 1) | (chctx->bandFlagsBuf[i] << 1)];
+                quantizer = imc_quantizer1[((stream_format_code & 2) >> 1) | (chctx->bandFlagsBuf[i] * (1 << 1))];
                 if (chctx->codewords[j] >= middle_value)
                     chctx->CWdecoded[j] =  quantizer[chctx->codewords[j] - 1]            * chctx->flcoeffs6[i];
                 else

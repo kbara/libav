@@ -202,7 +202,7 @@ static void decode_plane(FFV1Context *s, uint8_t *src,
                     ((uint16_t *)(src + stride * y))[x] = sample[1][x];
             } else {
                 for (x = 0; x < w; x++)
-                    ((uint16_t *)(src + stride * y))[x] = sample[1][x] << (16 - s->avctx->bits_per_raw_sample);
+                    ((uint16_t *)(src + stride * y))[x] = sample[1][x] * (1 << (16 - s->avctx->bits_per_raw_sample));
             }
         }
 // STOP_TIMER("decode-line") }
@@ -257,7 +257,7 @@ static void decode_rgb_frame(FFV1Context *s, uint8_t *src[3], int w, int h,
 
             if (lbd)
                 *((uint32_t *)(src[0] + x * 4 + stride[0] * y)) = b +
-                    (g << 8) + (r << 16) + (a << 24);
+                    (g * (1 << 8)) + (r * (1 << 16)) + (a * (1 << 24));
             else {
                 *((uint16_t *)(src[0] + x * 2 + stride[0] * y)) = b;
                 *((uint16_t *)(src[1] + x * 2 + stride[1] * y)) = g;

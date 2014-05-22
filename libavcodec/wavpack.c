@@ -199,7 +199,7 @@ static av_always_inline int wp_exp2(int16_t val)
 
     res   = wp_exp2_table[val & 0xFF] | 0x100;
     val >>= 8;
-    res   = (val > 9) ? (res << (val - 9)) : (res >> (9 - val));
+    res   = (val > 9) ? (res * (1 << (val - 9))) : (res >> (9 - val));
     return neg ? -res : res;
 }
 
@@ -214,9 +214,9 @@ static av_always_inline int wp_log2(int32_t val)
     val += val >> 9;
     bits = av_log2(val) + 1;
     if (bits < 9)
-        return (bits << 8) + wp_log2_table[(val << (9 - bits)) & 0xFF];
+        return (bits * (1 << 8)) + wp_log2_table[(val * (1 << (9 - bits))) & 0xFF];
     else
-        return (bits << 8) + wp_log2_table[(val >> (bits - 9)) & 0xFF];
+        return (bits * (1 << 8)) + wp_log2_table[(val >> (bits - 9)) & 0xFF];
 }
 
 #define LEVEL_DECAY(a)  ((a + 0x80) >> 8)
@@ -250,7 +250,7 @@ static av_always_inline int get_tail(GetBitContext *gb, int k)
     e   = (1 << (p + 1)) - k - 1;
     res = p ? get_bits(gb, p) : 0;
     if (res >= e)
-        res = (res << 1) - e + get_bits1(gb);
+        res = (res * (1 << 1)) - e + get_bits1(gb);
     return res;
 }
 
@@ -266,7 +266,7 @@ static void update_error_limit(WavpackFrameContext *ctx)
     if (ctx->stereo_in && ctx->hybrid_bitrate) {
         int balance = (sl[1] - sl[0] + br[1] + 1) >> 1;
         if (balance > br[0]) {
-            br[1] = br[0] << 1;
+            br[1] = br[0] * (1 << 1);
             br[0] = 0;
         } else if (-balance > br[0]) {
             br[0] <<= 1;
@@ -424,12 +424,12 @@ static inline int wv_get_value_integer(WavpackFrameContext *s, uint32_t *crc,
     }
 
     bit = (S & s->and) | s->or;
-    bit = ((S + bit) << s->shift) - bit;
+    bit = ((S + bit) * (1 << s->shift)) - bit;
 
     if (s->hybrid)
         bit = av_clip(bit, s->hybrid_minclip, s->hybrid_maxclip);
 
-    return bit << s->post_shift;
+    return bit * (1 << s->post_shift);
 }
 
 static float wv_get_value_float(WavpackFrameContext *s, uint32_t *crc, int S)
@@ -502,7 +502,7 @@ static float wv_get_value_float(WavpackFrameContext *s, uint32_t *crc, int S)
 
     *crc = *crc * 27 + S * 9 + exp * 3 + sign;
 
-    value.u = (sign << 31) | (exp << 23) | S;
+    value.u = (sign << 31) | (exp * (1 << 23)) | S;
     return value.f;
 }
 
@@ -788,7 +788,7 @@ static int wavpack_decode_block(AVCodecContext *avctx, int block_no,
     }
     s->frame_flags = bytestream2_get_le32(&gb);
     bpp            = av_get_bytes_per_sample(avctx->sample_fmt);
-    orig_bpp       = ((s->frame_flags & 0x03) + 1) << 3;
+    orig_bpp       = ((s->frame_flags & 0x03) + 1) * (1 << 3);
     multiblock     = (s->frame_flags & WV_SINGLE_BLOCK) != WV_SINGLE_BLOCK;
 
     s->stereo         = !(s->frame_flags & WV_MONO);
@@ -852,13 +852,13 @@ static int wavpack_decode_block(AVCodecContext *avctx, int block_no,
             }
             for (i = 0; i < weights; i++) {
                 t = (int8_t)bytestream2_get_byte(&gb);
-                s->decorr[s->terms - i - 1].weightA = t << 3;
+                s->decorr[s->terms - i - 1].weightA = t * (1 << 3);
                 if (s->decorr[s->terms - i - 1].weightA > 0)
                     s->decorr[s->terms - i - 1].weightA +=
                         (s->decorr[s->terms - i - 1].weightA + 64) >> 7;
                 if (s->stereo_in) {
                     t = (int8_t)bytestream2_get_byte(&gb);
-                    s->decorr[s->terms - i - 1].weightB = t << 3;
+                    s->decorr[s->terms - i - 1].weightB = t * (1 << 3);
                     if (s->decorr[s->terms - i - 1].weightB > 0)
                         s->decorr[s->terms - i - 1].weightB +=
                             (s->decorr[s->terms - i - 1].weightB + 64) >> 7;
@@ -1031,7 +1031,7 @@ static int wavpack_decode_block(AVCodecContext *avctx, int block_no,
                 break;
             case 5:
                 bytestream2_skip(&gb, 1);
-                chan  |= (bytestream2_get_byte(&gb) & 0xF) << 8;
+                chan  |= (bytestream2_get_byte(&gb) & 0xF) * (1 << 8);
                 chmask = bytestream2_get_le16(&gb);
                 break;
             default:
@@ -1085,7 +1085,7 @@ static int wavpack_decode_block(AVCodecContext *avctx, int block_no,
     }
     if (s->got_extra_bits && avctx->sample_fmt != AV_SAMPLE_FMT_FLTP) {
         const int size   = get_bits_left(&s->gb_extra_bits);
-        const int wanted = s->samples * s->extra_bits << s->stereo_in;
+        const int wanted = (s->samples * s->extra_bits) * (1 << s->stereo_in);
         if (size < wanted) {
             av_log(avctx, AV_LOG_ERROR, "Too small EXTRABITS\n");
             s->got_extra_bits = 0;
@@ -1188,7 +1188,7 @@ static int wavpack_decode_frame(AVCodecContext *avctx, void *data,
         avctx->sample_fmt = AV_SAMPLE_FMT_S16P;
     } else {
         avctx->sample_fmt          = AV_SAMPLE_FMT_S32P;
-        avctx->bits_per_raw_sample = ((frame_flags & 0x03) + 1) << 3;
+        avctx->bits_per_raw_sample = ((frame_flags & 0x03) + 1) * (1 << 3);
     }
 
     while (buf_size > 0) {

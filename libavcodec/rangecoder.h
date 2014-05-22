@@ -69,7 +69,7 @@ static inline void renorm_encoder(RangeCoder *c)
             c->outstanding_count++;
         }
 
-        c->low     = (c->low & 0xFF) << 8;
+        c->low     = (c->low & 0xFF) * (1 << 8);
         c->range <<= 8;
     }
 }

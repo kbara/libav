@@ -53,11 +53,11 @@ static void put_swf_end_tag(AVFormatContext *s)
     avio_seek(pb, swf->tag_pos, SEEK_SET);
     if (tag & TAG_LONG) {
         tag &= ~TAG_LONG;
-        avio_wl16(pb, (tag << 6) | 0x3f);
+        avio_wl16(pb, (tag * (1 << 6)) | 0x3f);
         avio_wl32(pb, tag_len - 4);
     } else {
         assert(tag_len < 0x3f);
-        avio_wl16(pb, (tag << 6) | tag_len);
+        avio_wl16(pb, (tag * (1 << 6)) | tag_len);
     }
     avio_seek(pb, pos, SEEK_SET);
 }

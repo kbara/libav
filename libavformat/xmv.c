@@ -288,13 +288,13 @@ static void xmv_read_extradata(uint8_t *extradata, AVIOContext *pb)
 
     data = 0;
 
-    data |= mspel_bit        << 15;
-    data |= loop_filter      << 14;
-    data |= abt_flag         << 13;
-    data |= j_type_bit       << 12;
-    data |= top_left_mv_flag << 11;
-    data |= per_mb_rl_bit    << 10;
-    data |= slice_count      <<  7;
+    data |= mspel_bit * (1 << 15);
+    data |= loop_filter * (1 << 14);
+    data |= abt_flag * (1 << 13);
+    data |= j_type_bit * (1 << 12);
+    data |= top_left_mv_flag * (1 << 11);
+    data |= per_mb_rl_bit * (1 << 10);
+    data |= slice_count * (1 << 7);
 
     AV_WB32(extradata, data);
 }

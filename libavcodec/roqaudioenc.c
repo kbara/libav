@@ -117,7 +117,7 @@ static unsigned char dpcm_predict(short *previous, short current)
     }
 
     /* Add the sign bit */
-    result |= negative << 7;   //if (negative) result |= 128;
+    result |= negative * (1 << 7);   //if (negative) result |= 128;
 
     *previous = predicted;
 

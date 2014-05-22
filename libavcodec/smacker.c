@@ -139,7 +139,7 @@ static int smacker_decode_bigtree(GetBitContext *gb, HuffContext *hc, DBCtx *ctx
         i2 = ctx->v2->table ? get_vlc2(gb, ctx->v2->table, SMKTREE_BITS, 3) : 0;
         if (i1 < 0 || i2 < 0)
             return -1;
-        val = ctx->recode1[i1] | (ctx->recode2[i2] << 8);
+        val = ctx->recode1[i1] | (ctx->recode2[i2] * (1 << 8));
         if(val == ctx->escapes[0]) {
             ctx->last[0] = hc->current;
             val = 0;
@@ -697,7 +697,7 @@ static int smka_decode_frame(AVCodecContext *avctx, void *data,
                     res = get_vlc2(&gb, vlc[3].table, SMKTREE_BITS, 3);
                 else
                     res = 0;
-                val |= h[3].values[res] << 8;
+                val |= h[3].values[res] * (1 << 8);
                 pred[1] += sign_extend(val, 16);
                 *samples++ = pred[1];
             } else {
@@ -710,7 +710,7 @@ static int smka_decode_frame(AVCodecContext *avctx, void *data,
                     res = get_vlc2(&gb, vlc[1].table, SMKTREE_BITS, 3);
                 else
                     res = 0;
-                val |= h[1].values[res] << 8;
+                val |= h[1].values[res] * (1 << 8);
                 pred[0] += sign_extend(val, 16);
                 *samples++ = pred[0];
             }

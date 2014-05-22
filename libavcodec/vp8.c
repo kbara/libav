@@ -1246,7 +1246,7 @@ skip_eob:
                 } else {    // DCT_CAT3 and up
                     int a   = vp56_rac_get_prob(&c, token_prob[8]);
                     int b   = vp56_rac_get_prob(&c, token_prob[9 + a]);
-                    int cat = (a << 1) + b;
+                    int cat = (a * (1 << 1)) + b;
                     coeff  = 3 + (8 << cat);
                     coeff += vp8_rac_get_coeff(&c, ff_vp8_dct_cat_prob[cat]);
                 }
@@ -1392,11 +1392,11 @@ void decode_mb_coeffs(VP8Context *s, VP8ThreadData *td, VP56RangeCoder *c,
         for (y = 0; y < 2; y++)
             for (x = 0; x < 2; x++) {
                 nnz_pred = l_nnz[i + 2 * y] + t_nnz[i + 2 * x];
-                nnz = decode_block_coeffs(c, td->block[i][(y << 1) + x],
+                nnz = decode_block_coeffs(c, td->block[i][(y * (1 << 1)) + x],
                                           s->prob->token[2], 0, nnz_pred,
                                           s->qmat[segment].chroma_qmul,
                                           s->prob[0].scan, is_vp7);
-                td->non_zero_count_cache[i][(y << 1) + x] = nnz;
+                td->non_zero_count_cache[i][(y * (1 << 1)) + x] = nnz;
                 t_nnz[i + 2 * x] = l_nnz[i + 2 * y] = !!nnz;
                 nnz_total += nnz;
             }
@@ -1821,7 +1821,7 @@ void prefetch_motion(VP8Context *s, VP8Macroblock *mb, int mb_x, int mb_y,
 {
     /* Don't prefetch refs that haven't been used very often this frame. */
     if (s->ref_count[ref - 1] > (mb_xy >> 5)) {
-        int x_off = mb_x << 4, y_off = mb_y << 4;
+        int x_off = mb_x * (1 << 4), y_off = mb_y * (1 << 4);
         int mx = (mb->mv.x >> 2) + x_off + 8;
         int my = (mb->mv.y >> 2) + y_off;
         uint8_t **src = s->framep[ref]->tf.f->data;
@@ -1842,7 +1842,7 @@ static av_always_inline
 void inter_predict(VP8Context *s, VP8ThreadData *td, uint8_t *dst[3],
                    VP8Macroblock *mb, int mb_x, int mb_y)
 {
-    int x_off = mb_x << 4, y_off = mb_y << 4;
+    int x_off = mb_x * (1 << 4), y_off = mb_y * (1 << 4);
     int width = 16 * s->mb_width, height = 16 * s->mb_height;
     ThreadFrame *ref = &s->framep[mb->ref_frame]->tf;
     VP56mv *bmv = mb->bmv;
@@ -1963,11 +1963,11 @@ void idct_mb(VP8Context *s, VP8ThreadData *td, uint8_t *dst[3], VP8Macroblock *m
                     for (x = 0; x < 2; x++) {
                         if ((uint8_t) nnz4 == 1)
                             s->vp8dsp.vp8_idct_dc_add(ch_dst + 4 * x,
-                                                      td->block[4 + ch][(y << 1) + x],
+                                                      td->block[4 + ch][(y * (1 << 1)) + x],
                                                       s->uvlinesize);
                         else if ((uint8_t) nnz4 > 1)
                             s->vp8dsp.vp8_idct_add(ch_dst + 4 * x,
-                                                   td->block[4 + ch][(y << 1) + x],
+                                                   td->block[4 + ch][(y * (1 << 1)) + x],
                                                    s->uvlinesize);
                         nnz4 >>= 8;
                         if (!nnz4)
@@ -2417,7 +2417,7 @@ int vp78_decode_mb_row_sliced(AVCodecContext *avctx, void *tdata, int jobnr,
     for (mb_y = jobnr; mb_y < s->mb_height; mb_y += num_jobs) {
         if (mb_y >= s->mb_height)
             break;
-        td->thread_mb_pos = mb_y << 16;
+        td->thread_mb_pos = mb_y * (1 << 16);
         vp8_decode_mb_row_no_filter(avctx, tdata, jobnr, threadnr, is_vp7);
         if (s->deblock_filter)
             vp8_filter_mb_row(avctx, tdata, jobnr, threadnr, is_vp7);

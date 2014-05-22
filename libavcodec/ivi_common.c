@@ -614,7 +614,7 @@ static int ivi_decode_blocks(GetBitContext *gb, IVIBandDesc *band,
             mv_x = mb->mv_x;
             mv_y = mb->mv_y;
             if (band->is_halfpel) {
-                mc_type = ((mv_y & 1) << 1) | (mv_x & 1);
+                mc_type = ((mv_y & 1) * (1 << 1)) | (mv_x & 1);
                 mv_x >>= 1;
                 mv_y >>= 1; /* convert halfpel vectors into fullpel ones */
             }
@@ -758,7 +758,7 @@ static int ivi_process_empty_tile(AVCodecContext *avctx, IVIBandDesc *band,
             if (!band->is_halfpel) {
                 mc_type = 0; /* we have only fullpel vectors */
             } else {
-                mc_type = ((mv_y & 1) << 1) | (mv_x & 1);
+                mc_type = ((mv_y & 1) * (1 << 1)) | (mv_x & 1);
                 mv_x >>= 1;
                 mv_y >>= 1; /* convert halfpel vectors into fullpel ones */
             }
@@ -916,7 +916,7 @@ static int decode_band(IVI45DecContext *ctx,
                 break;
             }
 
-            pos += tile->data_size << 3; // skip to next tile
+            pos += tile->data_size * (1 << 3); // skip to next tile
         }
     }
 

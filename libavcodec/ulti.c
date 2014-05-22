@@ -377,7 +377,7 @@ static int ulti_decode_frame(AVCodecContext *avctx,
                         tmp = bytestream2_get_byteu(&s->gb);
                         if(tmp & 0x80) {
                             angle = (tmp >> 4) & 0x7;
-                            tmp = (tmp << 8) + bytestream2_get_byteu(&s->gb);
+                            tmp = (tmp * (1 << 8)) + bytestream2_get_byteu(&s->gb);
                             Y[0] = (tmp >> 6) & 0x3F;
                             Y[1] = tmp & 0x3F;
                             Y[2] = bytestream2_get_byteu(&s->gb) & 0x3F;

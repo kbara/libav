@@ -447,7 +447,7 @@ static void put_float(PutBitContext *pb, float f)
         res |= (1U << 31);
         mant = -mant;
     }
-    res |= mant | (exp << 21);
+    res |= mant | (exp * (1 << 21));
     put_bits32(pb, res);
 }
 
@@ -564,7 +564,7 @@ static void put_residue_header(PutBitContext *pb, vorbis_enc_residue *rc)
     for (i = 0; i < rc->classifications; i++) {
         int j, tmp = 0;
         for (j = 0; j < 8; j++)
-            tmp |= (rc->books[i][j] != -1) << j;
+            tmp |= (rc->books[i][j] != -1) * (1 << j);
 
         put_bits(pb, 3, tmp & 7);
         put_bits(pb, 1, tmp > 7);
@@ -799,7 +799,7 @@ static int floor_encode(vorbis_enc_context *venc, vorbis_enc_floor *fc,
             if (predicted - posts[i] > room)
                 coded[i] = predicted - posts[i] + highroom - 1;
             else
-                coded[i] = ((predicted - posts[i]) << 1) - 1;
+                coded[i] = ((predicted - posts[i]) * (1 << 1)) - 1;
         }
     }
 
@@ -821,7 +821,7 @@ static int floor_encode(vorbis_enc_context *venc, vorbis_enc_floor *fc,
                         break;
                 }
                 assert(l != csub);
-                cval   |= l << cshift;
+                cval   |= l * (1 << cshift);
                 cshift += c->subclass;
             }
             if (put_codeword(pb, book, cval))

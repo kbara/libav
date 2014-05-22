@@ -126,7 +126,7 @@ av_cold void ff_init_scantable_permutation(uint8_t *idct_permutation,
         break;
     case FF_LIBMPEG2_IDCT_PERM:
         for (i = 0; i < 64; i++)
-            idct_permutation[i] = (i & 0x38) | ((i & 6) >> 1) | ((i & 1) << 2);
+            idct_permutation[i] = (i & 0x38) | ((i & 6) >> 1) | ((i & 1) * (1 << 2));
         break;
     case FF_SIMPLE_IDCT_PERM:
         for (i = 0; i < 64; i++)
@@ -134,11 +134,11 @@ av_cold void ff_init_scantable_permutation(uint8_t *idct_permutation,
         break;
     case FF_TRANSPOSE_IDCT_PERM:
         for (i = 0; i < 64; i++)
-            idct_permutation[i] = ((i & 7) << 3) | (i >> 3);
+            idct_permutation[i] = ((i & 7) * (1 << 3)) | (i >> 3);
         break;
     case FF_PARTTRANS_IDCT_PERM:
         for (i = 0; i < 64; i++)
-            idct_permutation[i] = (i & 0x24) | ((i & 3) << 3) | ((i >> 3) & 3);
+            idct_permutation[i] = (i & 0x24) | ((i & 3) * (1 << 3)) | ((i >> 3) & 3);
         break;
     case FF_SSE2_IDCT_PERM:
         for (i = 0; i < 64; i++)

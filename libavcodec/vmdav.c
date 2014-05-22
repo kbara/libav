@@ -128,7 +128,7 @@ static void lz_unpack(const unsigned char *src, int src_len,
                     dataleft--;
                 } else {
                     chainofs = bytestream2_get_byte(&gb);
-                    chainofs |= ((bytestream2_peek_byte(&gb) & 0xF0) << 4);
+                    chainofs |= ((bytestream2_peek_byte(&gb) & 0xF0) * (1 << 4));
                     chainlen = (bytestream2_get_byte(&gb) & 0x0F) + 3;
                     if (chainlen == speclen) {
                         chainlen = bytestream2_get_byte(&gb) + 0xF + 3;

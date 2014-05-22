@@ -247,7 +247,7 @@ void ff_eac3_decode_transform_coeffs_aht_ch(AC3DecodeContext *s, int ch)
             /* Vector Quantization */
             int v = get_bits(gbc, bits);
             for (blk = 0; blk < 6; blk++) {
-                s->pre_mantissa[ch][bin][blk] = ff_eac3_mantissa_vq[hebap][v][blk] << 8;
+                s->pre_mantissa[ch][bin][blk] = ff_eac3_mantissa_vq[hebap][v][blk] * (1 << 8);
             }
         } else {
             /* Gain Adaptive Quantization */
@@ -271,7 +271,7 @@ void ff_eac3_decode_transform_coeffs_aht_ch(AC3DecodeContext *s, int ch)
                     if (mant >= 0)
                         b = 1 << (23 - log_gain);
                     else
-                        b = ff_eac3_gaq_remap_2_4_b[hebap-8][log_gain-1] << 8;
+                        b = ff_eac3_gaq_remap_2_4_b[hebap - 8][log_gain - 1] * (1 << 8);
                     mant += ((ff_eac3_gaq_remap_2_4_a[hebap-8][log_gain-1] * (int64_t)mant) >> 15) + b;
                 } else {
                     /* small mantissa, no GAQ, or Gk=1 */
@@ -379,7 +379,7 @@ int ff_eac3_parse_header(AC3DecodeContext *s)
                 case 1: skip_bits(gbc, 5);  break;
                 case 2: skip_bits(gbc, 12); break;
                 case 3: {
-                    int mix_data_size = (get_bits(gbc, 5) + 2) << 3;
+                    int mix_data_size = (get_bits(gbc, 5) + 2) * (1 << 3);
                     skip_bits_long(gbc, mix_data_size);
                     break;
                 }
@@ -560,8 +560,8 @@ int ff_eac3_parse_header(AC3DecodeContext *s)
 
     /* per-frame SNR offset */
     if (!s->snr_offset_strategy) {
-        int csnroffst = (get_bits(gbc, 6) - 15) << 4;
-        int snroffst = (csnroffst + get_bits(gbc, 4)) << 2;
+        int csnroffst = (get_bits(gbc, 6) - 15) * (1 << 4);
+        int snroffst = (csnroffst + get_bits(gbc, 4)) * (1 << 2);
         for (ch = 0; ch <= s->channels; ch++)
             s->snr_offset[ch] = snroffst;
     }

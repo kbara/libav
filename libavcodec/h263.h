@@ -134,7 +134,7 @@ static inline int h263_get_motion_length(MpegEncContext * s, int val, int f_code
         bit_size = f_code - 1;
         /* modulo encoding */
         l= INT_BIT - 6 - bit_size;
-        val = (val<<l)>>l;
+        val = (val * (1 << l))>>l;
         val--;
         code = (val >> bit_size) + 1;
 

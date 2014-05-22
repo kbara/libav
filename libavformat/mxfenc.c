@@ -1338,9 +1338,9 @@ static int mxf_parse_mpeg2_frame(AVFormatContext *s, AVStream *st,
             }
             if (!mxf->header_written) {
                 unsigned hours   =  (pkt->data[i+1]>>2) & 0x1f;
-                unsigned minutes = ((pkt->data[i+1] & 0x03) << 4) | (pkt->data[i+2]>>4);
-                unsigned seconds = ((pkt->data[i+2] & 0x07) << 3) | (pkt->data[i+3]>>5);
-                unsigned frames  = ((pkt->data[i+3] & 0x1f) << 1) | (pkt->data[i+4]>>7);
+                unsigned minutes = ((pkt->data[i + 1] & 0x03) * (1 << 4)) | (pkt->data[i+2]>>4);
+                unsigned seconds = ((pkt->data[i + 2] & 0x07) * (1 << 3)) | (pkt->data[i+3]>>5);
+                unsigned frames  = ((pkt->data[i + 3] & 0x1f) * (1 << 1)) | (pkt->data[i+4]>>7);
                 mxf->timecode_drop_frame = !!(pkt->data[i+1] & 0x80);
                 mxf->timecode_start = (hours*3600 + minutes*60 + seconds) *
                     mxf->timecode_base + frames;
@@ -1392,9 +1392,9 @@ static uint64_t mxf_parse_timestamp(time_t timestamp)
     return (uint64_t)(time->tm_year+1900) << 48 |
            (uint64_t)(time->tm_mon+1)     << 40 |
            (uint64_t) time->tm_mday       << 32 |
-                      time->tm_hour       << 24 |
-                      time->tm_min        << 16 |
-                      time->tm_sec        << 8;
+                      time->tm_hour * (1 << 24) |
+                      time->tm_min * (1 << 16) |
+                      time->tm_sec * (1 << 8);
 }
 
 static void mxf_gen_umid(AVFormatContext *s)
@@ -1551,7 +1551,7 @@ static const uint8_t system_metadata_package_set_key[] = { 0x06,0x0E,0x2B,0x34,0
 static uint32_t framenum_to_12m_time_code(unsigned frame, int drop, int fps)
 {
     return (0                                    << 31) | // color frame flag
-           (drop                                 << 30) | // drop  frame flag
+           (drop * (1 << 30)) | // drop  frame flag
            ( ((frame % fps) / 10)                << 28) | // tens  of frames
            ( ((frame % fps) % 10)                << 24) | // units of frames
            (0                                    << 23) | // field phase (NTSC), b0 (PAL)

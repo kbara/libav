@@ -145,7 +145,7 @@ static inline void rgb32tobgr16_c(const uint8_t *src, uint8_t *dst,
     while (s < end) {
         register int rgb  = *(const uint32_t *)s;
         s                += 4;
-        *d++              = ((rgb & 0xF8)     << 8) +
+        *d++              = ((rgb & 0xF8) * (1 << 8)) +
                             ((rgb & 0xFC00)   >> 5) +
                             ((rgb & 0xF80000) >> 19);
     }
@@ -176,7 +176,7 @@ static inline void rgb32tobgr15_c(const uint8_t *src, uint8_t *dst,
     while (s < end) {
         register int rgb  = *(const uint32_t *)s;
         s                += 4;
-        *d++              = ((rgb & 0xF8)     <<  7) +
+        *d++              = ((rgb & 0xF8) * (1 << 7)) +
                             ((rgb & 0xF800)   >>  6) +
                             ((rgb & 0xF80000) >> 19);
     }
@@ -193,7 +193,7 @@ static inline void rgb24tobgr16_c(const uint8_t *src, uint8_t *dst,
         const int b = *s++;
         const int g = *s++;
         const int r = *s++;
-        *d++        = (b >> 3) | ((g & 0xFC) << 3) | ((r & 0xF8) << 8);
+        *d++        = (b >> 3) | ((g & 0xFC) * (1 << 3)) | ((r & 0xF8) * (1 << 8));
     }
 }
 
@@ -207,7 +207,7 @@ static inline void rgb24to16_c(const uint8_t *src, uint8_t *dst, int src_size)
         const int r = *s++;
         const int g = *s++;
         const int b = *s++;
-        *d++        = (b >> 3) | ((g & 0xFC) << 3) | ((r & 0xF8) << 8);
+        *d++        = (b >> 3) | ((g & 0xFC) * (1 << 3)) | ((r & 0xF8) * (1 << 8));
     }
 }
 
@@ -222,7 +222,7 @@ static inline void rgb24tobgr15_c(const uint8_t *src, uint8_t *dst,
         const int b = *s++;
         const int g = *s++;
         const int r = *s++;
-        *d++        = (b >> 3) | ((g & 0xF8) << 2) | ((r & 0xF8) << 7);
+        *d++        = (b >> 3) | ((g & 0xF8) * (1 << 2)) | ((r & 0xF8) * (1 << 7));
     }
 }
 
@@ -236,7 +236,7 @@ static inline void rgb24to15_c(const uint8_t *src, uint8_t *dst, int src_size)
         const int r = *s++;
         const int g = *s++;
         const int b = *s++;
-        *d++        = (b >> 3) | ((g & 0xF8) << 2) | ((r & 0xF8) << 7);
+        *d++        = (b >> 3) | ((g & 0xF8) * (1 << 2)) | ((r & 0xF8) * (1 << 7));
     }
 }
 
@@ -345,7 +345,7 @@ static inline void shuffle_bytes_2103_c(const uint8_t *src, uint8_t *dst,
     for (; idx < 15; idx += 4) {
         register int v        = *(const uint32_t *)&s[idx], g = v & 0xff00ff00;
         v                    &= 0xff00ff;
-        *(uint32_t *)&d[idx]  = (v >> 16) + g + (v << 16);
+        *(uint32_t *)&d[idx]  = (v >> 16) + g + (v * (1 << 16));
     }
 }
 
@@ -766,7 +766,7 @@ static inline void yvu9_to_yuy2_c(const uint8_t *src1, const uint8_t *src2,
         const uint8_t *vp = src3 + srcStride3 * (y >> 2);
         uint8_t *d        = dst  + dstStride  *  y;
         for (x = 0; x < w; x++) {
-            const int x2 = x << 2;
+            const int x2 = x * (1 << 2);
             d[8 * x + 0] = yp[x2];
             d[8 * x + 1] = up[x];
             d[8 * x + 2] = yp[x2 + 1];

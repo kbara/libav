@@ -88,7 +88,7 @@ static inline int ls_get_code_regular(GetBitContext *gb, JLSState *state, int Q)
 {
     int k, ret;
 
-    for (k = 0; (state->N[Q] << k) < state->A[Q]; k++)
+    for (k = 0; (state->N[Q] * (1 << k)) < state->A[Q]; k++)
         ;
 
 #ifdef JLS_BROKEN
@@ -125,7 +125,7 @@ static inline int ls_get_code_runterm(GetBitContext *gb, JLSState *state,
     if (RItype)
         temp += state->N[Q] >> 1;
 
-    for (k = 0; (state->N[Q] << k) < temp; k++)
+    for (k = 0; (state->N[Q] * (1 << k)) < temp; k++)
         ;
 
 #ifdef JLS_BROKEN

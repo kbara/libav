@@ -262,7 +262,7 @@ static av_cold int initFilter(int16_t **outFilter, int32_t **filterPos,
 
         xDstInSrc = xInc / 2 - 0x8000;
         for (i = 0; i < dstW; i++) {
-            int xx = (xDstInSrc - ((filterSize - 1) << 15) + (1 << 15)) >> 16;
+            int xx = (xDstInSrc - ((filterSize - 1) * (1 << 15)) + (1 << 15)) >> 16;
 
             (*filterPos)[i] = xx;
             filter[i]       = fone;
@@ -278,13 +278,13 @@ static av_cold int initFilter(int16_t **outFilter, int32_t **filterPos,
 
         xDstInSrc = xInc / 2 - 0x8000;
         for (i = 0; i < dstW; i++) {
-            int xx = (xDstInSrc - ((filterSize - 1) << 15) + (1 << 15)) >> 16;
+            int xx = (xDstInSrc - ((filterSize - 1) * (1 << 15)) + (1 << 15)) >> 16;
             int j;
 
             (*filterPos)[i] = xx;
             // bilinear upscale / linear interpolate / area averaging
             for (j = 0; j < filterSize; j++) {
-                int64_t coeff = fone - FFABS((xx << 16) - xDstInSrc) *
+                int64_t coeff = fone - FFABS((xx * (1 << 16)) - xDstInSrc) *
                                 (fone >> 16);
                 if (coeff < 0)
                     coeff = 0;
@@ -331,11 +331,11 @@ static av_cold int initFilter(int16_t **outFilter, int32_t **filterPos,
 
         xDstInSrc = xInc - 0x10000;
         for (i = 0; i < dstW; i++) {
-            int xx = (xDstInSrc - ((int64_t)(filterSize - 2) << 16)) / (1 << 17);
+            int xx = (xDstInSrc - ((int64_t)(filterSize - 2) * (1 << 16))) / (1 << 17);
             int j;
             (*filterPos)[i] = xx;
             for (j = 0; j < filterSize; j++) {
-                int64_t d = (FFABS(((int64_t)xx << 17) - xDstInSrc)) << 13;
+                int64_t d = (FFABS(((int64_t)xx * (1 << 17)) - xDstInSrc)) << 13;
                 double floatd;
                 int64_t coeff;
 
@@ -747,12 +747,12 @@ static av_cold int init_hscaler_mmxext(int dstW, int xInc, uint8_t *filterCode,
                 memcpy(filterCode + fragmentPos, fragment, fragmentLength);
 
                 filterCode[fragmentPos + imm8OfPShufW1] =  (a + inc)       |
-                                                          ((b + inc) << 2) |
-                                                          ((c + inc) << 4) |
-                                                          ((d + inc) << 6);
-                filterCode[fragmentPos + imm8OfPShufW2] =  a | (b << 2) |
-                                                               (c << 4) |
-                                                               (d << 6);
+                                                          ((b + inc) * (1 << 2)) |
+                                                          ((c + inc) * (1 << 4)) |
+                                                          ((d + inc) * (1 << 6));
+                filterCode[fragmentPos + imm8OfPShufW2] =  a | (b * (1 << 2)) |
+                                                               (c * (1 << 4)) |
+                                                               (d * (1 << 6));
 
                 if (i + 4 - inc >= dstW)
                     shift = maxShift;               // avoid overread

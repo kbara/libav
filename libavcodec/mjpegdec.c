@@ -492,7 +492,7 @@ static int decode_dc_progressive(MJpegDecodeContext *s, int16_t *block,
         av_log(s->avctx, AV_LOG_ERROR, "error dc\n");
         return AVERROR_INVALIDDATA;
     }
-    val = (val * quant_matrix[0] << Al) + s->last_dc[component];
+    val = ((val * quant_matrix[0]) * (1 << Al)) + s->last_dc[component];
     s->last_dc[component] = val;
     block[0] = val;
     return 0;
@@ -535,14 +535,14 @@ static int decode_block_progressive(MJpegDecodeContext *s, int16_t *block,
                 if (i >= se) {
                     if (i == se) {
                         j = s->scantable.permutated[se];
-                        block[j] = level * quant_matrix[j] << Al;
+                        block[j] = (level * quant_matrix[j]) * (1 << Al);
                         break;
                     }
                     av_log(s->avctx, AV_LOG_ERROR, "error count: %d\n", i);
                     return AVERROR_INVALIDDATA;
                 }
                 j = s->scantable.permutated[i];
-                block[j] = level * quant_matrix[j] << Al;
+                block[j] = (level * quant_matrix[j]) * (1 << Al);
             } else {
                 if (run == 0xF) {// ZRL - skip 15 coefficients
                     i += 15;
@@ -621,7 +621,7 @@ static int decode_block_refinement(MJpegDecodeContext *s, int16_t *block,
                 ZERO_RUN;
                 j = s->scantable.permutated[i];
                 val--;
-                block[j] = ((quant_matrix[j]^val) - val) << Al;
+                block[j] = ((quant_matrix[j] ^ val) - val) * (1 << Al);
                 if (i == se) {
                     if (i > *last_nnz)
                         *last_nnz = i;
@@ -701,7 +701,7 @@ static int ljpeg_decode_rgb_scan(MJpegDecodeContext *s, int predictor,
                 PREDICT(pred, topleft[i], top[i], left[i], modified_predictor);
 
                 left[i] = buffer[mb_x][i] =
-                    mask & (pred + (mjpeg_decode_dc(s, s->dc_index[i]) << point_transform));
+                    mask & (pred + (mjpeg_decode_dc(s, s->dc_index[i]) * (1 << point_transform)));
             }
 
             if (s->restart_interval && !--s->restart_count) {
@@ -776,7 +776,7 @@ static int ljpeg_decode_yuv_scan(MJpegDecodeContext *s, int predictor,
 
                         if (s->interlaced && s->bottom_field)
                             ptr += linesize >> 1;
-                        *ptr = pred + (mjpeg_decode_dc(s, s->dc_index[i]) << point_transform);
+                        *ptr = pred + (mjpeg_decode_dc(s, s->dc_index[i]) * (1 << point_transform));
 
                         if (++x == h) {
                             x = 0;
@@ -805,7 +805,7 @@ static int ljpeg_decode_yuv_scan(MJpegDecodeContext *s, int predictor,
                               (h * mb_x + x);
                         PREDICT(pred, ptr[-linesize - 1],
                                 ptr[-linesize], ptr[-1], predictor);
-                        *ptr = pred + (mjpeg_decode_dc(s, s->dc_index[i]) << point_transform);
+                        *ptr = pred + (mjpeg_decode_dc(s, s->dc_index[i]) * (1 << point_transform));
                         if (++x == h) {
                             x = 0;
                             y++;

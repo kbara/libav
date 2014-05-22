@@ -48,9 +48,9 @@ static void arith2_normalise(ArithCoder *c)
             c->value ^= 0x8000;
             c->low   ^= 0x8000;
         }
-        c->high  = c->high  << 8 & 0xFFFFFF | 0xFF;
-        c->value = c->value << 8 & 0xFFFFFF | bytestream2_get_byte(c->gbc.gB);
-        c->low   = c->low   << 8 & 0xFFFFFF;
+        c->high  = c->high * (1 << 8) & 0xFFFFFF | 0xFF;
+        c->value = c->value * (1 << 8) & 0xFFFFFF | bytestream2_get_byte(c->gbc.gB);
+        c->low   = c->low * (1 << 8) & 0xFFFFFF;
     }
 }
 
@@ -61,7 +61,7 @@ ARITH_GET_BIT(2)
 
 static int arith2_get_scaled_value(int value, int n, int range)
 {
-    int split = (n << 1) - range;
+    int split = (n * (1 << 1)) - range;
 
     if (value > split)
         return split + (value - split >> 1);
@@ -72,17 +72,17 @@ static int arith2_get_scaled_value(int value, int n, int range)
 static void arith2_rescale_interval(ArithCoder *c, int range,
                                     int low, int high, int n)
 {
-    int split = (n << 1) - range;
+    int split = (n * (1 << 1)) - range;
 
     if (high > split)
-        c->high = split + (high - split << 1);
+        c->high = split + ((high - split) * (1 << 1));
     else
         c->high = high;
 
     c->high += c->low - 1;
 
     if (low > split)
-        c->low += split + (low - split << 1);
+        c->low += split + ((low - split) * (1 << 1));
     else
         c->low += low;
 }
@@ -93,14 +93,15 @@ static int arith2_get_number(ArithCoder *c, int n)
     int scale = av_log2(range) - av_log2(n);
     int val;
 
-    if (n << scale > range)
+    if (n * (1 << scale) > range)
         scale--;
 
     n <<= scale;
 
     val = arith2_get_scaled_value(c->value - c->low, n, range) >> scale;
 
-    arith2_rescale_interval(c, range, val << scale, (val + 1) << scale, n);
+    arith2_rescale_interval(c, range, val * (1 << scale),
+                            (val + 1) * (1 << scale), n);
 
     arith2_normalise(c);
 
@@ -113,7 +114,7 @@ static int arith2_get_prob(ArithCoder *c, int16_t *probs)
     int scale = av_log2(range) - av_log2(n);
     int i     = 0, val;
 
-    if (n << scale > range)
+    if (n * (1 << scale) > range)
         scale--;
 
     n <<= scale;
@@ -122,7 +123,8 @@ static int arith2_get_prob(ArithCoder *c, int16_t *probs)
     while (probs[++i] > val) ;
 
     arith2_rescale_interval(c, range,
-                            probs[i] << scale, probs[i - 1] << scale, n);
+                            probs[i] * (1 << scale),
+                            probs[i - 1] * (1 << scale), n);
 
     return i;
 }
@@ -132,7 +134,7 @@ ARITH_GET_MODEL_SYM(2)
 static int arith2_get_consumed_bytes(ArithCoder *c)
 {
     int diff = (c->high >> 16) - (c->low >> 16);
-    int bp   = bytestream2_tell(c->gbc.gB) - 3 << 3;
+    int bp   = (bytestream2_tell(c->gbc.gB) - 3) * (1 << 3);
     int bits = 1;
 
     while (!(diff & 0x80)) {
@@ -203,11 +205,11 @@ static int decode_555(GetByteContext *gB, uint16_t *dst, int stride,
             if (repeat-- < 1) {
                 int b = bytestream2_get_byte(gB);
                 if (b < 128)
-                    last_symbol = b << 8 | bytestream2_get_byte(gB);
+                    last_symbol = b * (1 << 8) | bytestream2_get_byte(gB);
                 else if (b > 129) {
                     repeat = 0;
                     while (b-- > 130)
-                        repeat = (repeat << 8) + bytestream2_get_byte(gB) + 1;
+                        repeat = (repeat * (1 << 8)) + bytestream2_get_byte(gB) + 1;
                     if (last_symbol == -2) {
                         int skip = FFMIN((unsigned)repeat, dst + w - p);
                         repeat -= skip;
@@ -276,7 +278,7 @@ static int decode_rle(GetBitContext *gb, uint8_t *pal_dst, int pal_stride,
             if (symbol >= 204 - keyframe)
                 symbol += 14 - keyframe;
             else if (symbol > 189)
-                symbol = get_bits1(gb) + (symbol << 1) - 190;
+                symbol = get_bits1(gb) + (symbol * (1 << 1)) - 190;
             if (bits[symbol])
                 return AVERROR_INVALIDDATA;
             bits[symbol]  = current_length;
@@ -295,7 +297,7 @@ static int decode_rle(GetBitContext *gb, uint8_t *pal_dst, int pal_stride,
 
     /* determine the minimum length to fit the rest of the alphabet */
     while ((surplus_codes = (2 << current_length) -
-                            (next_code << 1) - remaining_codes) < 0) {
+                            (next_code * (1 << 1)) - remaining_codes) < 0) {
         current_length++;
         next_code <<= 1;
     }

@@ -245,7 +245,7 @@ static int mace_decode_frame(AVCodecContext *avctx, void *data,
     int is_mace3 = (avctx->codec_id == AV_CODEC_ID_MACE3);
 
     /* get output buffer */
-    frame->nb_samples = 3 * (buf_size << (1 - is_mace3)) / avctx->channels;
+    frame->nb_samples = 3 * (buf_size * (1 << (1 - is_mace3))) / avctx->channels;
     if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
         av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
@@ -257,8 +257,8 @@ static int mace_decode_frame(AVCodecContext *avctx, void *data,
 
         for (j=0; j < buf_size / (avctx->channels << is_mace3); j++)
             for (k=0; k < (1 << is_mace3); k++) {
-                uint8_t pkt = buf[(i << is_mace3) +
-                                  (j*avctx->channels << is_mace3) + k];
+                uint8_t pkt = buf[(i * (1 << is_mace3)) +
+                                  ((j * avctx->channels) * (1 << is_mace3)) + k];
 
                 uint8_t val[2][3] = {{pkt >> 5, (pkt >> 3) & 3, pkt & 7 },
                                      {pkt & 7 , (pkt >> 3) & 3, pkt >> 5}};

@@ -89,12 +89,12 @@ static void encode_rgb48_10bit(AVCodecContext *avctx, const AVPicture *pic,
             int value;
             if ((avctx->pix_fmt & 1)) {
                 value = ((AV_RB16(src + 6*x + 4) & 0xFFC0) >> 4)
-                      | ((AV_RB16(src + 6*x + 2) & 0xFFC0) << 6)
-                      | ((AV_RB16(src + 6*x + 0) & 0xFFC0) << 16);
+                      | ((AV_RB16(src + 6 * x + 2) & 0xFFC0) * (1 << 6))
+                      | ((AV_RB16(src + 6 * x + 0) & 0xFFC0) * (1 << 16));
             } else {
                 value = ((AV_RL16(src + 6*x + 4) & 0xFFC0) >> 4)
-                      | ((AV_RL16(src + 6*x + 2) & 0xFFC0) << 6)
-                      | ((AV_RL16(src + 6*x + 0) & 0xFFC0) << 16);
+                      | ((AV_RL16(src + 6 * x + 2) & 0xFFC0) * (1 << 6))
+                      | ((AV_RL16(src + 6 * x + 0) & 0xFFC0) * (1 << 16));
             }
             write32(dst, value);
             dst += 4;

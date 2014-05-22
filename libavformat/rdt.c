@@ -261,7 +261,7 @@ ff_rdt_parse_header(const uint8_t *buf, int len,
      * [2] http://www.wireshark.org/docs/dfref/r/rdt.html and
      *     http://anonsvn.wireshark.org/viewvc/trunk/epan/dissectors/packet-rdt.c
      */
-    init_get_bits(&gb, buf, len << 3);
+    init_get_bits(&gb, buf, len * (1 << 3));
     len_included  = get_bits1(&gb);
     need_reliable = get_bits1(&gb);
     set_id        = get_bits(&gb, 5);

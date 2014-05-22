@@ -186,8 +186,8 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                 tprev = prev + x;
 
                 zmbv_me(c, tsrc, p->linesize[0], tprev, c->pstride, x, y, &mx, &my, &xored);
-                mv[0] = (mx << 1) | !!xored;
-                mv[1] = my << 1;
+                mv[0] = (mx * (1 << 1)) | !!xored;
+                mv[1] = my * (1 << 1);
                 tprev += mx + my * c->pstride;
                 if(xored){
                     for(j = 0; j < bh2; j++){

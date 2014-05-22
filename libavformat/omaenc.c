@@ -73,13 +73,13 @@ static av_cold int oma_write_header(AVFormatContext *s)
             return AVERROR(EINVAL);
         }
         avio_wb32(s->pb, (OMA_CODECID_ATRAC3 << 24) |
-                         (isjointstereo << 17) |
-                         (srate_index << 13) |
+                         (isjointstereo * (1 << 17)) |
+                         (srate_index * (1 << 13)) |
                          (format->block_align/8));
         break;
     case OMA_CODECID_ATRAC3P:
         avio_wb32(s->pb, (OMA_CODECID_ATRAC3P << 24) |
-                         (srate_index << 13) |
+                         (srate_index * (1 << 13)) |
                          (format->channels << 10) |
                          (format->block_align/8 - 1));
         break;

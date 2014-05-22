@@ -79,7 +79,7 @@ int avpriv_mpegaudio_decode_header(MPADecodeHeader *s, uint32_t header)
             break;
         default:
         case 3:
-            frame_size = (frame_size * 144000) / (sample_rate << s->lsf);
+            frame_size = (frame_size * 144000) / (sample_rate * (1 << s->lsf));
             frame_size += padding;
             break;
         }

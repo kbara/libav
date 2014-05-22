@@ -74,15 +74,15 @@ static int find_expected_header(AVCodecContext *c, int size, int key_frame,
         for (bitrate_index = 2; bitrate_index < 30; bitrate_index++) {
             frame_size =
                 avpriv_mpa_bitrate_tab[lsf][layer - 1][bitrate_index >> 1];
-            frame_size = (frame_size * 144000) / (sample_rate << lsf) +
+            frame_size = (frame_size * 144000) / (sample_rate * (1 << lsf)) +
                 (bitrate_index & 1);
 
             if (frame_size == size)
                 break;
         }
 
-        header |= (!lsf) << 19;
-        header |= (4 - layer) << 17;
+        header |= (!lsf) * (1 << 19);
+        header |= (4 - layer) * (1 << 17);
         header |= 1 << 16; //no crc
         AV_WB32(out, header);
         if (size <= 0)
@@ -90,9 +90,9 @@ static int find_expected_header(AVCodecContext *c, int size, int key_frame,
         if (bitrate_index == 30)
             return -1;  //something is wrong ...
 
-        header |= (bitrate_index >> 1) << 12;
-        header |= sample_rate_index << 10;
-        header |= (bitrate_index & 1) << 9;
+        header |= (bitrate_index >> 1) * (1 << 12);
+        header |= sample_rate_index * (1 << 10);
+        header |= (bitrate_index & 1) * (1 << 9);
 
         return 2; //FIXME actually put the needed ones in build_elision_headers()
         //return 3; //we guess that the private bit is not set

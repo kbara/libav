@@ -48,7 +48,7 @@ void ff_lag_rac_init(lag_rac *l, GetBitContext *gb, int length)
     l->hash_shift   = FFMAX(l->scale - 8, 0);
 
     for (i = j = 0; i < 256; i++) {
-        unsigned r = i << l->hash_shift;
+        unsigned r = i * (1 << l->hash_shift);
         while (l->prob[j + 1] <= r)
             j++;
         l->range_hash[i] = j;

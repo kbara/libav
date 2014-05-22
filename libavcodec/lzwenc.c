@@ -74,7 +74,7 @@ const int ff_lzw_encode_state_size = sizeof(LZWEncodeState);
  */
 static inline int hash(int head, const int add)
 {
-    head ^= (add << LZW_HASH_SHIFT);
+    head ^= (add * (1 << LZW_HASH_SHIFT));
     if (head >= LZW_HASH_SIZE)
         head -= LZW_HASH_SIZE;
     assert(head >= 0 && head < LZW_HASH_SIZE);

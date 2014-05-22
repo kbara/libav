@@ -225,7 +225,7 @@ static av_cold int utvideo_encode_init(AVCodecContext *avctx)
      * - Compression mode (none/huff)
      * And write the flags.
      */
-    c->flags  = (c->slices - 1) << 24;
+    c->flags  = (c->slices - 1) * (1 << 24);
     c->flags |= 0 << 11; // bit field to signal interlaced encoding mode
     c->flags |= c->compression;
 
@@ -615,7 +615,7 @@ static int utvideo_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
      * into the output packet.
      * Contains the prediction method.
      */
-    frame_info = c->frame_pred << 8;
+    frame_info = c->frame_pred * (1 << 8);
     bytestream2_put_le32(&pb, frame_info);
 
     /*

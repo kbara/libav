@@ -58,19 +58,19 @@ static void qpeg_decode_intra(QpegContext *qctx, uint8_t *dst,
         if(code >= 0xF8) { /* very long run */
             c0 = bytestream2_get_byte(&qctx->buffer);
             c1 = bytestream2_get_byte(&qctx->buffer);
-            run = ((code & 0x7) << 16) + (c0 << 8) + c1 + 2;
+            run = ((code & 0x7) * (1 << 16)) + (c0 * (1 << 8)) + c1 + 2;
         } else if (code >= 0xF0) { /* long run */
             c0 = bytestream2_get_byte(&qctx->buffer);
-            run = ((code & 0xF) << 8) + c0 + 2;
+            run = ((code & 0xF) * (1 << 8)) + c0 + 2;
         } else if (code >= 0xE0) { /* short run */
             run = (code & 0x1F) + 2;
         } else if (code >= 0xC0) { /* very long copy */
             c0 = bytestream2_get_byte(&qctx->buffer);
             c1 = bytestream2_get_byte(&qctx->buffer);
-            copy = ((code & 0x3F) << 16) + (c0 << 8) + c1 + 1;
+            copy = ((code & 0x3F) * (1 << 16)) + (c0 * (1 << 8)) + c1 + 1;
         } else if (code >= 0x80) { /* long copy */
             c0 = bytestream2_get_byte(&qctx->buffer);
-            copy = ((code & 0x7F) << 8) + c0 + 1;
+            copy = ((code & 0x7F) * (1 << 8)) + c0 + 1;
         } else { /* short copy */
             copy = code + 1;
         }

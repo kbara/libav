@@ -226,9 +226,9 @@ static int dx2_decode_slice_565(GetBitContext *gb, int width, int height,
             b = decode_sym_565(gb, lru[0], 5);
             g = decode_sym_565(gb, lru[1], is_565 ? 6 : 5);
             r = decode_sym_565(gb, lru[2], 5);
-            dst[x * 3 + 0] = (r << 3) | (r >> 2);
-            dst[x * 3 + 1] = is_565 ? (g << 2) | (g >> 4) : (g << 3) | (g >> 2);
-            dst[x * 3 + 2] = (b << 3) | (b >> 2);
+            dst[x * 3 + 0] = (r * (1 << 3)) | (r >> 2);
+            dst[x * 3 + 1] = is_565 ? (g * (1 << 2)) | (g >> 4) : (g * (1 << 3)) | (g >> 2);
+            dst[x * 3 + 2] = (b * (1 << 3)) | (b >> 2);
         }
 
         dst += stride;
@@ -397,7 +397,7 @@ static int dx2_decode_slice_410(GetBitContext *gb, int width, int height,
             V[x >> 2] = decode_sym(gb, lru[2]) ^ 0x80;
         }
 
-        Y += ystride << 2;
+        Y += ystride * (1 << 2);
         U += ustride;
         V += vstride;
     }
@@ -501,7 +501,7 @@ static int dx2_decode_slice_420(GetBitContext *gb, int width, int height,
             V[x >> 1] = decode_sym(gb, lru[2]) ^ 0x80;
         }
 
-        Y += ystride << 1;
+        Y += ystride * (1 << 1);
         U += ustride;
         V += vstride;
     }

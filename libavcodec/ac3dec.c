@@ -110,7 +110,7 @@ static const uint8_t ac3_default_coeffs[8][5][2] = {
 static inline int
 symmetric_dequant(int code, int levels)
 {
-    return ((code - (levels >> 1)) << 24) / levels;
+    return ((code - (levels >> 1)) * (1 << 24)) / levels;
 }
 
 /*
@@ -160,7 +160,7 @@ static av_cold void ac3_tables_init(void)
     /* generate dynamic range table
        reference: Section 7.7.1 Dynamic Range Control */
     for (i = 0; i < 256; i++) {
-        int v = (i >> 5) - ((i >> 7) << 3) - 5;
+        int v = (i >> 5) - ((i >> 7) * (1 << 3)) - 5;
         dynamic_range_tab[i] = powf(2.0f, v) * ((i & 0x1F) | 0x20);
     }
 }
@@ -988,9 +988,9 @@ static int decode_audio_block(AC3DecodeContext *s, int blk)
                         cpl_coord_exp = get_bits(gbc, 4);
                         cpl_coord_mant = get_bits(gbc, 4);
                         if (cpl_coord_exp == 15)
-                            s->cpl_coords[ch][bnd] = cpl_coord_mant << 22;
+                            s->cpl_coords[ch][bnd] = cpl_coord_mant * (1 << 22);
                         else
-                            s->cpl_coords[ch][bnd] = (cpl_coord_mant + 16) << 21;
+                            s->cpl_coords[ch][bnd] = (cpl_coord_mant + 16) * (1 << 21);
                         s->cpl_coords[ch][bnd] >>= (cpl_coord_exp + master_cpl_coord);
                     }
                 } else if (!blk) {
@@ -1103,11 +1103,11 @@ static int decode_audio_block(AC3DecodeContext *s, int blk)
         if (s->snr_offset_strategy && get_bits1(gbc)) {
             int snr = 0;
             int csnr;
-            csnr = (get_bits(gbc, 6) - 15) << 4;
+            csnr = (get_bits(gbc, 6) - 15) * (1 << 4);
             for (i = ch = !cpl_in_use; ch <= s->channels; ch++) {
                 /* snr offset */
                 if (ch == i || s->snr_offset_strategy == 2)
-                    snr = (csnr + get_bits(gbc, 4)) << 2;
+                    snr = (csnr + get_bits(gbc, 4)) * (1 << 2);
                 /* run at least last bit allocation stage if snr offset changes */
                 if (blk && s->snr_offset[ch] != snr) {
                     bit_alloc_stages[ch] = FFMAX(bit_alloc_stages[ch], 1);

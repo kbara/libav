@@ -57,7 +57,7 @@ static void dct_unquantize_h263_intra_armv5te(MpegEncContext *s,
 
     assert(s->block_last_index[n]>=0);
 
-    qmul = qscale << 1;
+    qmul = qscale * (1 << 1);
 
     if (!s->h263_aic) {
         if (n < 4)
@@ -87,7 +87,7 @@ static void dct_unquantize_h263_inter_armv5te(MpegEncContext *s,
     assert(s->block_last_index[n]>=0);
 
     qadd = (qscale - 1) | 1;
-    qmul = qscale << 1;
+    qmul = qscale * (1 << 1);
 
     nCoeffs= s->inter_scantable.raster_end[ s->block_last_index[n] ];
 

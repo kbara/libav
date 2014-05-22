@@ -119,7 +119,7 @@ static int decode_rle(AVCodecContext *avctx, AVSubtitle *sub,
             flags = bytestream_get_byte(&buf);
             run   = flags & 0x3f;
             if (flags & 0x40)
-                run = (run << 8) + bytestream_get_byte(&buf);
+                run = (run * (1 << 8)) + bytestream_get_byte(&buf);
             color = flags & 0x80 ? bytestream_get_byte(&buf) : 0;
         }
 

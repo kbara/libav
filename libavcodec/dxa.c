@@ -120,8 +120,8 @@ static int decode_13(AVCodecContext *avctx, DxaDecContext *c, uint8_t* dst,
             case 8: // subblocks - method 13 only
                 mask = *msk++;
                 for(k = 0; k < 4; k++){
-                    d  = ((k & 1) << 1) + ((k & 2) * stride);
-                    d2 = ((k & 1) << 1) + ((k & 2) * stride);
+                    d  = ((k & 1) * (1 << 1)) + ((k & 2) * stride);
+                    d2 = ((k & 1) * (1 << 1)) + ((k & 2) * stride);
                     tmp2 = ref + i + d2;
                     switch(mask & 0xC0){
                     case 0x80: // motion compensation
@@ -211,7 +211,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame, AVPac
             r = *buf++;
             g = *buf++;
             b = *buf++;
-            c->pal[i] = (r << 16) | (g << 8) | b;
+            c->pal[i] = (r * (1 << 16)) | (g * (1 << 8)) | b;
         }
         pc = 1;
         buf_size -= 768+4;

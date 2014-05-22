@@ -75,7 +75,7 @@ static int mm_decode_pal(MmContext *s)
     bytestream2_skip(&s->gb, 4);
     for (i = 0; i < 128; i++) {
         s->palette[i] = bytestream2_get_be24(&s->gb);
-        s->palette[i+128] = s->palette[i]<<2;
+        s->palette[i+128] = s->palette[i] * (1 << 2);
     }
 
     return 0;
@@ -139,7 +139,7 @@ static int mm_decode_inter(MmContext * s, int half_horiz, int half_vert)
     while (s->gb.buffer < data_ptr.buffer_start) {
         int i, j;
         int length = bytestream2_get_byte(&s->gb);
-        int x = bytestream2_get_byte(&s->gb) + ((length & 0x80) << 1);
+        int x = bytestream2_get_byte(&s->gb) + ((length & 0x80) * (1 << 1));
         length &= 0x7F;
 
         if (length==0) {

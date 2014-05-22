@@ -261,7 +261,7 @@ static void restore_median_il(uint8_t *src, int step, int stride,
     uint8_t *bsrc;
     int slice_start, slice_height;
     const int cmask   = ~(rmode ? 3 : 1);
-    const int stride2 = stride << 1;
+    const int stride2 = stride * (1 << 1);
 
     for (slice = 0; slice < slices; slice++) {
         slice_start    = ((slice * height) / slices) & cmask;

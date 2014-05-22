@@ -161,7 +161,7 @@ static int update_prob(VP56RangeCoder *c, int p)
     } else {
         d = vp8_rac_get_uint(c, 7);
         if (d >= 65) {
-            d = (d << 1) - 65 + vp8_rac_get(c);
+            d = (d * (1 << 1)) - 65 + vp8_rac_get(c);
             d = av_clip(d, 0, MAX_PROB - 65 - 1);
         }
         d += 64;
@@ -601,26 +601,26 @@ static int decode_frame_header(AVCodecContext *avctx,
         // mv fields don't use the update_prob subexp model for some reason
         for (i = 0; i < 3; i++)
             if (vp56_rac_get_prob_branchy(&s->c, 252))
-                s->prob.p.mv_joint[i] = (vp8_rac_get_uint(&s->c, 7) << 1) | 1;
+                s->prob.p.mv_joint[i] = (vp8_rac_get_uint(&s->c, 7) * (1 << 1)) | 1;
 
         for (i = 0; i < 2; i++) {
             if (vp56_rac_get_prob_branchy(&s->c, 252))
                 s->prob.p.mv_comp[i].sign =
-                    (vp8_rac_get_uint(&s->c, 7) << 1) | 1;
+                    (vp8_rac_get_uint(&s->c, 7) * (1 << 1)) | 1;
 
             for (j = 0; j < 10; j++)
                 if (vp56_rac_get_prob_branchy(&s->c, 252))
                     s->prob.p.mv_comp[i].classes[j] =
-                        (vp8_rac_get_uint(&s->c, 7) << 1) | 1;
+                        (vp8_rac_get_uint(&s->c, 7) * (1 << 1)) | 1;
 
             if (vp56_rac_get_prob_branchy(&s->c, 252))
                 s->prob.p.mv_comp[i].class0 =
-                    (vp8_rac_get_uint(&s->c, 7) << 1) | 1;
+                    (vp8_rac_get_uint(&s->c, 7) * (1 << 1)) | 1;
 
             for (j = 0; j < 10; j++)
                 if (vp56_rac_get_prob_branchy(&s->c, 252))
                     s->prob.p.mv_comp[i].bits[j] =
-                        (vp8_rac_get_uint(&s->c, 7) << 1) | 1;
+                        (vp8_rac_get_uint(&s->c, 7) * (1 << 1)) | 1;
         }
 
         for (i = 0; i < 2; i++) {
@@ -628,23 +628,23 @@ static int decode_frame_header(AVCodecContext *avctx,
                 for (k = 0; k < 3; k++)
                     if (vp56_rac_get_prob_branchy(&s->c, 252))
                         s->prob.p.mv_comp[i].class0_fp[j][k] =
-                            (vp8_rac_get_uint(&s->c, 7) << 1) | 1;
+                            (vp8_rac_get_uint(&s->c, 7) * (1 << 1)) | 1;
 
             for (j = 0; j < 3; j++)
                 if (vp56_rac_get_prob_branchy(&s->c, 252))
                     s->prob.p.mv_comp[i].fp[j] =
-                        (vp8_rac_get_uint(&s->c, 7) << 1) | 1;
+                        (vp8_rac_get_uint(&s->c, 7) * (1 << 1)) | 1;
         }
 
         if (s->highprecisionmvs) {
             for (i = 0; i < 2; i++) {
                 if (vp56_rac_get_prob_branchy(&s->c, 252))
                     s->prob.p.mv_comp[i].class0_hp =
-                        (vp8_rac_get_uint(&s->c, 7) << 1) | 1;
+                        (vp8_rac_get_uint(&s->c, 7) * (1 << 1)) | 1;
 
                 if (vp56_rac_get_prob_branchy(&s->c, 252))
                     s->prob.p.mv_comp[i].hp =
-                        (vp8_rac_get_uint(&s->c, 7) << 1) | 1;
+                        (vp8_rac_get_uint(&s->c, 7) * (1 << 1)) | 1;
             }
         }
     }
@@ -658,7 +658,7 @@ static int decode_subblock(AVCodecContext *avctx, int row, int col,
 {
     VP9Context *s = avctx->priv_data;
     int c = ((s->above_partition_ctx[col]       >> (3 - bl)) & 1) |
-            (((s->left_partition_ctx[row & 0x7] >> (3 - bl)) & 1) << 1);
+            (((s->left_partition_ctx[row & 0x7] >> (3 - bl)) & 1) * (1 << 1));
     int ret;
     const uint8_t *p = s->keyframe ? ff_vp9_default_kf_partition_probs[bl][c]
                                    : s->prob.p.partition[bl][c];
@@ -793,7 +793,7 @@ static void loopfilter_subblock(AVCodecContext *avctx, VP9Filter *lflvl,
                         }
                     } else if (hm2 & x) {
                         L  = l[8];
-                        H |= (L >> 4) << 8;
+                        H |= (L >> 4) * (1 << 8);
                         E |= s->filter.mblim_lut[L] << 8;
                         I |= s->filter.lim_lut[L] << 8;
                         s->dsp.loop_filter_mix2[!!(hmask1[1] & x)]
@@ -819,7 +819,7 @@ static void loopfilter_subblock(AVCodecContext *avctx, VP9Filter *lflvl,
 
                 if (hm23 & x) {
                     L  = l[8];
-                    H |= (L >> 4) << 8;
+                    H |= (L >> 4) * (1 << 8);
                     E |= s->filter.mblim_lut[L] << 8;
                     I |= s->filter.lim_lut[L] << 8;
                     s->dsp.loop_filter_mix2[0][0][0](ptr + 4, ls_y, E, I, H);
@@ -851,29 +851,29 @@ static void loopfilter_subblock(AVCodecContext *avctx, VP9Filter *lflvl,
                     int E = s->filter.mblim_lut[L], I = s->filter.lim_lut[L];
 
                     if (vmask[0] & x) {
-                        if (vmask[0] & (x << 1)) {
+                        if (vmask[0] & (x * (1 << 1))) {
                             av_assert2(l[1] == L);
                             s->dsp.loop_filter_16[1](ptr, ls_y, E, I, H);
                         } else {
                             s->dsp.loop_filter_8[2][1](ptr, ls_y, E, I, H);
                         }
-                    } else if (vm & (x << 1)) {
+                    } else if (vm & (x * (1 << 1))) {
                         L  = l[1];
-                        H |= (L >> 4) << 8;
+                        H |= (L >> 4) * (1 << 8);
                         E |= s->filter.mblim_lut[L] << 8;
                         I |= s->filter.lim_lut[L] << 8;
                         s->dsp.loop_filter_mix2[!!(vmask[1] &  x)]
-                                               [!!(vmask[1] & (x << 1))]
+                                               [!!(vmask[1] & (x * (1 << 1)))]
                                                [1](ptr, ls_y, E, I, H);
                     } else {
                         s->dsp.loop_filter_8[!!(vmask[1] & x)]
                                             [1](ptr, ls_y, E, I, H);
                     }
-                } else if (vm & (x << 1)) {
+                } else if (vm & (x * (1 << 1))) {
                     int L = l[1], H = L >> 4;
                     int E = s->filter.mblim_lut[L], I = s->filter.lim_lut[L];
 
-                    s->dsp.loop_filter_8[!!(vmask[1] & (x << 1))]
+                    s->dsp.loop_filter_8[!!(vmask[1] & (x * (1 << 1)))]
                                         [1](ptr + 8, ls_y, E, I, H);
                 }
             }
@@ -881,16 +881,16 @@ static void loopfilter_subblock(AVCodecContext *avctx, VP9Filter *lflvl,
                 int L = *l, H = L >> 4;
                 int E = s->filter.mblim_lut[L], I = s->filter.lim_lut[L];
 
-                if (vm3 & (x << 1)) {
+                if (vm3 & (x * (1 << 1))) {
                     L  = l[1];
-                    H |= (L >> 4) << 8;
+                    H |= (L >> 4) * (1 << 8);
                     E |= s->filter.mblim_lut[L] << 8;
                     I |= s->filter.lim_lut[L] << 8;
                     s->dsp.loop_filter_mix2[0][0][1](ptr + ls_y * 4, ls_y, E, I, H);
                 } else {
                     s->dsp.loop_filter_8[0][1](ptr + ls_y * 4, ls_y, E, I, H);
                 }
-            } else if (vm3 & (x << 1)) {
+            } else if (vm3 & (x * (1 << 1))) {
                 int L = l[1], H = L >> 4;
                 int E = s->filter.mblim_lut[L], I = s->filter.lim_lut[L];
 
@@ -925,7 +925,7 @@ static void loopfilter_subblock(AVCodecContext *avctx, VP9Filter *lflvl,
                             }
                         } else if (hm2 & x) {
                             L  = l[16];
-                            H |= (L >> 4) << 8;
+                            H |= (L >> 4) * (1 << 8);
                             E |= s->filter.mblim_lut[L] << 8;
                             I |= s->filter.lim_lut[L] << 8;
                             s->dsp.loop_filter_mix2[!!(hmask1[1] & x)]
@@ -962,30 +962,30 @@ static void loopfilter_subblock(AVCodecContext *avctx, VP9Filter *lflvl,
                         int I = s->filter.lim_lut[L];
 
                         if (vmask[0] & x) {
-                            if (vmask[0] & (x << 2)) {
+                            if (vmask[0] & (x * (1 << 2))) {
                                 av_assert2(l[2] == L);
                                 s->dsp.loop_filter_16[1](ptr, ls_uv, E, I, H);
                             } else {
                                 s->dsp.loop_filter_8[2][1](ptr, ls_uv, E, I, H);
                             }
-                        } else if (vm & (x << 2)) {
+                        } else if (vm & (x * (1 << 2))) {
                             L  = l[2];
-                            H |= (L >> 4) << 8;
+                            H |= (L >> 4) * (1 << 8);
                             E |= s->filter.mblim_lut[L] << 8;
                             I |= s->filter.lim_lut[L] << 8;
                             s->dsp.loop_filter_mix2[!!(vmask[1] &  x)]
-                                                   [!!(vmask[1] & (x << 2))]
+                                                   [!!(vmask[1] & (x * (1 << 2)))]
                                                    [1](ptr, ls_uv, E, I, H);
                         } else {
                             s->dsp.loop_filter_8[!!(vmask[1] & x)]
                                                 [1](ptr, ls_uv, E, I, H);
                         }
-                    } else if (vm & (x << 2)) {
+                    } else if (vm & (x * (1 << 2))) {
                         int L = l[2], H = L >> 4;
                         int E = s->filter.mblim_lut[L];
                         int I = s->filter.lim_lut[L];
 
-                        s->dsp.loop_filter_8[!!(vmask[1] & (x << 2))]
+                        s->dsp.loop_filter_8[!!(vmask[1] & (x * (1 << 2)))]
                                             [1](ptr + 8, ls_uv, E, I, H);
                     }
                 }

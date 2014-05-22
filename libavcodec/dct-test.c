@@ -163,7 +163,7 @@ static void idct_mmx_init(void)
 
     /* the mmx/mmxext idct uses a reordered input, so we patch scan tables */
     for (i = 0; i < 64; i++) {
-        idct_mmx_perm[i] = (i & 0x38) | ((i & 6) >> 1) | ((i & 1) << 2);
+        idct_mmx_perm[i] = (i & 0x38) | ((i & 6) >> 1) | ((i & 1) * (1 << 2));
     }
 }
 
@@ -213,7 +213,7 @@ static void permute(int16_t dst[64], const int16_t src[64], int perm)
             dst[(i & 0x38) | idct_sse2_row_perm[i & 7]] = src[i];
     } else if (perm == PARTTRANS_PERM) {
         for (i = 0; i < 64; i++)
-            dst[(i & 0x24) | ((i & 3) << 3) | ((i >> 3) & 3)] = src[i];
+            dst[(i & 0x24) | ((i & 3) * (1 << 3)) | ((i >> 3) & 3)] = src[i];
     } else {
         for (i = 0; i < 64; i++)
             dst[i] = src[i];

@@ -340,12 +340,12 @@ int ff_rtmp_packet_write(URLContext *h, RTMPPacket *pkt,
     }
 
     if (pkt->channel_id < 64) {
-        bytestream_put_byte(&p, pkt->channel_id | (mode << 6));
+        bytestream_put_byte(&p, pkt->channel_id | (mode * (1 << 6)));
     } else if (pkt->channel_id < 64 + 256) {
-        bytestream_put_byte(&p, 0               | (mode << 6));
+        bytestream_put_byte(&p, 0               | (mode * (1 << 6)));
         bytestream_put_byte(&p, pkt->channel_id - 64);
     } else {
-        bytestream_put_byte(&p, 1               | (mode << 6));
+        bytestream_put_byte(&p, 1               | (mode * (1 << 6)));
         bytestream_put_le16(&p, pkt->channel_id - 64);
     }
     if (mode != RTMP_PS_ONEBYTE) {

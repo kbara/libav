@@ -84,8 +84,8 @@ static int decode_tsw1(GetByteContext *gb, uint8_t *frame, int width, int height
             return AVERROR_INVALIDDATA;
         if (bitbuf & mask) {
             v = bytestream2_get_le16(gb);
-            offset = (v & 0x1FFF) << 1;
-            count = ((v >> 13) + 2) << 1;
+            offset = (v & 0x1FFF) * (1 << 1);
+            count = ((v >> 13) + 2) * (1 << 1);
             if (frame - frame_start < offset || frame_end - frame < count)
                 return AVERROR_INVALIDDATA;
             av_memcpy_backptr(frame, offset, count);
@@ -119,13 +119,13 @@ static int decode_dsw1(GetByteContext *gb, uint8_t *frame, int width, int height
             return AVERROR_INVALIDDATA;
         if (bitbuf & mask) {
             v = bytestream2_get_le16(gb);
-            offset = (v & 0x1FFF) << 1;
-            count = ((v >> 13) + 2) << 1;
+            offset = (v & 0x1FFF) * (1 << 1);
+            count = ((v >> 13) + 2) * (1 << 1);
             if (frame - frame_start < offset || frame_end - frame < count)
                 return AVERROR_INVALIDDATA;
             av_memcpy_backptr(frame, offset, count);
             frame += count;
-        } else if (bitbuf & (mask << 1)) {
+        } else if (bitbuf & (mask * (1 << 1))) {
             frame += bytestream2_get_le16(gb);
         } else {
             *frame++ = bytestream2_get_byte(gb);
@@ -155,8 +155,8 @@ static int decode_dds1(GetByteContext *gb, uint8_t *frame, int width, int height
 
         if (bitbuf & mask) {
             v = bytestream2_get_le16(gb);
-            offset = (v & 0x1FFF) << 2;
-            count = ((v >> 13) + 2) << 1;
+            offset = (v & 0x1FFF) * (1 << 2);
+            count = ((v >> 13) + 2) * (1 << 1);
             if (frame - frame_start < offset || frame_end - frame < count*2 + width)
                 return AVERROR_INVALIDDATA;
             for (i = 0; i < count; i++) {
@@ -165,7 +165,7 @@ static int decode_dds1(GetByteContext *gb, uint8_t *frame, int width, int height
 
                 frame += 2;
             }
-        } else if (bitbuf & (mask << 1)) {
+        } else if (bitbuf & (mask * (1 << 1))) {
             v = bytestream2_get_le16(gb)*2;
             if (frame - frame_end < v)
                 return AVERROR_INVALIDDATA;

@@ -85,8 +85,8 @@ static int same_prediction_block(HEVCLocalContext *lc, int log2_cb_size,
                                  int x0, int y0, int nPbW, int nPbH,
                                  int xA1, int yA1, int partIdx)
 {
-    return !(nPbW << 1 == 1 << log2_cb_size &&
-             nPbH << 1 == 1 << log2_cb_size && partIdx == 1 &&
+    return !(nPbW * (1 << 1) == 1 << log2_cb_size &&
+             nPbH * (1 << 1) == 1 << log2_cb_size && partIdx == 1 &&
              lc->cu.x + nPbW > xA1 &&
              lc->cu.y + nPbH <= yA1);
 }
@@ -271,8 +271,8 @@ static int temporal_luma_motion_vector(HEVCContext *s, int x0, int y0,
         (y0 >> s->sps->log2_ctb_size) == (y >> s->sps->log2_ctb_size) &&
         y < s->sps->height &&
         x < s->sps->width) {
-        x                  = ((x >> 4) << 4);
-        y                  = ((y >> 4) << 4);
+        x                  = ((x >> 4) * (1 << 4));
+        y                  = ((y >> 4) * (1 << 4));
         x_pu               = x >> s->sps->log2_min_pu_size;
         y_pu               = y >> s->sps->log2_min_pu_size;
         temp_col           = TAB_MVF(x_pu, y_pu);
@@ -283,8 +283,8 @@ static int temporal_luma_motion_vector(HEVCContext *s, int x0, int y0,
     if (tab_mvf && !availableFlagLXCol) {
         x                  = x0 + (nPbW >> 1);
         y                  = y0 + (nPbH >> 1);
-        x                  = ((x >> 4) << 4);
-        y                  = ((y >> 4) << 4);
+        x                  = ((x >> 4) * (1 << 4));
+        y                  = ((y >> 4) * (1 << 4));
         x_pu               = x >> s->sps->log2_min_pu_size;
         y_pu               = y >> s->sps->log2_min_pu_size;
         temp_col           = TAB_MVF(x_pu, y_pu);

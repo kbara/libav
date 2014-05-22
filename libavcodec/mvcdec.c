@@ -174,19 +174,19 @@ static int decode_mvc2(AVCodecContext *avctx, GetByteContext *gb,
         if ((p0 & 0x80)) {
             if ((p0 & 0x40)) {
                 p0 &= 0x3F;
-                p0  = (p0 << 2) | (p0 >> 4);
+                p0  = (p0 * (1 << 2)) | (p0 >> 4);
                 set_4x4_block(dst_start + y * linesize + x * 4, linesize,
-                              0xFF000000 | (p0 << 16) | (p0 << 8) | p0);
+                              0xFF000000 | (p0 * (1 << 16)) | (p0 * (1 << 8)) | p0);
             } else {
                 int g, r;
                 p0 &= 0x3F;
-                p0  = (p0 << 2) | (p0 >> 4);
+                p0  = (p0 * (1 << 2)) | (p0 >> 4);
                 if (bytestream2_get_bytes_left(gb) < 2)
                     return AVERROR_INVALIDDATA;
                 g = bytestream2_get_byteu(gb);
                 r = bytestream2_get_byteu(gb);
                 set_4x4_block(dst_start + y * linesize + x * 4, linesize,
-                              0xFF000000 | (r << 16) | (g << 8) | p0);
+                              0xFF000000 | (r * (1 << 16)) | (g * (1 << 8)) | p0);
             }
         } else {
             if (bytestream2_get_bytes_left(gb) < 1)

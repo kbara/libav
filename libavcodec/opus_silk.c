@@ -901,8 +901,9 @@ static inline int silk_is_lpc_stable(const int16_t lpc[16], int order)
         /* approximate 1.0/gaindiv */
         fbits = opus_ilog(gaindiv);
         gain  = ((1 << 29) - 1) / (gaindiv >> (fbits + 1 - 16)); // Q<fbits-16>
-        error = (1 << 29) - MULL(gaindiv << (15 + 16 - fbits), gain, 16);
-        gain  = ((gain << 16) + (error * gain >> 13));
+        error = (1 << 29) - MULL(gaindiv * (1 << (15 + 16 - fbits)), gain,
+                                 16);
+        gain  = ((gain * (1 << 16)) + (error * gain >> 13));
 
         /* switch to the next row of the LPC coefficients */
         prevrow = row;
@@ -992,7 +993,7 @@ static void silk_lsf2lpc(const int16_t nlsf[16], float lpcf[16], int order)
         for (k = 0; k < order; k++) {
             int x = (lpc32[k] + 16) >> 5;
             lpc[k] = av_clip_int16(x);
-            lpc32[k] = lpc[k] << 5; // shortcut mandated by the spec; drops lower 5 bits
+            lpc32[k] = lpc[k] * (1 << 5); // shortcut mandated by the spec; drops lower 5 bits
         }
     } else {
         for (k = 0; k < order; k++)
@@ -1068,7 +1069,7 @@ static inline void silk_decode_lpc(SilkContext *s, SilkFrame *frame,
         cur = codebook[i];
         prev = i ? codebook[i - 1] : 0;
         next = i + 1 < order ? codebook[i + 1] : 256;
-        weight_sq = (1024 / (cur - prev) + 1024 / (next - cur)) << 16;
+        weight_sq = (1024 / (cur - prev) + 1024 / (next - cur)) * (1 << 16);
 
         /* approximate square-root with mandated fixed-point arithmetic */
         ipart = opus_ilog(weight_sq);
@@ -1180,15 +1181,15 @@ static inline void silk_decode_excitation(SilkContext *s, OpusRangeCoder *rc,
     }
 
     /* decode least significant bits */
-    for (i = 0; i < shellblocks << 4; i++) {
+    for (i = 0; i < shellblocks * (1 << 4); i++) {
         int bit;
         for (bit = 0; bit < lsbcount[i >> 4]; bit++)
-            excitation[i] = (excitation[i] << 1) |
+            excitation[i] = (excitation[i] * (1 << 1)) |
                             opus_rc_getsymbol(rc, silk_model_excitation_lsb);
     }
 
     /* decode signs */
-    for (i = 0; i < shellblocks << 4; i++) {
+    for (i = 0; i < shellblocks * (1 << 4); i++) {
         if (excitation[i] != 0) {
             int sign = opus_rc_getsymbol(rc, silk_model_excitation_sign[active +
                                          voiced][qoffset_high][FFMIN(pulsecount[i >> 4], 6)]);
@@ -1198,7 +1199,7 @@ static inline void silk_decode_excitation(SilkContext *s, OpusRangeCoder *rc,
     }
 
     /* assemble the excitation */
-    for (i = 0; i < shellblocks << 4; i++) {
+    for (i = 0; i < shellblocks * (1 << 4); i++) {
         int value = excitation[i];
         excitation[i] = value * 256 | silk_quant_offset[voiced][qoffset_high];
         if (value < 0)      excitation[i] += 20;
@@ -1281,14 +1282,14 @@ static void silk_decode_frame(SilkContext *s, OpusRangeCoder *rc,
         if (i == 0 && (frame_num == 0 || !frame->coded)) {
             /* gain is coded absolute */
             int x = opus_rc_getsymbol(rc, silk_model_gain_highbits[active + voiced]);
-            log_gain = (x<<3) | opus_rc_getsymbol(rc, silk_model_gain_lowbits);
+            log_gain = (x * (1 << 3)) | opus_rc_getsymbol(rc, silk_model_gain_lowbits);
 
             if (frame->coded)
                 log_gain = FFMAX(log_gain, frame->log_gain - 16);
         } else {
             /* gain is coded relative */
             int delta_gain = opus_rc_getsymbol(rc, silk_model_gain_delta);
-            log_gain = av_clip(FFMAX((delta_gain<<1) - 16,
+            log_gain = av_clip(FFMAX((delta_gain * (1 << 1)) - 16,
                                      frame->log_gain + delta_gain - 4), 0, 63);
         }
 

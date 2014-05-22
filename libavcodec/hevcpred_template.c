@@ -73,7 +73,7 @@ do {                                  \
     int hshift = s->sps->hshift[c_idx];
     int vshift = s->sps->vshift[c_idx];
     int size = (1 << log2_size);
-    int size_in_luma = size << hshift;
+    int size_in_luma = size * (1 << hshift);
     int size_in_tbs = size_in_luma >> s->sps->log2_min_tb_size;
     int x = x0 >> hshift;
     int y = y0 >> vshift;
@@ -181,17 +181,17 @@ do {                                  \
 
     if (s->pps->constrained_intra_pred_flag == 1) {
         if (cand_bottom_left || cand_left || cand_up_left || cand_up || cand_up_right) {
-            int size_max_x = x0 + ((2 * size) << hshift) < s->sps->width ?
+            int size_max_x = x0 + ((2 * size) * (1 << hshift)) < s->sps->width ?
                                     2 * size : (s->sps->width - x0) >> hshift;
-            int size_max_y = y0 + ((2 * size) << vshift) < s->sps->height ?
+            int size_max_y = y0 + ((2 * size) * (1 << vshift)) < s->sps->height ?
                                     2 * size : (s->sps->height - y0) >> vshift;
             int j = size + (cand_bottom_left? bottom_left_size: 0) -1;
             if (!cand_up_right) {
-                size_max_x = x0 + ((size) << hshift) < s->sps->width ?
+                size_max_x = x0 + ((size) * (1 << hshift)) < s->sps->width ?
                                                     size : (s->sps->width - x0) >> hshift;
             }
             if (!cand_bottom_left) {
-                size_max_y = y0 + (( size) << vshift) < s->sps->height ?
+                size_max_y = y0 + ((size) * (1 << vshift)) < s->sps->height ?
                                                      size : (s->sps->height - y0) >> vshift;
             }
             if (cand_bottom_left || cand_left || cand_up_left) {

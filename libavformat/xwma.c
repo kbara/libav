@@ -236,7 +236,7 @@ static int xwma_read_header(AVFormatContext *s)
          * the total duration using the average bits per sample and the
          * total data length.
          */
-        st->duration = (size<<3) * st->codec->sample_rate / st->codec->bit_rate;
+        st->duration = (size * (1 << 3)) * st->codec->sample_rate / st->codec->bit_rate;
     }
 
     av_free(dpds_table);

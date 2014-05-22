@@ -162,7 +162,7 @@ static void guess_palette(DVDSubContext* ctx,
                 r = (((subtitle_color >> 16) & 0xff) * level) >> 8;
                 g = (((subtitle_color >> 8) & 0xff) * level) >> 8;
                 b = (((subtitle_color >> 0) & 0xff) * level) >> 8;
-                rgba_palette[i] = b | (g << 8) | (r << 16) | ((alpha[i] * 17) << 24);
+                rgba_palette[i] = b | (g * (1 << 8)) | (r * (1 << 16)) | ((alpha[i] * 17) << 24);
                 color_used[colormap[i]] = (i + 1);
                 j--;
             } else {
@@ -221,11 +221,11 @@ static int decode_dvd_subtitles(DVDSubContext *ctx, AVSubtitle *sub_header,
                 break;
             case 0x01:
                 /* set start date */
-                sub_header->start_display_time = (date << 10) / 90;
+                sub_header->start_display_time = (date * (1 << 10)) / 90;
                 break;
             case 0x02:
                 /* set end date */
-                sub_header->end_display_time = (date << 10) / 90;
+                sub_header->end_display_time = (date * (1 << 10)) / 90;
                 break;
             case 0x03:
                 /* set colormap */

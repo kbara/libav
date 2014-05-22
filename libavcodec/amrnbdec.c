@@ -254,7 +254,7 @@ static void lsf2lsp_for_mode12k2(AMRContext *p, double lsp[LP_FILTER_ORDER],
     int i;
 
     for (i = 0; i < LP_FILTER_ORDER >> 1; i++)
-        memcpy(&lsf_r[i << 1], &lsf_quantizer[i][quantizer_offset],
+        memcpy(&lsf_r[i * (1 << 1)], &lsf_quantizer[i][quantizer_offset],
                2 * sizeof(*lsf_r));
 
     if (sign) {
@@ -451,13 +451,13 @@ static void decode_8_pulses_31bits(const int16_t *fixed_index,
     pulse_position[7] = temp / 5;
     if (pulse_position[7] & 1)
         pulse_position[3] = 4 - pulse_position[3];
-    pulse_position[3] = (pulse_position[3] << 1) + ( fixed_index[6]       & 1);
-    pulse_position[7] = (pulse_position[7] << 1) + ((fixed_index[6] >> 1) & 1);
+    pulse_position[3] = (pulse_position[3] * (1 << 1)) + ( fixed_index[6]       & 1);
+    pulse_position[7] = (pulse_position[7] * (1 << 1)) + ((fixed_index[6] >> 1) & 1);
 
     fixed_sparse->n = 8;
     for (i = 0; i < 4; i++) {
-        const int pos1   = (pulse_position[i]     << 2) + i;
-        const int pos2   = (pulse_position[i + 4] << 2) + i;
+        const int pos1   = (pulse_position[i] * (1 << 2)) + i;
+        const int pos2   = (pulse_position[i + 4] * (1 << 2)) + i;
         const float sign = fixed_index[i] ? -1.0 : 1.0;
         fixed_sparse->x[i    ] = pos1;
         fixed_sparse->x[i + 4] = pos2;
@@ -496,12 +496,12 @@ static void decode_fixed_sparse(AMRFixed *fixed_sparse, const uint16_t *pulses,
         const int fixed_index = pulses[0];
 
         if (mode <= MODE_5k15) {
-            pulse_subset      = ((fixed_index >> 3) & 8)     + (subframe << 1);
+            pulse_subset      = ((fixed_index >> 3) & 8)     + (subframe * (1 << 1));
             pulse_position[0] = ( fixed_index       & 7) * 5 + track_position[pulse_subset];
             pulse_position[1] = ((fixed_index >> 3) & 7) * 5 + track_position[pulse_subset + 1];
             fixed_sparse->n = 2;
         } else if (mode == MODE_5k9) {
-            pulse_subset      = ((fixed_index & 1) << 1) + 1;
+            pulse_subset      = ((fixed_index & 1) * (1 << 1)) + 1;
             pulse_position[0] = ((fixed_index >> 1) & 7) * 5 + pulse_subset;
             pulse_subset      = (fixed_index  >> 4) & 3;
             pulse_position[1] = ((fixed_index >> 6) & 7) * 5 + pulse_subset + (pulse_subset == 3 ? 1 : 0);
@@ -680,7 +680,7 @@ static void apply_ir_filter(float *out, const AMRFixed *in,
 
         if (x >= AMR_SUBFRAME_SIZE - lag) {
             filterp = filter;
-        } else if (x >= AMR_SUBFRAME_SIZE - (lag << 1)) {
+        } else if (x >= AMR_SUBFRAME_SIZE - (lag * (1 << 1))) {
             filterp = filter1;
         } else
             filterp = filter2;

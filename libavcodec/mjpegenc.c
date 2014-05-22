@@ -406,7 +406,7 @@ static void encode_block(MpegEncContext *s, int16_t *block, int n)
             }
 
             nbits= av_log2(val) + 1;
-            code = (run << 4) | nbits;
+            code = (run * (1 << 4)) | nbits;
 
             put_bits(&s->pb, huff_size_ac[code], huff_code_ac[code]);
 

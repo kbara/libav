@@ -170,12 +170,13 @@ static void mpc8_parse_seektable(AVFormatContext *s, int64_t off)
         av_add_index_entry(s->streams[0], pos, i, 0, 0, AVINDEX_KEYFRAME);
     }
     for(; i < size; i++){
-        t = get_unary(&gb, 1, 33) << 12;
+        t = get_unary(&gb, 1, 33) * (1 << 12);
         t += get_bits(&gb, 12);
         if(t & 1)
             t = -(t & ~1);
         pos = (t >> 1) + ppos[0]*2 - ppos[1];
-        av_add_index_entry(s->streams[0], pos, i << seekd, 0, 0, AVINDEX_KEYFRAME);
+        av_add_index_entry(s->streams[0], pos, i * (1 << seekd), 0, 0,
+                           AVINDEX_KEYFRAME);
         ppos[1] = ppos[0];
         ppos[0] = pos;
     }

@@ -399,7 +399,7 @@ static int sbr_make_f_master(AACContext *ac, SpectralBandReplication *sbr,
         int dk, k2diff;
 
         dk = spectrum->bs_alter_scale + 1;
-        sbr->n_master = ((sbr->k[2] - sbr->k[0] + (dk&2)) >> dk) << 1;
+        sbr->n_master = ((sbr->k[2] - sbr->k[0] + (dk & 2)) >> dk) * (1 << 1);
         if (check_n_master(ac->avctx, sbr->n_master, sbr->spectrum_params.bs_xover_band))
             return -1;
 
@@ -1094,7 +1094,7 @@ int ff_decode_sbr_extension(AACContext *ac, SpectralBandReplication *sbr,
     if (sbr->start)
         num_sbr_bits  += read_sbr_data(ac, sbr, gb, id_aac);
 
-    num_align_bits = ((cnt << 3) - 4 - num_sbr_bits) & 7;
+    num_align_bits = ((cnt * (1 << 3)) - 4 - num_sbr_bits) & 7;
     bytes_read = ((num_sbr_bits + num_align_bits + 4) >> 3);
 
     if (bytes_read > cnt) {

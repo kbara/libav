@@ -233,7 +233,7 @@ static int bitplane_decoding(uint8_t* data, int *raw_flag, VC1Context *v)
         for (x = 0; x < stride * height; x++)
             planep[x] = !planep[x]; //FIXME stride
     }
-    return (imode << 1) + invert;
+    return (imode * (1 << 1)) + invert;
 }
 
 /** @} */ //Bitplane group
@@ -433,8 +433,8 @@ static int decode_sequence_header_adv(VC1Context *v, GetBitContext *gb)
     v->bitrtq_postproc       = get_bits(gb, 5); //common
     v->postprocflag          = get_bits1(gb);   //common
 
-    v->s.avctx->coded_width  = (get_bits(gb, 12) + 1) << 1;
-    v->s.avctx->coded_height = (get_bits(gb, 12) + 1) << 1;
+    v->s.avctx->coded_width  = (get_bits(gb, 12) + 1) * (1 << 1);
+    v->s.avctx->coded_height = (get_bits(gb, 12) + 1) * (1 << 1);
     v->s.avctx->width        = v->s.avctx->coded_width;
     v->s.avctx->height       = v->s.avctx->coded_height;
     v->broadcast             = get_bits1(gb);
@@ -546,8 +546,8 @@ int ff_vc1_decode_entry_point(AVCodecContext *avctx, VC1Context *v, GetBitContex
     }
 
     if (get_bits1(gb)) {
-        avctx->width  = avctx->coded_width  = (get_bits(gb, 12) + 1) << 1;
-        avctx->height = avctx->coded_height = (get_bits(gb, 12) + 1) << 1;
+        avctx->width  = avctx->coded_width  = (get_bits(gb, 12) + 1) * (1 << 1);
+        avctx->height = avctx->coded_height = (get_bits(gb, 12) + 1) * (1 << 1);
     }
     if (v->extended_mv)
         v->extended_dmv = get_bits1(gb);
@@ -575,13 +575,13 @@ int ff_vc1_decode_entry_point(AVCodecContext *avctx, VC1Context *v, GetBitContex
         int scale, shift, i;                                                  \
         if (!lumscale) {                                                      \
             scale = -64;                                                      \
-            shift = (255 - lumshift * 2) << 6;                                \
+            shift = (255 - lumshift * 2) * (1 << 6);                                \
             if (lumshift > 31)                                                \
                 shift += 128 << 6;                                            \
         } else {                                                              \
             scale = lumscale + 32;                                            \
             if (lumshift > 31)                                                \
-                shift = (lumshift - 64) << 6;                                 \
+                shift = (lumshift - 64) * (1 << 6);                                 \
             else                                                              \
                 shift = lumshift << 6;                                        \
         }                                                                     \

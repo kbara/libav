@@ -126,7 +126,7 @@ static int set_string_binary(void *obj, const AVOption *o, const char *val, uint
             av_free(bin);
             return AVERROR(EINVAL);
         }
-        *ptr++ = (a << 4) | b;
+        *ptr++ = (a * (1 << 4)) | b;
     }
     *dst = bin;
     *lendst = len;

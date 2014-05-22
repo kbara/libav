@@ -70,12 +70,11 @@ static av_always_inline int dv_rl2vlc(int run, int level, int sign, uint32_t* vl
             *vlc = dv_vlc_map[0][level].vlc | sign;
             size = dv_vlc_map[0][level].size;
         } else {
-            *vlc = 0xfe00 | (level << 1) | sign;
+            *vlc = 0xfe00 | (level * (1 << 1)) | sign;
             size = 16;
         }
         if (run) {
-            *vlc |= ((run < 16) ? dv_vlc_map[run-1][0].vlc :
-                                  (0x1f80 | (run - 1))) << size;
+            *vlc |= ((run < 16) ? dv_vlc_map[run - 1][0].vlc : (0x1f80 | (run - 1))) * (1 << size);
             size +=  (run < 16) ? dv_vlc_map[run-1][0].size : 13;
         }
     }
@@ -172,8 +171,10 @@ static av_always_inline int dv_guess_dct_mode(DVVideoContext *s, uint8_t *data, 
     if (s->avctx->flags & CODEC_FLAG_INTERLACED_DCT) {
         int ps = s->ildct_cmp(NULL, data, NULL, linesize, 8) - 400;
         if (ps > 0) {
-            int is = s->ildct_cmp(NULL, data           , NULL, linesize<<1, 4) +
-                     s->ildct_cmp(NULL, data + linesize, NULL, linesize<<1, 4);
+            int is = s->ildct_cmp(NULL, data           , NULL,
+                                  linesize * (1 << 1), 4) +
+                     s->ildct_cmp(NULL, data + linesize, NULL,
+                                  linesize * (1 << 1), 4);
             return ps > is;
         }
     }

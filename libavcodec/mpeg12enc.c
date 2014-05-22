@@ -968,12 +968,12 @@ av_cold void ff_mpeg1_encode_init(MpegEncContext *s)
             bits = ff_mpeg12_vlc_dc_lum_bits[index] + index;
             code = (ff_mpeg12_vlc_dc_lum_code[index] << index) +
                    (diff & ((1 << index) - 1));
-            mpeg1_lum_dc_uni[i + 255] = bits + (code << 8);
+            mpeg1_lum_dc_uni[i + 255] = bits + (code * (1 << 8));
 
             bits = ff_mpeg12_vlc_dc_chroma_bits[index] + index;
             code = (ff_mpeg12_vlc_dc_chroma_code[index] << index) +
                    (diff & ((1 << index) - 1));
-            mpeg1_chr_dc_uni[i + 255] = bits + (code << 8);
+            mpeg1_chr_dc_uni[i + 255] = bits + (code * (1 << 8));
         }
 
         for (f_code = 1; f_code <= MAX_FCODE; f_code++)

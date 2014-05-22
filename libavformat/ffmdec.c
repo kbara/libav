@@ -66,7 +66,7 @@ static int ffm_resync(AVFormatContext *s, int state)
             av_log(s, AV_LOG_ERROR, "cannot find FFM syncword\n");
             return -1;
         }
-        state = (state << 8) | avio_r8(s->pb);
+        state = (state * (1 << 8)) | avio_r8(s->pb);
     }
     return 0;
 }

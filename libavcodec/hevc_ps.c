@@ -1292,8 +1292,7 @@ int ff_hevc_decode_nal_pps(HEVCContext *s)
             int tb_x        = x >> sps->log2_diff_max_min_coding_block_size;
             int tb_y        = y >> sps->log2_diff_max_min_coding_block_size;
             int ctb_addr_rs = sps->ctb_width * tb_y + tb_x;
-            int val         = pps->ctb_addr_rs_to_ts[ctb_addr_rs] <<
-                              (sps->log2_diff_max_min_coding_block_size * 2);
+            int val         = pps->ctb_addr_rs_to_ts[ctb_addr_rs] * (1 << (sps->log2_diff_max_min_coding_block_size * 2));
             for (i = 0; i < sps->log2_diff_max_min_coding_block_size; i++) {
                 int m = 1 << i;
                 val += (m & x ? m * m : 0) + (m & y ? 2 * m * m : 0);
@@ -1308,8 +1307,7 @@ int ff_hevc_decode_nal_pps(HEVCContext *s)
             int tb_x        = x >> log2_diff_ctb_min_tb_size;
             int tb_y        = y >> log2_diff_ctb_min_tb_size;
             int ctb_addr_rs = sps->ctb_width * tb_y + tb_x;
-            int val         = pps->ctb_addr_rs_to_ts[ctb_addr_rs] <<
-                              (log2_diff_ctb_min_tb_size * 2);
+            int val         = pps->ctb_addr_rs_to_ts[ctb_addr_rs] * (1 << (log2_diff_ctb_min_tb_size * 2));
             for (i = 0; i < log2_diff_ctb_min_tb_size; i++) {
                 int m = 1 << i;
                 val += (m & x ? m * m : 0) + (m & y ? 2 * m * m : 0);

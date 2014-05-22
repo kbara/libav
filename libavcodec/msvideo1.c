@@ -129,7 +129,7 @@ static void msvideo1_decode_8bit(Msvideo1Context *s)
                 return;
             else if ((byte_b & 0xFC) == 0x84) {
                 /* skip code, but don't count the current block */
-                skip_blocks = ((byte_b - 0x84) << 8) + byte_a - 1;
+                skip_blocks = ((byte_b - 0x84) * (1 << 8)) + byte_a - 1;
             } else if (byte_b < 0x80) {
                 /* 2-color encoding */
                 flags = (byte_b << 8) | byte_a;
@@ -154,7 +154,7 @@ static void msvideo1_decode_8bit(Msvideo1Context *s)
                 for (pixel_y = 0; pixel_y < 4; pixel_y++) {
                     for (pixel_x = 0; pixel_x < 4; pixel_x++, flags >>= 1)
                         pixels[pixel_ptr++] =
-                            colors[((pixel_y & 0x2) << 1) +
+                            colors[((pixel_y & 0x2) * (1 << 1)) +
                                 (pixel_x & 0x2) + ((flags & 0x1) ^ 1)];
                     pixel_ptr -= row_dec;
                 }
@@ -229,7 +229,7 @@ static void msvideo1_decode_16bit(Msvideo1Context *s)
                 return;
             } else if ((byte_b & 0xFC) == 0x84) {
                 /* skip code, but don't count the current block */
-                skip_blocks = ((byte_b - 0x84) << 8) + byte_a - 1;
+                skip_blocks = ((byte_b - 0x84) * (1 << 8)) + byte_a - 1;
             } else if (byte_b < 0x80) {
                 /* 2- or 8-color encoding modes */
                 flags = (byte_b << 8) | byte_a;
@@ -259,7 +259,7 @@ static void msvideo1_decode_16bit(Msvideo1Context *s)
                     for (pixel_y = 0; pixel_y < 4; pixel_y++) {
                         for (pixel_x = 0; pixel_x < 4; pixel_x++, flags >>= 1)
                             pixels[pixel_ptr++] =
-                                colors[((pixel_y & 0x2) << 1) +
+                                colors[((pixel_y & 0x2) * (1 << 1)) +
                                     (pixel_x & 0x2) + ((flags & 0x1) ^ 1)];
                         pixel_ptr -= row_dec;
                     }

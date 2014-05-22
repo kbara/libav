@@ -1640,13 +1640,13 @@ static int matroska_read_header(AVFormatContext *s)
             extradata   = av_mallocz(5 + FF_INPUT_BUFFER_PADDING_SIZE);
             if (extradata == NULL)
                 return AVERROR(ENOMEM);
-            extradata[0] = (profile << 3) | ((sri & 0x0E) >> 1);
-            extradata[1] = ((sri & 0x01) << 7) | (track->audio.channels << 3);
+            extradata[0] = (profile * (1 << 3)) | ((sri & 0x0E) >> 1);
+            extradata[1] = ((sri & 0x01) * (1 << 7)) | (track->audio.channels << 3);
             if (strstr(track->codec_id, "SBR")) {
                 sri            = matroska_aac_sri(track->audio.out_samplerate);
                 extradata[2]   = 0x56;
                 extradata[3]   = 0xE5;
-                extradata[4]   = 0x80 | (sri << 3);
+                extradata[4]   = 0x80 | (sri * (1 << 3));
                 extradata_size = 5;
             } else
                 extradata_size = 2;

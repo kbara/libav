@@ -361,7 +361,7 @@ static av_cold int mpeg_mux_init(AVFormatContext *ctx)
                 if (st->codec->channels > 8)
                     return -1;
                 stream->lpcm_header[0] = 0x0c;
-                stream->lpcm_header[1] = (st->codec->channels - 1) | (j << 4);
+                stream->lpcm_header[1] = (st->codec->channels - 1) | (j * (1 << 4));
                 stream->lpcm_header[2] = 0x80;
                 stream->lpcm_align = st->codec->channels * 2;
             } else {
@@ -494,11 +494,11 @@ static av_cold int mpeg_mux_init(AVFormatContext *ctx)
 static inline void put_timestamp(AVIOContext *pb, int id, int64_t timestamp)
 {
     avio_w8(pb,
-             (id << 4) |
-             (((timestamp >> 30) & 0x07) << 1) |
+             (id * (1 << 4)) |
+             (((timestamp >> 30) & 0x07) * (1 << 1)) |
              1);
-    avio_wb16(pb, (uint16_t)((((timestamp >> 15) & 0x7fff) << 1) | 1));
-    avio_wb16(pb, (uint16_t)((((timestamp      ) & 0x7fff) << 1) | 1));
+    avio_wb16(pb, (uint16_t)((((timestamp >> 15) & 0x7fff) * (1 << 1)) | 1));
+    avio_wb16(pb, (uint16_t)((((timestamp) & 0x7fff) * (1 << 1)) | 1));
 }
 
 

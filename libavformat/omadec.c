@@ -84,7 +84,7 @@ static void hex_log(AVFormatContext *s, int level,
     if (av_log_get_level() < level)
         return;
     ff_data_to_hex(buf, value, len, 1);
-    buf[len << 1] = '\0';
+    buf[len * (1 << 1)] = '\0';
     av_log(s, level, "%s: %s\n", name, buf);
 }
 

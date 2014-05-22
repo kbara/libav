@@ -230,9 +230,9 @@ static av_always_inline void rgb16_32ToUV_half_c_template(uint8_t *dstU,
     const unsigned rnd = 257u << S;
     int i;
 
-    maskr |= maskr << 1;
-    maskb |= maskb << 1;
-    maskg |= maskg << 1;
+    maskr |= maskr * (1 << 1);
+    maskb |= maskb * (1 << 1);
+    maskg |= maskg * (1 << 1);
     for (i = 0; i < width; i++) {
         int px0 = input_pixel(2 * i + 0) >> shp;
         int px1 = input_pixel(2 * i + 1) >> shp;

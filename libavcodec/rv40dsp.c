@@ -576,8 +576,8 @@ static av_always_inline int rv40_loop_filter_strength(uint8_t *src,
         sum_q1q0 += ptr[ 1*step] - ptr[ 0*step];
     }
 
-    *p1 = FFABS(sum_p1p0) < (beta << 2);
-    *q1 = FFABS(sum_q1q0) < (beta << 2);
+    *p1 = FFABS(sum_p1p0) < (beta * (1 << 2));
+    *q1 = FFABS(sum_q1q0) < (beta * (1 << 2));
 
     if(!*p1 && !*q1)
         return 0;

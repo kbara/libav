@@ -526,7 +526,7 @@ static int decode_channel_residues(WmallDecodeCtx *s, int ch, int tile_size)
         else {
             rem_bits = av_ceil_log2(ave_mean);
             rem      = rem_bits ? get_bits_long(&s->gb, rem_bits) : 0;
-            residue  = (quo << rem_bits) + rem;
+            residue  = (quo * (1 << rem_bits)) + rem;
         }
 
         s->ave_sum[ch] = residue + s->ave_sum[ch] -
@@ -989,9 +989,9 @@ static int decode_subframe(WmallDecodeCtx *s)
 
         for (j = 0; j < subframe_len; j++) {
             if (s->bits_per_sample == 16) {
-                *s->samples_16[c]++ = (int16_t) s->channel_residues[c][j] << padding_zeroes;
+                *s->samples_16[c]++ = (int16_t)s->channel_residues[c][j] * (1 << padding_zeroes);
             } else {
-                *s->samples_32[c]++ = s->channel_residues[c][j] << padding_zeroes;
+                *s->samples_32[c]++ = s->channel_residues[c][j] * (1 << padding_zeroes);
             }
         }
     }
@@ -1188,7 +1188,7 @@ static int decode_packet(AVCodecContext *avctx, void *data, int *got_frame_ptr,
 
         s->next_packet_start = buf_size - avctx->block_align;
         buf_size             = avctx->block_align;
-        s->buf_bit_size      = buf_size << 3;
+        s->buf_bit_size      = buf_size * (1 << 3);
 
         /* parse packet header */
         init_get_bits(gb, buf, s->buf_bit_size);
@@ -1241,7 +1241,7 @@ static int decode_packet(AVCodecContext *avctx, void *data, int *got_frame_ptr,
     } else {
         int frame_size;
 
-        s->buf_bit_size = (avpkt->size - s->next_packet_start) << 3;
+        s->buf_bit_size = (avpkt->size - s->next_packet_start) * (1 << 3);
         init_get_bits(gb, avpkt->data, s->buf_bit_size);
         skip_bits(gb, s->packet_offset);
 

@@ -255,7 +255,7 @@ static inline int read_huff_channels(MLPDecodeContext *m, GetBitContext *gbp,
             return AVERROR_INVALIDDATA;
 
         if (lsb_bits > 0)
-            result = (result << lsb_bits) + get_bits(gbp, lsb_bits);
+            result = (result * (1 << lsb_bits)) + get_bits(gbp, lsb_bits);
 
         result  += cp->sign_huff_offset;
         result <<= quant_step_size;
@@ -652,7 +652,7 @@ static int read_filter_params(MLPDecodeContext *m, GetBitContext *gbp,
         }
 
         for (i = 0; i < order; i++)
-            fcoeff[i] = get_sbits(gbp, coeff_bits) << coeff_shift;
+            fcoeff[i] = get_sbits(gbp, coeff_bits) * (1 << coeff_shift);
 
         if (get_bits1(gbp)) {
             int state_bits, state_shift;
@@ -669,7 +669,7 @@ static int read_filter_params(MLPDecodeContext *m, GetBitContext *gbp,
             /* TODO: Check validity of state data. */
 
             for (i = 0; i < order; i++)
-                fp->state[i] = get_sbits(gbp, state_bits) << state_shift;
+                fp->state[i] = get_sbits(gbp, state_bits) * (1 << state_shift);
         }
     }
 
@@ -727,7 +727,7 @@ static int read_matrix_params(MLPDecodeContext *m, unsigned int substr, GetBitCo
             if (get_bits1(gbp))
                 coeff_val = get_sbits(gbp, frac_bits + 2);
 
-            s->matrix_coeff[mat][ch] = coeff_val << (14 - frac_bits);
+            s->matrix_coeff[mat][ch] = coeff_val * (1 << (14 - frac_bits));
         }
 
         if (s->noise_type)
@@ -966,8 +966,8 @@ static void generate_2_noise_channels(MLPDecodeContext *m, unsigned int substr)
 
     for (i = 0; i < s->blockpos; i++) {
         uint16_t seed_shr7 = seed >> 7;
-        m->sample_buffer[i][maxchan+1] = ((int8_t)(seed >> 15)) << s->noise_shift;
-        m->sample_buffer[i][maxchan+2] = ((int8_t) seed_shr7)   << s->noise_shift;
+        m->sample_buffer[i][maxchan+1] = ((int8_t)(seed >> 15)) * (1 << s->noise_shift);
+        m->sample_buffer[i][maxchan+2] = ((int8_t)seed_shr7) * (1 << s->noise_shift);
 
         seed = (seed << 16) ^ seed_shr7 ^ (seed_shr7 << 5);
     }

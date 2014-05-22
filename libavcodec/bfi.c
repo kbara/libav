@@ -78,8 +78,7 @@ static int bfi_decode_frame(AVCodecContext *avctx, void *data,
             int shift = 16;
             *pal = 0;
             for (j = 0; j < 3; j++, shift -= 8)
-                *pal += ((avctx->extradata[i * 3 + j] << 2) |
-                         (avctx->extradata[i * 3 + j] >> 4)) << shift;
+                *pal += ((avctx->extradata[i * 3 + j] << 2) | (avctx->extradata[i * 3 + j] >> 4)) * (1 << shift);
             pal++;
         }
         frame->palette_has_changed = 1;

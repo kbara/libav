@@ -85,7 +85,7 @@ const int16_t ff_nelly_delta_table[32] = {
 
 static inline int signed_shift(int i, int shift) {
     if (shift > 0)
-        return i << shift;
+        return i * (1 << shift);
     return i >> -shift;
 }
 

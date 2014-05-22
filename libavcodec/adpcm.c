@@ -252,7 +252,7 @@ static inline short adpcm_sbpro_expand_nibble(ADPCMChannelStatus *c, char nibble
 
     sign = nibble & (1<<(size-1));
     delta = nibble & ((1<<(size-1))-1);
-    diff = delta << (7 + c->step + shift);
+    diff = delta * (1 << (7 + c->step + shift));
 
     /* clamp result */
     c->predictor = av_clip(c->predictor + (sign ? -diff : diff), -16384,16256);
@@ -314,7 +314,7 @@ static int xa_decode(AVCodecContext *avctx, int16_t *out0, int16_t *out1,
             d = in[16+i+j*4];
 
             t = sign_extend(d, 4);
-            s = ( t<<shift ) + ((s_1*f0 + s_2*f1+32)>>6);
+            s = (t * (1 << shift)) + ((s_1*f0 + s_2*f1+32)>>6);
             s_2 = s_1;
             s_1 = av_clip_int16(s);
             out0[j] = s_1;
@@ -342,7 +342,7 @@ static int xa_decode(AVCodecContext *avctx, int16_t *out0, int16_t *out1,
             d = in[16+i+j*4];
 
             t = sign_extend(d >> 4, 4);
-            s = ( t<<shift ) + ((s_1*f0 + s_2*f1+32)>>6);
+            s = (t * (1 << shift)) + ((s_1*f0 + s_2*f1+32)>>6);
             s_2 = s_1;
             s_1 = av_clip_int16(s);
             out1[j] = s_1;
@@ -1261,7 +1261,7 @@ static int adpcm_decode_frame(AVCodecContext *avctx, void *data,
                     }
 
                     sampledat = ((prev[ch][0]*factor1
-                                + prev[ch][1]*factor2) >> 11) + (sampledat << exp);
+                                + prev[ch][1]*factor2) >> 11) + (sampledat * (1 << exp));
                     *samples = av_clip_int16(sampledat);
                     prev[ch][1] = prev[ch][0];
                     prev[ch][0] = *samples++;

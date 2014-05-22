@@ -333,10 +333,10 @@ static void compute_svector(QCELPContext *q, const float *gain,
         }
         break;
     case RATE_QUARTER:
-        cbseed = (0x0003 & q->frame.lspv[4]) << 14 |
-                 (0x003F & q->frame.lspv[3]) <<  8 |
-                 (0x0060 & q->frame.lspv[2]) <<  1 |
-                 (0x0007 & q->frame.lspv[1]) <<  3 |
+        cbseed = (0x0003 & q->frame.lspv[4]) * (1 << 14) |
+                 (0x003F & q->frame.lspv[3]) * (1 << 8) |
+                 (0x0060 & q->frame.lspv[2]) * (1 << 1) |
+                 (0x0007 & q->frame.lspv[1]) * (1 << 3) |
                  (0x0038 & q->frame.lspv[0]) >>  3;
         rnd    = q->rnd_fir_filter_mem + 20;
         for (i = 0; i < 8; i++) {

@@ -680,7 +680,7 @@ static int decode_entropy_coded_image(WebPContext *s, enum ImageRole role,
                 length = prefix_code + 1;
             } else {
                 int extra_bits = (prefix_code - 2) >> 1;
-                int offset     = 2 + (prefix_code & 1) << extra_bits;
+                int offset     = (2 + (prefix_code & 1)) * (1 << extra_bits);
                 length = offset + get_bits(&s->gb, extra_bits) + 1;
             }
             prefix_code = huff_reader_get_symbol(&hg[HUFF_IDX_DIST], &s->gb);
@@ -688,7 +688,7 @@ static int decode_entropy_coded_image(WebPContext *s, enum ImageRole role,
                 distance = prefix_code + 1;
             } else {
                 int extra_bits = prefix_code - 2 >> 1;
-                int offset     = 2 + (prefix_code & 1) << extra_bits;
+                int offset     = (2 + (prefix_code & 1)) * (1 << extra_bits);
                 distance = offset + get_bits(&s->gb, extra_bits) + 1;
             }
 

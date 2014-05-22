@@ -106,7 +106,7 @@ static int spdif_header_ac3(AVFormatContext *s, AVPacket *pkt)
     IEC61937Context *ctx = s->priv_data;
     int bitstream_mode = pkt->data[5] & 0x7;
 
-    ctx->data_type  = IEC61937_AC3 | (bitstream_mode << 8);
+    ctx->data_type  = IEC61937_AC3 | (bitstream_mode * (1 << 8));
     ctx->pkt_offset = AC3_FRAME_SIZE << 2;
     return 0;
 }
@@ -181,21 +181,21 @@ static int spdif_header_dts4(AVFormatContext *s, AVPacket *pkt, int core_size,
         return AVERROR_INVALIDDATA;
     }
 
-    period = ctx->dtshd_rate * (blocks << 5) / sample_rate;
+    period = ctx->dtshd_rate * (blocks * (1 << 5)) / sample_rate;
     subtype = spdif_dts4_subtype(period);
 
     if (subtype < 0) {
         av_log(s, AV_LOG_ERROR, "Specified HD rate of %d Hz would require an "
                "impossible repetition period of %d for the current DTS stream"
                " (blocks = %d, sample rate = %d)\n", ctx->dtshd_rate, period,
-               blocks << 5, sample_rate);
+               blocks * (1 << 5), sample_rate);
         return AVERROR(EINVAL);
     }
 
     /* set pkt_offset and DTS IV subtype according to the requested output
      * rate */
     ctx->pkt_offset = period * 4;
-    ctx->data_type = IEC61937_DTSHD | subtype << 8;
+    ctx->data_type = IEC61937_DTSHD | subtype * (1 << 8);
 
     /* If the bitrate is too high for transmitting at the selected
      * repetition period setting, strip DTS-HD until a good amount
@@ -208,7 +208,7 @@ static int spdif_header_dts4(AVFormatContext *s, AVPacket *pkt, int core_size,
             av_log(s, AV_LOG_WARNING, "DTS-HD bitrate too high, "
                                       "temporarily sending core only\n");
         if (ctx->dtshd_fallback > 0)
-            ctx->dtshd_skip = sample_rate * ctx->dtshd_fallback / (blocks << 5);
+            ctx->dtshd_skip = sample_rate * ctx->dtshd_fallback / (blocks * (1 << 5));
         else
             /* skip permanently (dtshd_fallback == -1) or just once
              * (dtshd_fallback == 0) */
@@ -262,11 +262,11 @@ static int spdif_header_dts(AVFormatContext *s, AVPacket *pkt)
         break;
     case DCA_MARKER_14B_BE:
         blocks =
-            (((pkt->data[5] & 0x07) << 4) | ((pkt->data[6] & 0x3f) >> 2));
+            (((pkt->data[5] & 0x07) * (1 << 4)) | ((pkt->data[6] & 0x3f) >> 2));
         break;
     case DCA_MARKER_14B_LE:
         blocks =
-            (((pkt->data[4] & 0x07) << 4) | ((pkt->data[7] & 0x3f) >> 2));
+            (((pkt->data[4] & 0x07) * (1 << 4)) | ((pkt->data[7] & 0x3f) >> 2));
         ctx->extra_bswap = 1;
         break;
     case DCA_HD_MARKER:
@@ -291,17 +291,17 @@ static int spdif_header_dts(AVFormatContext *s, AVPacket *pkt)
     case 2048 >> 5: ctx->data_type = IEC61937_DTS3; break;
     default:
         av_log(s, AV_LOG_ERROR, "%i samples in DTS frame not supported\n",
-               blocks << 5);
+               blocks * (1 << 5));
         return AVERROR(ENOSYS);
     }
 
     /* discard extraneous data by default */
     if (core_size && core_size < pkt->size) {
         ctx->out_bytes = core_size;
-        ctx->length_code = core_size << 3;
+        ctx->length_code = core_size * (1 << 3);
     }
 
-    ctx->pkt_offset = blocks << 7;
+    ctx->pkt_offset = blocks * (1 << 7);
 
     if (ctx->out_bytes == ctx->pkt_offset) {
         /* The DTS stream fits exactly into the output stream, so skip the

@@ -170,7 +170,7 @@ static void xan_unpack(unsigned char *dest, int dest_len,
             if ((opcode & 0x80) == 0) {
                 size = opcode & 3;
 
-                back  = ((opcode & 0x60) << 3) + bytestream2_get_byte(&ctx) + 1;
+                back  = ((opcode & 0x60) * (1 << 3)) + bytestream2_get_byte(&ctx) + 1;
                 size2 = ((opcode & 0x1c) >> 2) + 3;
             } else if ((opcode & 0x40) == 0) {
                 size = bytestream2_peek_byte(&ctx) >> 6;
@@ -180,8 +180,8 @@ static void xan_unpack(unsigned char *dest, int dest_len,
             } else {
                 size = opcode & 3;
 
-                back  = ((opcode & 0x10) << 12) + bytestream2_get_be16(&ctx) + 1;
-                size2 = ((opcode & 0x0c) <<  6) + bytestream2_get_byte(&ctx) + 5;
+                back  = ((opcode & 0x10) * (1 << 12)) + bytestream2_get_be16(&ctx) + 1;
+                size2 = ((opcode & 0x0c) * (1 << 6)) + bytestream2_get_byte(&ctx) + 5;
             }
 
             if (dest_end - dest < size + size2 ||
@@ -194,7 +194,7 @@ static void xan_unpack(unsigned char *dest, int dest_len,
             dest += size2;
         } else {
             int finish = opcode >= 0xfc;
-            size = finish ? opcode & 3 : ((opcode & 0x1f) << 2) + 4;
+            size = finish ? opcode & 3 : ((opcode & 0x1f) * (1 << 2)) + 4;
 
             if (dest_end - dest < size || bytestream2_get_bytes_left(&ctx) < size)
                 return;
@@ -557,7 +557,7 @@ static int xan_decode_frame(AVCodecContext *avctx,
                 int g = gamma_lookup[bytestream2_get_byteu(&ctx)];
                 int b = gamma_lookup[bytestream2_get_byteu(&ctx)];
 #endif
-                *tmpptr++ = (r << 16) | (g << 8) | b;
+                *tmpptr++ = (r * (1 << 16)) | (g * (1 << 8)) | b;
             }
             s->palettes_count++;
             break;

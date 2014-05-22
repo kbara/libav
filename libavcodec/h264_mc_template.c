@@ -109,8 +109,8 @@ static void MCFUNC(hl_motion)(H264Context *h, uint8_t *dest_y,
         for (i = 0; i < 4; i++) {
             const int sub_mb_type = h->sub_mb_type[i];
             const int n  = 4 * i;
-            int x_offset = (i & 1) << 2;
-            int y_offset = (i & 2) << 1;
+            int x_offset = (i & 1) * (1 << 2);
+            int y_offset = (i & 2) * (1 << 1);
 
             if (IS_SUB_8X8(sub_mb_type)) {
                 mc_part(h, n, 1, 8, 0, dest_y, dest_cb, dest_cr,

@@ -94,11 +94,11 @@ static void png_put_interlaced_row(uint8_t *dst, int width,
         src_x = 0;
         for (x = 0; x < width; x++) {
             j = (x & 7);
-            if ((dsp_mask << j) & 0x80) {
+            if ((dsp_mask * (1 << j)) & 0x80) {
                 b = (src[src_x >> 3] >> (7 - (src_x & 7))) & 1;
-                dst[x >> 3] |= b << (7 - j);
+                dst[x >> 3] |= b * (1 << (7 - j));
             }
-            if ((mask << j) & 0x80)
+            if ((mask * (1 << j)) & 0x80)
                 src_x++;
         }
         break;
@@ -109,21 +109,21 @@ static void png_put_interlaced_row(uint8_t *dst, int width,
         if (color_type == PNG_COLOR_TYPE_RGB_ALPHA) {
             for (x = 0; x < width; x++) {
                 j = x & 7;
-                if ((dsp_mask << j) & 0x80) {
+                if ((dsp_mask * (1 << j)) & 0x80) {
                     *(uint32_t *)d = (s[3] << 24) | (s[0] << 16) | (s[1] << 8) | s[2];
                 }
                 d += bpp;
-                if ((mask << j) & 0x80)
+                if ((mask * (1 << j)) & 0x80)
                     s += bpp;
             }
         } else {
             for (x = 0; x < width; x++) {
                 j = x & 7;
-                if ((dsp_mask << j) & 0x80) {
+                if ((dsp_mask * (1 << j)) & 0x80) {
                     memcpy(d, s, bpp);
                 }
                 d += bpp;
-                if ((mask << j) & 0x80)
+                if ((mask * (1 << j)) & 0x80)
                     s += bpp;
             }
         }
@@ -566,7 +566,7 @@ static int decode_frame(AVCodecContext *avctx,
                 r = bytestream2_get_byte(&s->gb);
                 g = bytestream2_get_byte(&s->gb);
                 b = bytestream2_get_byte(&s->gb);
-                s->palette[i] = (0xff << 24) | (r << 16) | (g << 8) | b;
+                s->palette[i] = (0xff << 24) | (r * (1 << 16)) | (g * (1 << 8)) | b;
             }
             for (; i < 256; i++)
                 s->palette[i] = (0xff << 24);
@@ -585,7 +585,7 @@ static int decode_frame(AVCodecContext *avctx,
                 goto skip_tag;
             for (i = 0; i < length; i++) {
                 v = bytestream2_get_byte(&s->gb);
-                s->palette[i] = (s->palette[i] & 0x00ffffff) | (v << 24);
+                s->palette[i] = (s->palette[i] & 0x00ffffff) | (v * (1 << 24));
             }
             bytestream2_skip(&s->gb, 4);     /* crc */
         }

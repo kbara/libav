@@ -98,7 +98,7 @@ void ff_atrac_gain_compensation(AtracGCContext *gctx, float *in, float *prev,
         pos = 0;
 
         for (i = 0; i < gc_now->num_points; i++) {
-            lastpos = gc_now->loc_code[i] << gctx->loc_scale;
+            lastpos = gc_now->loc_code[i] * (1 << gctx->loc_scale);
 
             lev = gctx->gain_tab1[gc_now->lev_code[i]];
             gain_inc = gctx->gain_tab2[(i + 1 < gc_now->num_points ? gc_now->lev_code[i + 1]

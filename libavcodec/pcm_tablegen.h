@@ -49,8 +49,8 @@ static av_cold int alaw2linear(unsigned char a_val)
 
         t = a_val & QUANT_MASK;
         seg = ((unsigned)a_val & SEG_MASK) >> SEG_SHIFT;
-        if(seg) t= (t + t + 1 + 32) << (seg + 2);
-        else    t= (t + t + 1     ) << 3;
+        if(seg) t= (t + t + 1 + 32) * (1 << (seg + 2));
+        else    t= (t + t + 1) * (1 << 3);
 
         return (a_val & SIGN_BIT) ? t : -t;
 }
@@ -66,7 +66,7 @@ static av_cold int ulaw2linear(unsigned char u_val)
          * Extract and bias the quantization bits. Then
          * shift up by the segment number and subtract out the bias.
          */
-        t = ((u_val & QUANT_MASK) << 3) + BIAS;
+        t = ((u_val & QUANT_MASK) * (1 << 3)) + BIAS;
         t <<= ((unsigned)u_val & SEG_MASK) >> SEG_SHIFT;
 
         return (u_val & SIGN_BIT) ? (BIAS - t) : (t - BIAS);

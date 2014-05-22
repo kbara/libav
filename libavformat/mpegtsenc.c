@@ -197,7 +197,7 @@ static int mpegts_write_section1(MpegTSSection *s, int tid, int id,
     *q++ = tid;
     put16(&q, flags | (len + 5 + 4)); /* 5 byte header + 4 byte CRC */
     put16(&q, id);
-    *q++ = 0xc1 | (version << 1); /* current_next_indicator = 1 */
+    *q++ = 0xc1 | (version * (1 << 1)); /* current_next_indicator = 1 */
     *q++ = sec_num;
     *q++ = last_sec_num;
     memcpy(q, buf, len);
@@ -430,7 +430,7 @@ static void mpegts_write_sdt(AVFormatContext *s)
         desc_len_ptr[0] = q - desc_len_ptr - 1;
 
         /* fill descriptor length */
-        val = (running_status << 13) | (free_ca_mode << 12) |
+        val = (running_status * (1 << 13)) | (free_ca_mode * (1 << 12)) |
             (q - desc_list_len_ptr - 2);
         desc_list_len_ptr[0] = val >> 8;
         desc_list_len_ptr[1] = val;
@@ -691,7 +691,7 @@ static int write_pcr_bits(uint8_t *buf, int64_t pcr)
     *buf++ = pcr_high >> 17;
     *buf++ = pcr_high >> 9;
     *buf++ = pcr_high >> 1;
-    *buf++ = pcr_high << 7 | pcr_low >> 8 | 0x7e;
+    *buf++ = pcr_high * (1 << 7) | pcr_low >> 8 | 0x7e;
     *buf++ = pcr_low;
 
     return 6;
@@ -741,12 +741,12 @@ static void write_pts(uint8_t *q, int fourbits, int64_t pts)
 {
     int val;
 
-    val = fourbits << 4 | (((pts >> 30) & 0x07) << 1) | 1;
+    val = fourbits * (1 << 4) | (((pts >> 30) & 0x07) * (1 << 1)) | 1;
     *q++ = val;
-    val = (((pts >> 15) & 0x7fff) << 1) | 1;
+    val = (((pts >> 15) & 0x7fff) * (1 << 1)) | 1;
     *q++ = val >> 8;
     *q++ = val;
-    val = (((pts) & 0x7fff) << 1) | 1;
+    val = (((pts) & 0x7fff) * (1 << 1)) | 1;
     *q++ = val >> 8;
     *q++ = val;
 }

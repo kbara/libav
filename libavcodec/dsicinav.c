@@ -132,7 +132,7 @@ static int cin_decode_huffman(const unsigned char *src, int src_size,
     while (src < src_end) {
         huff_code = *src++;
         if ((huff_code >> 4) == 15) {
-            b          = huff_code << 4;
+            b          = huff_code * (1 << 4);
             huff_code  = *src++;
             *dst_cur++ = b | (huff_code >> 4);
         } else

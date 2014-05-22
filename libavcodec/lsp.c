@@ -106,7 +106,7 @@ static void lsp2poly(int* f, const int16_t* lsp, int lp_half_order)
     int i, j;
 
     f[0] = 0x400000;          // 1.0 in (3.22)
-    f[1] = -lsp[0] << 8;      // *2 and (0.15) -> (3.22)
+    f[1] = -lsp[0] * (1 << 8);      // *2 and (0.15) -> (3.22)
 
     for(i=2; i<=lp_half_order; i++)
     {
@@ -114,7 +114,7 @@ static void lsp2poly(int* f, const int16_t* lsp, int lp_half_order)
         for(j=i; j>1; j--)
             f[j] -= MULL(f[j-1], lsp[2*i-2], FRAC_BITS) - f[j-2];
 
-        f[1] -= lsp[2*i-2] << 8;
+        f[1] -= lsp[2 * i - 2] * (1 << 8);
     }
 }
 
@@ -136,7 +136,7 @@ void ff_acelp_lsp2lpc(int16_t* lp, const int16_t* lsp, int lp_half_order)
 
         ff1 += 1 << 10; // for rounding
         lp[i]    = (ff1 + ff2) >> 11; // divide by 2 and (3.22) -> (3.12)
-        lp[(lp_half_order << 1) + 1 - i] = (ff1 - ff2) >> 11; // divide by 2 and (3.22) -> (3.12)
+        lp[(lp_half_order * (1 << 1)) + 1 - i] = (ff1 - ff2) >> 11; // divide by 2 and (3.22) -> (3.12)
     }
 }
 
@@ -201,7 +201,7 @@ void ff_lsp2polyf(const double *lsp, double *f, int lp_half_order)
 void ff_acelp_lspd2lpc(const double *lsp, float *lpc, int lp_half_order)
 {
     double pa[MAX_LP_HALF_ORDER+1], qa[MAX_LP_HALF_ORDER+1];
-    float *lpc2 = lpc + (lp_half_order << 1) - 1;
+    float *lpc2 = lpc + (lp_half_order * (1 << 1)) - 1;
 
     assert(lp_half_order <= MAX_LP_HALF_ORDER);
 

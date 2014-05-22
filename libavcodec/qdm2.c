@@ -1637,9 +1637,9 @@ static void qdm2_fft_tone_synthesizer(QDM2Context *q, int sub_packet)
 
                     tone.level = (q->fft_coefs[j].exp < 0) ? 0.0 : fft_tone_level_table[q->superblocktype_2_3 ? 0 : 1][q->fft_coefs[j].exp & 63];
                     tone.complex = &q->fft.complex[ch][offset];
-                    tone.table = fft_tone_sample_table[i][q->fft_coefs[j].offset - (offset << four_i)];
-                    tone.phase = 64 * q->fft_coefs[j].phase - (offset << 8) - 128;
-                    tone.phase_shift = (2 * q->fft_coefs[j].offset + 1) << (7 - four_i);
+                    tone.table = fft_tone_sample_table[i][q->fft_coefs[j].offset - (offset * (1 << four_i))];
+                    tone.phase = 64 * q->fft_coefs[j].phase - (offset * (1 << 8)) - 128;
+                    tone.phase_shift = (2 * q->fft_coefs[j].offset + 1) * (1 << (7 - four_i));
                     tone.duration = i;
                     tone.time_index = 0;
 

@@ -736,7 +736,7 @@ static int gxf_write_header(AVFormatContext *s)
             }
         }
         /* FIXME first 10 audio tracks are 0 to 9 next 22 are A to V */
-        sc->media_info = media_info<<8 | ('0'+tracks[media_info]++);
+        sc->media_info = media_info * (1 << 8) | ('0'+tracks[media_info]++);
         sc->order = s->nb_streams - st->index;
     }
 

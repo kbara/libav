@@ -523,7 +523,7 @@ static inline int ape_decode_value_3900(APEContext *ctx, APERice *rice)
         x = range_decode_bits(ctx, tmpk);
     else if (tmpk <= 32) {
         x = range_decode_bits(ctx, 16);
-        x |= (range_decode_bits(ctx, tmpk - 16) << 16);
+        x |= (range_decode_bits(ctx, tmpk - 16) * (1 << 16));
     } else {
         av_log(ctx->avctx, AV_LOG_ERROR, "Too many bits: %d\n", tmpk);
         return AVERROR_INVALIDDATA;
@@ -551,7 +551,7 @@ static inline int ape_decode_value_3990(APEContext *ctx, APERice *rice)
     overflow = range_get_symbol(ctx, counts_3980, counts_diff_3980);
 
     if (overflow == (MODEL_ELEMENTS - 1)) {
-        overflow  = range_decode_bits(ctx, 16) << 16;
+        overflow  = range_decode_bits(ctx, 16) * (1 << 16);
         overflow |= range_decode_bits(ctx, 16);
     }
 
@@ -571,7 +571,7 @@ static inline int ape_decode_value_3990(APEContext *ctx, APERice *rice)
         base_lo = range_decode_culfreq(ctx, 1 << bbits);
         range_decode_update(ctx, 1, base_lo);
 
-        base = (base_hi << bbits) + base_lo;
+        base = (base_hi * (1 << bbits)) + base_lo;
     }
 
     x = base + overflow * pivot;
@@ -617,7 +617,7 @@ static void decode_array_0000(APEContext *ctx, GetBitContext *gb,
             if (rice->k > 24)
                 return;
             ksummax <<= 1;
-            ksummin = ksummin ? ksummin << 1 : 128;
+            ksummin = ksummin ? ksummin * (1 << 1) : 128;
         }
     }
 
@@ -859,8 +859,8 @@ static av_always_inline int filter_3800(APEPredictor *p,
         return predictionA;
     }
     d2 =  p->buf[delayA];
-    d1 = (p->buf[delayA] - p->buf[delayA - 1]) << 1;
-    d0 =  p->buf[delayA] + ((p->buf[delayA - 2] - p->buf[delayA - 1]) << 3);
+    d1 = (p->buf[delayA] - p->buf[delayA - 1]) * (1 << 1);
+    d0 =  p->buf[delayA] + ((p->buf[delayA - 2] - p->buf[delayA - 1]) * (1 << 3));
     d3 =  p->buf[delayB] * 2 - p->buf[delayB - 1];
     d4 =  p->buf[delayB];
 
@@ -1532,7 +1532,7 @@ static int ape_decode_frame(AVCodecContext *avctx, void *data,
         for (ch = 0; ch < s->channels; ch++) {
             sample24 = (int32_t *)frame->data[ch];
             for (i = 0; i < blockstodecode; i++)
-                *sample24++ = s->decoded[ch][i] << 8;
+                *sample24++ = s->decoded[ch][i] * (1 << 8);
         }
         break;
     }

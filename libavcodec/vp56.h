@@ -280,7 +280,7 @@ static av_always_inline int vp56_rac_get(VP56RangeCoder *c)
     unsigned int code_word = vp56_rac_renorm(c);
     /* equiprobable */
     int low = (c->high + 1) >> 1;
-    unsigned int low_shift = low << 16;
+    unsigned int low_shift = low * (1 << 16);
     int bit = code_word >= low_shift;
     if (bit) {
         c->high   -= low;
@@ -304,7 +304,7 @@ static av_unused int vp56_rac_gets(VP56RangeCoder *c, int bits)
     int value = 0;
 
     while (bits--) {
-        value = (value << 1) | vp56_rac_get(c);
+        value = (value * (1 << 1)) | vp56_rac_get(c);
     }
 
     return value;
@@ -315,7 +315,7 @@ static av_unused int vp8_rac_get_uint(VP56RangeCoder *c, int bits)
     int value = 0;
 
     while (bits--) {
-        value = (value << 1) | vp8_rac_get(c);
+        value = (value * (1 << 1)) | vp8_rac_get(c);
     }
 
     return value;
@@ -340,13 +340,13 @@ static av_unused int vp8_rac_get_sint(VP56RangeCoder *c, int bits)
 // P(7)
 static av_unused int vp56_rac_gets_nn(VP56RangeCoder *c, int bits)
 {
-    int v = vp56_rac_gets(c, 7) << 1;
+    int v = vp56_rac_gets(c, 7) * (1 << 1);
     return v + !v;
 }
 
 static av_unused int vp8_rac_get_nn(VP56RangeCoder *c)
 {
-    int v = vp8_rac_get_uint(c, 7) << 1;
+    int v = vp8_rac_get_uint(c, 7) * (1 << 1);
     return v + !v;
 }
 
@@ -395,7 +395,7 @@ static av_always_inline int vp8_rac_get_coeff(VP56RangeCoder *c, const uint8_t *
     int v = 0;
 
     do {
-        v = (v<<1) + vp56_rac_get_prob(c, *prob++);
+        v = (v * (1 << 1)) + vp56_rac_get_prob(c, *prob++);
     } while (*prob);
 
     return v;

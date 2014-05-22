@@ -189,7 +189,7 @@ static int vqf_read_header(AVFormatContext *s)
         return AVERROR_INVALIDDATA;
     }
 
-    switch (((st->codec->sample_rate/1000) << 8) +
+    switch (((st->codec->sample_rate / 1000) * (1 << 8)) +
             read_bitrate/st->codec->channels) {
     case (11<<8) + 8 :
     case (8 <<8) + 8 :
@@ -248,7 +248,7 @@ static int vqf_read_packet(AVFormatContext *s, AVPacket *pkt)
     }
 
     c->last_frame_bits = pkt->data[size+1];
-    c->remaining_bits  = (size << 3) - c->frame_bit_len + c->remaining_bits;
+    c->remaining_bits  = (size * (1 << 3)) - c->frame_bit_len + c->remaining_bits;
 
     return size+2;
 }

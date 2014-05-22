@@ -124,7 +124,7 @@ static av_cold void fft_perm_avx(FFTContext *s)
         } else {
             for (k = 0; k < 16; k++) {
                 int j = i + k;
-                j = (j & ~7) | ((j >> 1) & 3) | ((j << 2) & 4);
+                j = (j & ~7) | ((j >> 1) & 3) | ((j * (1 << 2)) & 4);
                 s->revtab[-split_radix_permutation(i + k, n, s->inverse) & (n - 1)] = j;
             }
         }
@@ -178,7 +178,7 @@ av_cold int ff_fft_init(FFTContext *s, int nbits, int inverse)
         for(i=0; i<n; i++) {
             int j = i;
             if (s->fft_permutation == FF_FFT_PERM_SWAP_LSBS)
-                j = (j&~3) | ((j>>1)&1) | ((j<<1)&2);
+                j = (j&~3) | ((j>>1)&1) | ((j * (1 << 1))&2);
             s->revtab[-split_radix_permutation(i, n, s->inverse) & (n-1)] = j;
         }
     }

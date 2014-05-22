@@ -226,7 +226,7 @@ static int xan_decode_chroma(AVCodecContext *avctx, unsigned chroma_off)
             for (i = 0; i < avctx->width >> 1; i++) {
                 val = *src++;
                 if (val && val < table_size) {
-                    val  = AV_RL16(table + (val << 1));
+                    val  = AV_RL16(table + (val * (1 << 1)));
                     uval = (val >> 3) & 0xF8;
                     vval = (val >> 8) & 0xF8;
                     U[i] = uval | (uval >> 5);
@@ -250,7 +250,7 @@ static int xan_decode_chroma(AVCodecContext *avctx, unsigned chroma_off)
             for (i = 0; i < avctx->width >> 1; i += 2) {
                 val = *src++;
                 if (val && val < table_size) {
-                    val  = AV_RL16(table + (val << 1));
+                    val  = AV_RL16(table + (val * (1 << 1)));
                     uval = (val >> 3) & 0xF8;
                     vval = (val >> 8) & 0xF8;
                     U[i] = U[i+1] = U2[i] = U2[i+1] = uval | (uval >> 5);
@@ -301,27 +301,27 @@ static int xan_decode_frame_type0(AVCodecContext *avctx)
 
     ybuf = s->y_buffer;
     last = *src++;
-    ybuf[0] = last << 1;
+    ybuf[0] = last * (1 << 1);
     for (j = 1; j < avctx->width - 1; j += 2) {
         cur = (last + *src++) & 0x1F;
         ybuf[j]   = last + cur;
-        ybuf[j+1] = cur << 1;
+        ybuf[j+1] = cur * (1 << 1);
         last = cur;
     }
-    ybuf[j]  = last << 1;
+    ybuf[j]  = last * (1 << 1);
     prev_buf = ybuf;
     ybuf += avctx->width;
 
     for (i = 1; i < avctx->height; i++) {
         last = ((prev_buf[0] >> 1) + *src++) & 0x1F;
-        ybuf[0] = last << 1;
+        ybuf[0] = last * (1 << 1);
         for (j = 1; j < avctx->width - 1; j += 2) {
             cur = ((prev_buf[j + 1] >> 1) + *src++) & 0x1F;
             ybuf[j]   = last + cur;
-            ybuf[j+1] = cur << 1;
+            ybuf[j+1] = cur * (1 << 1);
             last = cur;
         }
-        ybuf[j] = last << 1;
+        ybuf[j] = last * (1 << 1);
         prev_buf = ybuf;
         ybuf += avctx->width;
     }

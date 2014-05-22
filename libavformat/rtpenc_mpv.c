@@ -61,7 +61,7 @@ void ff_rtp_send_mpegvideo(AVFormatContext *s1, const uint8_t *buf1, int size)
                     /* New start code found */
                     if (start_code == 0x100) {
                         frame_type = (r[1] & 0x38) >> 3;
-                        temporal_reference = (int)r[0] << 2 | r[1] >> 6;
+                        temporal_reference = (int)r[0] * (1 << 2) | r[1] >> 6;
                     }
                     if (start_code == 0x1B8) {
                         begin_of_sequence = 1;
@@ -90,11 +90,11 @@ void ff_rtp_send_mpegvideo(AVFormatContext *s1, const uint8_t *buf1, int size)
         }
 
         h = 0;
-        h |= temporal_reference << 16;
-        h |= begin_of_sequence << 13;
-        h |= begin_of_slice << 12;
-        h |= end_of_slice << 11;
-        h |= frame_type << 8;
+        h |= temporal_reference * (1 << 16);
+        h |= begin_of_sequence * (1 << 13);
+        h |= begin_of_slice * (1 << 12);
+        h |= end_of_slice * (1 << 11);
+        h |= frame_type * (1 << 8);
 
         q = s->buf;
         *q++ = h >> 24;

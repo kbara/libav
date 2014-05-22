@@ -87,7 +87,7 @@ av_cold void ff_atrac3p_init_imdct(AVCodecContext *avctx, FFTContext *mdct_ctx)
 
 #define TWOPI (2 * M_PI)
 
-#define DEQUANT_PHASE(ph) (((ph) & 0x1F) << 6)
+#define DEQUANT_PHASE(ph) (((ph) & 0x1F) * (1 << 6))
 
 static DECLARE_ALIGNED(32, float, sine_table)[2048]; ///< wave table
 static DECLARE_ALIGNED(32, float, hann_window)[256]; ///< Hann windowing function
@@ -148,7 +148,7 @@ static void waves_synth(Atrac3pWaveSynthParams *synth_param,
 
     /* fade in with steep Hann window if requested */
     if (envelope->has_start_point) {
-        pos = (envelope->start_pos << 2) - reg_offset;
+        pos = (envelope->start_pos * (1 << 2)) - reg_offset;
         if (pos > 0 && pos <= 128) {
             memset(out, 0, pos * sizeof(*out));
             if (!envelope->has_stop_point ||
@@ -163,7 +163,7 @@ static void waves_synth(Atrac3pWaveSynthParams *synth_param,
 
     /* fade out with steep Hann window if requested */
     if (envelope->has_stop_point) {
-        pos = (envelope->stop_pos + 1 << 2) - reg_offset;
+        pos = ((envelope->stop_pos + 1) * (1 << 2)) - reg_offset;
         if (pos > 0 && pos <= 128) {
             out[pos - 4] *= hann_window[96];
             out[pos - 3] *= hann_window[64];

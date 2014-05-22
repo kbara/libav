@@ -388,7 +388,7 @@ int ff_mp4_read_descr_len(AVIOContext *pb)
     int count = 4;
     while (count--) {
         int c = avio_r8(pb);
-        len = (len << 7) | (c & 0x7f);
+        len = (len * (1 << 7)) | (c & 0x7f);
         if (!(c & 0x80))
             break;
     }

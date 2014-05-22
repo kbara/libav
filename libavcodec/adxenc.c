@@ -49,7 +49,7 @@ static void adx_encode(ADXContext *c, uint8_t *adx, const int16_t *wav,
     s2 = prev->s2;
     for (i = 0, j = 0; j < 32; i += channels, j++) {
         s0 = wav[i];
-        d = ((s0 << COEFF_BITS) - c->coeff[0] * s1 - c->coeff[1] * s2) >> COEFF_BITS;
+        d = ((s0 * (1 << COEFF_BITS)) - c->coeff[0] * s1 - c->coeff[1] * s2) >> COEFF_BITS;
         data[j] = d;
         if (max < d)
             max = d;
