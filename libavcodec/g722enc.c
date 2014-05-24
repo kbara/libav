@@ -163,7 +163,7 @@ static inline int encode_low(const struct G722Band* state, int xlow)
            /* = diff >= 0 ? diff : -(diff + 1) */
     int limit = diff ^ (diff >> (sizeof(diff)*8-1));
     int i = 0;
-    limit = limit + 1 << 10;
+    limit = (limit + 1) * (1 << 10);
     if (limit > low_quant[8] * state->scale_factor)
         i = 9;
     while (i < 29 && limit > low_quant[i] * state->scale_factor)
@@ -304,7 +304,7 @@ static void g722_encode_trellis(G722Context *c, int trellis,
             p[0] = &c->paths[0][nodes[0][0]->path];
             p[1] = &c->paths[1][nodes[1][0]->path];
             for (j = i; j > froze; j--) {
-                dst[j] = p[1]->value << 6 | p[0]->value;
+                dst[j] = p[1]->value * (1 << 6) | p[0]->value;
                 p[0] = &c->paths[0][p[0]->prev];
                 p[1] = &c->paths[1][p[1]->prev];
             }
@@ -318,7 +318,7 @@ static void g722_encode_trellis(G722Context *c, int trellis,
     p[0] = &c->paths[0][nodes[0][0]->path];
     p[1] = &c->paths[1][nodes[1][0]->path];
     for (j = i; j > froze; j--) {
-        dst[j] = p[1]->value << 6 | p[0]->value;
+        dst[j] = p[1]->value * (1 << 6) | p[0]->value;
         p[0] = &c->paths[0][p[0]->prev];
         p[1] = &c->paths[1][p[1]->prev];
     }
@@ -336,7 +336,7 @@ static av_always_inline void encode_byte(G722Context *c, uint8_t *dst,
     ff_g722_update_high_predictor(&c->band[1], c->band[1].scale_factor *
                                 ff_g722_high_inv_quant[ihigh] >> 10, ihigh);
     ff_g722_update_low_predictor(&c->band[0], ilow >> 2);
-    *dst = ihigh << 6 | ilow;
+    *dst = ihigh * (1 << 6) | ilow;
 }
 
 static void g722_encode_no_trellis(G722Context *c,

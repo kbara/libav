@@ -262,7 +262,7 @@ static av_cold void decode_init_static(void)
         /* 1.0 (i = 3) is normalized to 2 ^ FRAC_BITS */
         shift = i / 3;
         mod   = i % 3;
-        scale_factor_modshift[i] = mod | (shift << 2);
+        scale_factor_modshift[i] = mod | (shift * (1 << 2));
     }
 
     /* scale factor multiply for layer 1 */
@@ -294,8 +294,8 @@ static av_cold void decode_init_static(void)
         j = 0;
         for (x = 0; x < xsize; x++) {
             for (y = 0; y < xsize; y++) {
-                tmp_bits [(x << 5) | y | ((x&&y)<<4)]= h->bits [j  ];
-                tmp_codes[(x << 5) | y | ((x&&y)<<4)]= h->codes[j++];
+                tmp_bits [(x * (1 << 5)) | y | ((x && y) * (1 << 4))]= h->bits [j  ];
+                tmp_codes[(x * (1 << 5)) | y | ((x && y) * (1 << 4))]= h->codes[j++];
             }
         }
 
@@ -343,7 +343,7 @@ static av_cold void decode_init_static(void)
                 val    /= steps;
                 val2    = val % steps;
                 val3    = val / steps;
-                division_tabs[i][j] = val1 + (val2 << 4) + (val3 << 8);
+                division_tabs[i][j] = val1 + (val2 * (1 << 4)) + (val3 * (1 << 8));
             }
         }
     }

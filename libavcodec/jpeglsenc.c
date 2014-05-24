@@ -43,7 +43,7 @@ static inline void ls_encode_regular(JLSState *state, PutBitContext *pb, int Q,
     int val;
     int map;
 
-    for (k = 0; (state->N[Q] << k) < state->A[Q]; k++)
+    for (k = 0; (state->N[Q] * (1 << k)) < state->A[Q]; k++)
         ;
 
     map = !state->near && !k && (2 * state->B[Q] <= -state->N[Q]);
@@ -75,7 +75,7 @@ static inline void ls_encode_runterm(JLSState *state, PutBitContext *pb,
     temp = state->A[Q];
     if (RItype)
         temp += state->N[Q] >> 1;
-    for (k = 0; (state->N[Q] << k) < temp; k++)
+    for (k = 0; (state->N[Q] * (1 << k)) < temp; k++)
         ;
     map = 0;
     if (!k && err && (2 * state->B[Q] < state->N[Q]))

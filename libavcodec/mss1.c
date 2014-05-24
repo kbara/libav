@@ -65,7 +65,7 @@ ARITH_GET_BIT()
 static int arith_get_bits(ArithCoder *c, int bits)
 {
     int range = c->high - c->low + 1;
-    int val   = (((c->value - c->low + 1) << bits) - 1) / range;
+    int val   = (((c->value - c->low + 1) * (1 << bits)) - 1) / range;
     int prob  = range * val;
 
     c->high   = ((prob + range) >> bits) + c->low - 1;
@@ -130,7 +130,7 @@ static int decode_pal(MSS12Context *ctx, ArithCoder *acoder)
         r = arith_get_bits(acoder, 8);
         g = arith_get_bits(acoder, 8);
         b = arith_get_bits(acoder, 8);
-        *pal++ = (r << 16) | (g << 8) | b;
+        *pal++ = (r * (1 << 16)) | (g * (1 << 8)) | b;
     }
 
     return !!ncol;

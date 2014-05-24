@@ -223,7 +223,7 @@ static void x8_get_ac_rlf(IntraX8Context * const w, const int mode,
 l=lut_l[i/2]={0,0,0,0,0,0,0,0,1,1,2,3}[i>>1];// 11 10'01 01'00 00'00 00'00 00'00 00 => 0xE50000
 t=lut_mask[l]={0x0f,0x03,0x01,0x00}[l]; as i<256 the higher bits do not matter */
         l=(0xE50000>>(i&(0x1E)))&3;/*0x1E or (~1) or ((i>>1)<<1)*/
-        t=(0x01030F>>(l<<3));
+        t=(0x01030F>>(l * (1 << 3)));
 
         (*run)   = i&t;
         (*level) = l;
@@ -354,7 +354,7 @@ static int x8_setup_spatial_predictor(IntraX8Context * const w, const int chroma
 static void x8_update_predictions(IntraX8Context * const w, const int orient, const int est_run ){
     MpegEncContext * const s= w->s;
 
-    w->prediction_table[s->mb_x*2+(s->mb_y&1)] = (est_run<<2) + 1*(orient==4) + 2*(orient==8);
+    w->prediction_table[s->mb_x*2+(s->mb_y&1)] = (est_run * (1 << 2)) + 1*(orient==4) + 2*(orient==8);
 /*
   y=2n+0 ->//0 2 4
   y=2n+1 ->//1 3 5
@@ -680,9 +680,9 @@ static void x8_init_block_index(MpegEncContext *s){ //FIXME maybe merge with ff_
     s->dest[1] = s->current_picture.f->data[1];
     s->dest[2] = s->current_picture.f->data[2];
 
-    s->dest[0] +=   s->mb_y        *   linesize << 3;
-    s->dest[1] += ( s->mb_y&(~1) ) * uvlinesize << 2;//chroma blocks are on add rows
-    s->dest[2] += ( s->mb_y&(~1) ) * uvlinesize << 2;
+    s->dest[0] +=   (s->mb_y * linesize) * (1 << 3);
+    s->dest[1] += ((s->mb_y & (~1)) * uvlinesize) * (1 << 2);//chroma blocks are on add rows
+    s->dest[2] += ((s->mb_y & (~1)) * uvlinesize) * (1 << 2);
 }
 
 /**

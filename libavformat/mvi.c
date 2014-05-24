@@ -126,7 +126,7 @@ static int read_packet(AVFormatContext *s, AVPacket *pkt)
             return ret;
         pkt->stream_index = MVI_AUDIO_STREAM_INDEX;
         mvi->audio_size_left -= count;
-        mvi->audio_size_counter += mvi->audio_frame_size - (count << MVI_FRAC_BITS);
+        mvi->audio_size_counter += mvi->audio_frame_size - (count * (1 << MVI_FRAC_BITS));
     } else {
         if ((ret = av_get_packet(pb, pkt, mvi->video_frame_size)) < 0)
             return ret;

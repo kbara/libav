@@ -124,7 +124,7 @@ static void rv34_gen_vlc(const uint8_t *bits, int size, VLC *vlc, const uint8_t 
 
     codes[0] = 0;
     for(i = 0; i < 16; i++)
-        codes[i+1] = (codes[i] + counts[i]) << 1;
+        codes[i+1] = (codes[i] + counts[i]) * (1 << 1);
     for(i = 0; i < realsize; i++)
         cw[i] = codes[bits2[i]]++;
 
@@ -199,15 +199,15 @@ static int rv34_decode_cbp(GetBitContext *gb, RV34VLC *vlc, int table)
 
     for(mask = 8; mask; mask >>= 1, curshift++){
         if(pattern & mask)
-            cbp |= get_vlc2(gb, vlc->cbp[table][ones].table, vlc->cbp[table][ones].bits, 1) << curshift[0];
+            cbp |= get_vlc2(gb, vlc->cbp[table][ones].table, vlc->cbp[table][ones].bits, 1) * (1 << curshift[0]);
     }
 
     for(i = 0; i < 4; i++){
         t = (modulo_three_table[code] >> (6 - 2*i)) & 3;
         if(t == 1)
-            cbp |= cbp_masks[get_bits1(gb)] << i;
+            cbp |= cbp_masks[get_bits1(gb)] * (1 << i);
         if(t == 2)
-            cbp |= cbp_masks[2] << i;
+            cbp |= cbp_masks[2] * (1 << i);
     }
     return cbp;
 }
@@ -924,7 +924,9 @@ static int rv34_decode_mv(RV34DecContext *r, int block_type)
     case RV34_MB_P_8x8:
         for(i=0;i< 4;i++){
             rv34_pred_mv(r, block_type, i, i);
-            rv34_mc_1mv (r, block_type, (i&1)<<3, (i&2)<<2, (i&1)+(i>>1)*s->b8_stride, 1, 1, 0);
+            rv34_mc_1mv (r, block_type, (i & 1) * (1 << 3),
+                         (i & 2) * (1 << 2), (i&1)+(i>>1)*s->b8_stride, 1,
+                         1, 0);
         }
         break;
     }
@@ -1172,9 +1174,9 @@ static int rv34_set_deblock_coef(RV34DecContext *r)
         vmvmask |= (vmvmask & 0x4444) >> 1;
         hmvmask |= (hmvmask & 0x0F00) >> 4;
         if(s->mb_x)
-            r->deblock_coefs[s->mb_x - 1 + s->mb_y*s->mb_stride] |= (vmvmask & 0x1111) << 3;
+            r->deblock_coefs[s->mb_x - 1 + s->mb_y*s->mb_stride] |= (vmvmask & 0x1111) * (1 << 3);
         if(!s->first_slice_line)
-            r->deblock_coefs[s->mb_x + (s->mb_y - 1)*s->mb_stride] |= (hmvmask & 0xF) << 12;
+            r->deblock_coefs[s->mb_x + (s->mb_y - 1)*s->mb_stride] |= (hmvmask & 0xF) * (1 << 12);
     }
     return hmvmask | vmvmask;
 }
@@ -1711,8 +1713,8 @@ int ff_rv34_decode_frame(AVCodecContext *avctx,
                 r->mv_weight1 = r->mv_weight2 = r->weight1 = r->weight2 = 8192;
                 r->scaled_weight = 0;
             }else{
-                r->mv_weight1 = (dist0 << 14) / refdist;
-                r->mv_weight2 = (dist1 << 14) / refdist;
+                r->mv_weight1 = (dist0 * (1 << 14)) / refdist;
+                r->mv_weight2 = (dist1 * (1 << 14)) / refdist;
                 if((r->mv_weight1|r->mv_weight2) & 511){
                     r->weight1 = r->mv_weight1;
                     r->weight2 = r->mv_weight2;

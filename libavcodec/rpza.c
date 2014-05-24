@@ -161,14 +161,14 @@ static void rpza_decode_stream(RpzaContext *s)
             /* red components */
             ta = (colorA >> 10) & 0x1F;
             tb = (colorB >> 10) & 0x1F;
-            color4[1] |= ((11 * ta + 21 * tb) >> 5) << 10;
-            color4[2] |= ((21 * ta + 11 * tb) >> 5) << 10;
+            color4[1] |= ((11 * ta + 21 * tb) >> 5) * (1 << 10);
+            color4[2] |= ((21 * ta + 11 * tb) >> 5) * (1 << 10);
 
             /* green components */
             ta = (colorA >> 5) & 0x1F;
             tb = (colorB >> 5) & 0x1F;
-            color4[1] |= ((11 * ta + 21 * tb) >> 5) << 5;
-            color4[2] |= ((21 * ta + 11 * tb) >> 5) << 5;
+            color4[1] |= ((11 * ta + 21 * tb) >> 5) * (1 << 5);
+            color4[2] |= ((21 * ta + 11 * tb) >> 5) * (1 << 5);
 
             /* blue components */
             ta = colorA & 0x1F;

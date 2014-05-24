@@ -71,11 +71,11 @@ void ff_mpeg4_pred_ac(MpegEncContext *s, int16_t *block, int n, int dir)
                 n == 1 || n == 3) {
                 /* same qscale */
                 for (i = 1; i < 8; i++)
-                    block[s->dsp.idct_permutation[i << 3]] += ac_val[i];
+                    block[s->dsp.idct_permutation[i * (1 << 3)]] += ac_val[i];
             } else {
                 /* different qscale, we must rescale */
                 for (i = 1; i < 8; i++)
-                    block[s->dsp.idct_permutation[i << 3]] += ROUNDED_DIV(ac_val[i] * qscale_table[xy], s->qscale);
+                    block[s->dsp.idct_permutation[i * (1 << 3)]] += ROUNDED_DIV(ac_val[i] * qscale_table[xy], s->qscale);
             }
         } else {
             const int xy = s->mb_x + s->mb_y * s->mb_stride - s->mb_stride;
@@ -96,7 +96,7 @@ void ff_mpeg4_pred_ac(MpegEncContext *s, int16_t *block, int n, int dir)
     }
     /* left copy */
     for (i = 1; i < 8; i++)
-        ac_val1[i] = block[s->dsp.idct_permutation[i << 3]];
+        ac_val1[i] = block[s->dsp.idct_permutation[i * (1 << 3)]];
 
     /* top copy */
     for (i = 1; i < 8; i++)
@@ -269,12 +269,12 @@ static int mpeg4_decode_sprite_trajectory(Mpeg4DecContext *ctx, GetBitContext *g
         ctx->sprite_shift[1]   = 0;
         break;
     case 2:
-        s->sprite_offset[0][0] = (sprite_ref[0][0] << (alpha + rho)) +
+        s->sprite_offset[0][0] = (sprite_ref[0][0] * (1 << (alpha + rho))) +
                                  (-r * sprite_ref[0][0] + virtual_ref[0][0]) *
                                  (-vop_ref[0][0]) +
                                  (r * sprite_ref[0][1] - virtual_ref[0][1]) *
                                  (-vop_ref[0][1]) + (1 << (alpha + rho - 1));
-        s->sprite_offset[0][1] = (sprite_ref[0][1] << (alpha + rho)) +
+        s->sprite_offset[0][1] = (sprite_ref[0][1] * (1 << (alpha + rho))) +
                                  (-r * sprite_ref[0][1] + virtual_ref[0][1]) *
                                  (-vop_ref[0][0]) +
                                  (-r * sprite_ref[0][0] + virtual_ref[0][0]) *
@@ -301,13 +301,13 @@ static int mpeg4_decode_sprite_trajectory(Mpeg4DecContext *ctx, GetBitContext *g
         min_ab = FFMIN(alpha, beta);
         w3     = w2 >> min_ab;
         h3     = h2 >> min_ab;
-        s->sprite_offset[0][0] = (sprite_ref[0][0] << (alpha + beta + rho - min_ab)) +
+        s->sprite_offset[0][0] = (sprite_ref[0][0] * (1 << (alpha + beta + rho - min_ab))) +
                                  (-r * sprite_ref[0][0] + virtual_ref[0][0]) *
                                  h3 * (-vop_ref[0][0]) +
                                  (-r * sprite_ref[0][0] + virtual_ref[1][0]) *
                                  w3 * (-vop_ref[0][1]) +
                                  (1 << (alpha + beta + rho - min_ab - 1));
-        s->sprite_offset[0][1] = (sprite_ref[0][1] << (alpha + beta + rho - min_ab)) +
+        s->sprite_offset[0][1] = (sprite_ref[0][1] * (1 << (alpha + beta + rho - min_ab))) +
                                  (-r * sprite_ref[0][1] + virtual_ref[0][1]) *
                                  h3 * (-vop_ref[0][0]) +
                                  (-r * sprite_ref[0][1] + virtual_ref[1][1]) *
@@ -335,10 +335,10 @@ static int mpeg4_decode_sprite_trajectory(Mpeg4DecContext *ctx, GetBitContext *g
         break;
     }
     /* try to simplify the situation */
-    if (s->sprite_delta[0][0] == a << ctx->sprite_shift[0] &&
+    if (s->sprite_delta[0][0] == a * (1 << ctx->sprite_shift[0]) &&
         s->sprite_delta[0][1] == 0 &&
         s->sprite_delta[1][0] == 0 &&
-        s->sprite_delta[1][1] == a << ctx->sprite_shift[0]) {
+        s->sprite_delta[1][1] == a * (1 << ctx->sprite_shift[0])) {
         s->sprite_offset[0][0] >>= ctx->sprite_shift[0];
         s->sprite_offset[0][1] >>= ctx->sprite_shift[0];
         s->sprite_offset[1][0] >>= ctx->sprite_shift[1];
@@ -490,7 +490,7 @@ static inline int get_amv(Mpeg4DecContext *ctx, int n)
         if (ctx->divx_version == 500 && ctx->divx_build == 413)
             sum = s->sprite_offset[0][n] / (1 << (a - s->quarter_sample));
         else
-            sum = RSHIFT(s->sprite_offset[0][n] << s->quarter_sample, a);
+            sum = RSHIFT(s->sprite_offset[0][n] * (1 << s->quarter_sample), a);
     } else {
         dx    = s->sprite_delta[n][0];
         dy    = s->sprite_delta[n][1];
@@ -796,7 +796,7 @@ static int mpeg4_decode_partition_b(MpegEncContext *s, int mb_count)
                     return -1;
                 }
 
-                s->cbp_table[xy]               |= cbpy << 2;
+                s->cbp_table[xy]               |= cbpy * (1 << 2);
                 s->current_picture.mb_type[xy] |= ac_pred * MB_TYPE_ACPRED;
             } else { /* P || S_TYPE */
                 if (IS_INTRA(s->current_picture.mb_type[xy])) {
@@ -828,7 +828,7 @@ static int mpeg4_decode_partition_b(MpegEncContext *s, int mb_count)
                             dir |= 1;
                     }
                     s->cbp_table[xy]               &= 3;  // remove dquant
-                    s->cbp_table[xy]               |= cbpy << 2;
+                    s->cbp_table[xy]               |= cbpy * (1 << 2);
                     s->current_picture.mb_type[xy] |= ac_pred * MB_TYPE_ACPRED;
                     s->pred_dir_table[xy]           = dir;
                 } else if (IS_SKIP(s->current_picture.mb_type[xy])) {
@@ -848,7 +848,7 @@ static int mpeg4_decode_partition_b(MpegEncContext *s, int mb_count)
                     s->current_picture.qscale_table[xy] = s->qscale;
 
                     s->cbp_table[xy] &= 3;  // remove dquant
-                    s->cbp_table[xy] |= (cbpy ^ 0xf) << 2;
+                    s->cbp_table[xy] |= (cbpy ^ 0xf) * (1 << 2);
                 }
             }
         }
@@ -999,7 +999,7 @@ static inline int mpeg4_decode_block(Mpeg4DecContext *ctx, int16_t *block,
             else
                 rl_vlc = ff_h263_rl_inter.rl_vlc[0];
         } else {
-            qmul = s->qscale << 1;
+            qmul = s->qscale * (1 << 1);
             qadd = (s->qscale - 1) | 1;
             if (rvlc)
                 rl_vlc = ff_rvlc_rl_inter.rl_vlc[s->qscale];
@@ -1318,7 +1318,7 @@ static int mpeg4_decode_mb(MpegEncContext *s, int16_t block[6][64])
             s->mcsel = 0;
         cbpy = get_vlc2(&s->gb, ff_h263_cbpy_vlc.table, CBPY_VLC_BITS, 1) ^ 0x0F;
 
-        cbp = (cbpc & 3) | (cbpy << 2);
+        cbp = (cbpc & 3) | (cbpy * (1 << 2));
         if (dquant)
             ff_set_qscale(s, s->qscale + quant_tab[get_bits(&s->gb, 2)]);
         if ((!s->progressive_sequence) &&
@@ -1576,7 +1576,7 @@ intra:
                    "I cbpy damaged at %d %d\n", s->mb_x, s->mb_y);
             return -1;
         }
-        cbp = (cbpc & 3) | (cbpy << 2);
+        cbp = (cbpc & 3) | (cbpy * (1 << 2));
 
         ctx->use_intra_dc_vlc = s->qscale < ctx->intra_dc_threshold;
 
@@ -2031,7 +2031,7 @@ static int decode_user_data(Mpeg4DecContext *ctx, GetBitContext *gb)
     if (e != 4) {
         e = sscanf(buf, "Lavc%d.%d.%d", &ver, &ver2, &ver3) + 1;
         if (e > 1)
-            build = (ver << 16) + (ver2 << 8) + ver3;
+            build = (ver * (1 << 16)) + (ver2 * (1 << 8)) + ver3;
     }
     if (e != 4) {
         if (strcmp(buf, "ffmpeg") == 0)

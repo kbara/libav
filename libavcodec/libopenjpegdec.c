@@ -195,7 +195,7 @@ static void libopenjpeg_copy_to_packed16(AVFrame *picture, opj_image_t *image)
         img_ptr = (uint16_t *) (picture->data[0] + y * picture->linesize[0]);
         for (x = 0; x < picture->width; x++, index++)
             for (c = 0; c < image->numcomps; c++)
-                *img_ptr++ = image->comps[c].data[index] << adjust[c];
+                *img_ptr++ = image->comps[c].data[index] * (1 << adjust[c]);
     }
 }
 

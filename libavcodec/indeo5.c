@@ -130,7 +130,7 @@ static int decode_gop_header(IVI45DecContext *ctx, AVCodecContext *avctx)
 
             mb_size  = get_bits1(&ctx->gb);
             blk_size = 8 >> get_bits1(&ctx->gb);
-            mb_size  = blk_size << !mb_size;
+            mb_size  = blk_size * (1 << !mb_size);
 
             blk_size_changed = mb_size != band->mb_size || blk_size != band->blk_size;
             if (blk_size_changed) {
@@ -144,7 +144,7 @@ static int decode_gop_header(IVI45DecContext *ctx, AVCodecContext *avctx)
             }
 
             /* select transform function and scan pattern according to plane and band number */
-            switch ((p << 2) + i) {
+            switch ((p * (1 << 2)) + i) {
             case 0:
                 band->inv_transform  = ff_ivi_inverse_slant_8x8;
                 band->dc_transform   = ff_ivi_dc_slant_2d;

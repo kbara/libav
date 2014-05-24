@@ -299,7 +299,8 @@ static int tm2_read_stream(TM2Context *ctx, const uint8_t *buf, int stream_id, i
             init_get_bits(&ctx->gb, buf + pos, (skip - pos) * 8);
             if ((ret = tm2_read_deltas(ctx, stream_id)) < 0)
                 return ret;
-            bytestream2_skip(&gb, ((get_bits_count(&ctx->gb) + 31) >> 5) << 2);
+            bytestream2_skip(&gb,
+                             ((get_bits_count(&ctx->gb) + 31) >> 5) * (1 << 2));
         }
     }
     /* skip unused fields */
@@ -316,7 +317,7 @@ static int tm2_read_stream(TM2Context *ctx, const uint8_t *buf, int stream_id, i
     init_get_bits(&ctx->gb, buf + pos, (skip - pos) * 8);
     if ((ret = tm2_build_huff_table(ctx, &codes)) < 0)
         return ret;
-    bytestream2_skip(&gb, ((get_bits_count(&ctx->gb) + 31) >> 5) << 2);
+    bytestream2_skip(&gb, ((get_bits_count(&ctx->gb) + 31) >> 5) * (1 << 2));
 
     toks >>= 1;
     /* check if we have sane number of tokens */

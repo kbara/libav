@@ -504,7 +504,7 @@ static inline int celt_log2tan(int isin, int icos)
     ls = opus_ilog(isin);
     icos <<= 15 - lc;
     isin <<= 15 - ls;
-    return (ls << 11) - (lc << 11) +
+    return (ls * (1 << 11)) - (lc * (1 << 11)) +
            ROUND_MUL16(isin, ROUND_MUL16(isin, -2597) + 7932) -
            ROUND_MUL16(icos, ROUND_MUL16(icos, -2597) + 7932);
 }
@@ -681,9 +681,9 @@ static void celt_decode_allocation(CeltContext *s, OpusRangeCoder *rc)
         boost[i] = 0;
 
         quanta = celt_freq_range[i] << (s->coded_channels - 1) << s->duration;
-        quanta = FFMIN(quanta << 3, FFMAX(6 << 3, quanta));
+        quanta = FFMIN(quanta * (1 << 3), FFMAX(6 << 3, quanta));
         band_dynalloc = dynalloc;
-        while (consumed + (band_dynalloc<<3) < totalbits && boost[i] < cap[i]) {
+        while (consumed + (band_dynalloc * (1 << 3)) < totalbits && boost[i] < cap[i]) {
             int add = opus_rc_p2model(rc, band_dynalloc);
             consumed = opus_rc_tell_frac(rc);
             if (!add)
@@ -706,7 +706,7 @@ static void celt_decode_allocation(CeltContext *s, OpusRangeCoder *rc)
     totalbits = (s->framebits << 3) - opus_rc_tell_frac(rc) - 1;
     s->anticollapse_bit = 0;
     if (s->blocks > 1 && s->duration >= 2 &&
-        totalbits >= ((s->duration + 2) << 3))
+        totalbits >= ((s->duration + 2) * (1 << 3)))
         s->anticollapse_bit = 1 << 3;
     totalbits -= s->anticollapse_bit;
 
@@ -736,10 +736,10 @@ static void celt_decode_allocation(CeltContext *s, OpusRangeCoder *rc)
 
         /* PVQ minimum allocation threshold, below this value the band is
          * skipped */
-        threshold[i] = FFMAX(3 * celt_freq_range[i] << duration >> 4,
+        threshold[i] = FFMAX((3 * celt_freq_range[i]) * (1 << duration) >> 4,
                              s->coded_channels << 3);
 
-        trim_offset[i] = trim * (band << scale) >> 6;
+        trim_offset[i] = trim * (band * (1 << scale)) >> 6;
 
         if (celt_freq_range[i] << s->duration == 1)
             trim_offset[i] -= s->coded_channels << 3;
@@ -851,7 +851,7 @@ static void celt_decode_allocation(CeltContext *s, OpusRangeCoder *rc)
 
         /* a "do not skip" marker is only coded if the allocation is
            above the chosen threshold */
-        if (allocation >= FFMAX(threshold[j], (s->coded_channels + 1) <<3 )) {
+        if (allocation >= FFMAX(threshold[j], (s->coded_channels + 1) * (1 << 3))) {
             if (opus_rc_p2model(rc, 1))
                 break;
 
@@ -915,15 +915,15 @@ static void celt_decode_allocation(CeltContext *s, OpusRangeCoder *rc)
             temp = dof * (celt_log_freq_range[i] + (s->duration<<3));
             offset = (temp >> 1) - dof * CELT_FINE_OFFSET;
             if (N == 2) /* dof=2 is the only case that doesn't fit the model */
-                offset += dof<<1;
+                offset += dof * (1 << 1);
 
             /* grant an additional bias for the first and second pulses */
-            if (s->pulses[i] + offset < 2 * (dof << 3))
+            if (s->pulses[i] + offset < 2 * (dof * (1 << 3)))
                 offset += temp >> 2;
-            else if (s->pulses[i] + offset < 3 * (dof << 3))
+            else if (s->pulses[i] + offset < 3 * (dof * (1 << 3)))
                 offset += temp >> 3;
 
-            fine_bits = (s->pulses[i] + offset + (dof << 2)) / (dof << 3);
+            fine_bits = (s->pulses[i] + offset + (dof * (1 << 2))) / (dof * (1 << 3));
             max_bits  = FFMIN((s->pulses[i]>>3) >> (s->coded_channels - 1),
                               CELT_MAX_FINE_BITS);
 
@@ -933,10 +933,10 @@ static void celt_decode_allocation(CeltContext *s, OpusRangeCoder *rc)
 
             /* if fine_bits was rounded down or capped,
                give priority for the final fine energy pass */
-            s->fine_priority[i] = (s->fine_bits[i] * (dof<<3) >= s->pulses[i] + offset);
+            s->fine_priority[i] = (s->fine_bits[i] * (dof * (1 << 3)) >= s->pulses[i] + offset);
 
             /* the remaining bits are assigned to PVQ */
-            s->pulses[i] -= s->fine_bits[i] << (s->coded_channels - 1) << 3;
+            s->pulses[i] -= (s->fine_bits[i] << (s->coded_channels - 1)) * (1 << 3);
         } else {
             /* all bits go to fine energy except for the sign bit */
             extrabits = FFMAX(0, s->pulses[i] - (s->coded_channels << 3));
@@ -1077,7 +1077,7 @@ static inline unsigned int celt_extract_collapse_mask(const int *iy,
     collapse_mask = 0;
     for (i = 0; i < B; i++)
         for (j = 0; j < N0; j++)
-            collapse_mask |= (iy[i*N0+j]!=0)<<i;
+            collapse_mask |= (iy[i * N0 + j] != 0) * (1 << i);
     return collapse_mask;
 }
 
@@ -1386,7 +1386,7 @@ static unsigned int celt_decode_band(CeltContext *s, OpusRangeCoder *rc,
         while ((N_B & 1) == 0 && tf_change < 0) {
             if (lowband)
                 celt_haar1(lowband, N_B, blocks);
-            fill |= fill << blocks;
+            fill |= fill * (1 << blocks);
             blocks <<= 1;
             N_B >>= 1;
             time_divide++;
@@ -1410,7 +1410,7 @@ static unsigned int celt_decode_band(CeltContext *s, OpusRangeCoder *rc,
         split = 1;
         duration -= 1;
         if (blocks == 1)
-            fill = (fill & 1) | (fill << 1);
+            fill = (fill & 1) | (fill * (1 << 1));
         blocks = (blocks + 1) >> 1;
     }
 
@@ -1466,7 +1466,7 @@ static unsigned int celt_decode_band(CeltContext *s, OpusRangeCoder *rc,
             iside = celt_cos(16384-itheta);
             /* This is the mid vs side allocation that minimizes squared error
             in that band. */
-            delta = ROUND_MUL16((N - 1) << 7, celt_log2tan(iside, imid));
+            delta = ROUND_MUL16((N - 1) * (1 << 7), celt_log2tan(iside, imid));
         }
 
         mid  = imid  / 32768.0f;
@@ -1866,7 +1866,7 @@ static void process_anticollapse(CeltContext *s, CeltFrame *frame, float *X)
             if (!(frame->collapse_masks[i] & 1 << k)) {
                 /* Fill with noise */
                 for (j = 0; j < celt_freq_range[i]; j++)
-                    xptr[(j << s->duration) + k] = (celt_rng(s) & 0x8000) ? r : -r;
+                    xptr[(j * (1 << s->duration)) + k] = (celt_rng(s) & 0x8000) ? r : -r;
                 renormalize = 1;
             }
         }
@@ -1950,15 +1950,18 @@ static void celt_decode_bands(CeltContext *s, OpusRangeCoder *rc)
 
         if (s->dualstereo) {
             cm[0] = celt_decode_band(s, rc, i, X, NULL, band_size, b / 2, s->blocks,
-                                     effective_lowband != -1 ? norm + (effective_lowband << s->duration) : NULL, s->duration,
+                                     effective_lowband != -1 ? norm + (effective_lowband * (1 << s->duration)) : NULL,
+                                     s->duration,
             norm + band_offset, 0, 1.0f, lowband_scratch, cm[0]);
 
             cm[1] = celt_decode_band(s, rc, i, Y, NULL, band_size, b/2, s->blocks,
-                                     effective_lowband != -1 ? norm2 + (effective_lowband << s->duration) : NULL, s->duration,
+                                     effective_lowband != -1 ? norm2 + (effective_lowband * (1 << s->duration)) : NULL,
+                                     s->duration,
             norm2 + band_offset, 0, 1.0f, lowband_scratch, cm[1]);
         } else {
             cm[0] = celt_decode_band(s, rc, i, X, Y, band_size, b, s->blocks,
-            effective_lowband != -1 ? norm + (effective_lowband << s->duration) : NULL, s->duration,
+            effective_lowband != -1 ? norm + (effective_lowband * (1 << s->duration)) : NULL,
+                                     s->duration,
             norm + band_offset, 0, 1.0f, lowband_scratch, cm[0]|cm[1]);
 
             cm[1] = cm[0];
@@ -1969,7 +1972,7 @@ static void celt_decode_bands(CeltContext *s, OpusRangeCoder *rc)
         s->remaining += s->pulses[i] + consumed;
 
         /* Update the folding position only as long as we have 1 bit/sample depth */
-        update_lowband = (b > band_size << 3);
+        update_lowband = (b > band_size * (1 << 3));
     }
 }
 

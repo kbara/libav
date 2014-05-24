@@ -812,7 +812,7 @@ static void FUNC(put_hevc_qpel_pixels)(int16_t *dst, ptrdiff_t dststride,
 
     for (y = 0; y < height; y++) {
         for (x = 0; x < width; x++)
-            dst[x] = src[x] << (14 - BIT_DEPTH);
+            dst[x] = src[x] * (1 << (14 - BIT_DEPTH));
         src += srcstride;
         dst += dststride;
     }
@@ -944,7 +944,7 @@ static void FUNC(put_hevc_epel_pixels)(int16_t *dst, ptrdiff_t dststride,
 
     for (y = 0; y < height; y++) {
         for (x = 0; x < width; x++)
-            dst[x] = src[x] << (14 - BIT_DEPTH);
+            dst[x] = src[x] * (1 << (14 - BIT_DEPTH));
         src += srcstride;
         dst += dststride;
     }
@@ -1135,7 +1135,7 @@ static void FUNC(weighted_pred_avg)(uint8_t denom,
     for (y = 0; y < height; y++) {
         for (x = 0; x < width; x++)
             dst[x] = av_clip_pixel((src1[x] * w0 + src2[x] * w1 +
-                                    ((o0 + o1 + 1) << log2Wd)) >> (log2Wd + 1));
+                                    ((o0 + o1 + 1) * (1 << log2Wd))) >> (log2Wd + 1));
         dst  += dststride;
         src1 += srcstride;
         src2 += srcstride;
@@ -1179,8 +1179,8 @@ static void FUNC(hevc_loop_filter_luma)(uint8_t *_pix,
         const int dq3  = abs(TQ2 - 2 * TQ1 + TQ0);
         const int d0   = dp0 + dq0;
         const int d3   = dp3 + dq3;
-        const int beta = _beta[j] << (BIT_DEPTH - 8);
-        const int tc   = _tc[j]   << (BIT_DEPTH - 8);
+        const int beta = _beta[j] * (1 << (BIT_DEPTH - 8));
+        const int tc   = _tc[j] * (1 << (BIT_DEPTH - 8));
         const int no_p = _no_p[j];
         const int no_q = _no_q[j];
 
@@ -1194,9 +1194,9 @@ static void FUNC(hevc_loop_filter_luma)(uint8_t *_pix,
 
             if (abs(P3  -  P0) + abs(Q3  -  Q0) < beta_3 && abs(P0  -  Q0) < tc25 &&
                 abs(TP3 - TP0) + abs(TQ3 - TQ0) < beta_3 && abs(TP0 - TQ0) < tc25 &&
-                                      (d0 << 1) < beta_2 &&      (d3 << 1) < beta_2) {
+                                      (d0 * (1 << 1)) < beta_2 &&      (d3 * (1 << 1)) < beta_2) {
                 // strong filtering
-                const int tc2 = tc << 1;
+                const int tc2 = tc * (1 << 1);
                 for (d = 0; d < 4; d++) {
                     const int p3 = P3;
                     const int p2 = P2;
@@ -1267,7 +1267,7 @@ static void FUNC(hevc_loop_filter_chroma)(uint8_t *_pix, ptrdiff_t _xstride,
     ptrdiff_t ystride = _ystride / sizeof(pixel);
 
     for (j = 0; j < 2; j++) {
-        const int tc = _tc[j] << (BIT_DEPTH - 8);
+        const int tc = _tc[j] * (1 << (BIT_DEPTH - 8));
         if (tc <= 0) {
             pix += 4 * ystride;
             continue;

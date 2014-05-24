@@ -151,7 +151,7 @@ static int wv_read_block_header(AVFormatContext *ctx, AVIOContext *pb)
                     break;
                 case 5:
                     avio_skip(pb, 1);
-                    chan  |= (avio_r8(pb) & 0xF) << 8;
+                    chan  |= (avio_r8(pb) & 0xF) * (1 << 8);
                     chmask = avio_rl24(pb);
                     break;
                 default:

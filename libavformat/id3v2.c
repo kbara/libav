@@ -151,7 +151,7 @@ static unsigned int get_size(AVIOContext *s, int len)
 {
     int v = 0;
     while (len--)
-        v = (v << 7) + (avio_r8(s) & 0x7F);
+        v = (v * (1 << 7)) + (avio_r8(s) & 0x7F);
     return v;
 }
 

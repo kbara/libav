@@ -63,7 +63,7 @@ uint16_t ff_svq1_packet_checksum (const uint8_t *data,
     int i;
 
     for (i = 0; i < length; i++)
-        value = checksum_table[data[i] ^ (value >> 8)] ^ ((value & 0xFF) << 8);
+        value = checksum_table[data[i] ^ (value >> 8)] ^ ((value & 0xFF) * (1 << 8));
 
     return value;
 }

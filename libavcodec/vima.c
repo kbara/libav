@@ -184,7 +184,7 @@ static int decode_frame(AVCodecContext *avctx, void *data,
             } else {
                 int predict_index, diff;
 
-                predict_index = (lookup << (7 - lookup_size)) | (step_index << 6);
+                predict_index = (lookup * (1 << (7 - lookup_size))) | (step_index * (1 << 6));
                 predict_index = av_clip(predict_index, 0, 5785);
                 diff          = predict_table[predict_index];
                 if (lookup)

@@ -236,13 +236,13 @@ static av_always_inline int read_mv_component(VP9Context *s, int idx, int hp)
 
         for (n = 0, m = 0; m < c; m++) {
             bit = vp56_rac_get_prob(&s->c, s->prob.p.mv_comp[idx].bits[m]);
-            n  |= bit << m;
+            n  |= bit * (1 << m);
             s->counts.mv_comp[idx].bits[m][bit]++;
         }
         n <<= 3;
         bit = vp8_rac_get_tree(&s->c, ff_vp9_mv_fp_tree,
                                s->prob.p.mv_comp[idx].fp);
-        n  |= bit << 1;
+        n  |= bit * (1 << 1);
         s->counts.mv_comp[idx].fp[bit]++;
         if (hp) {
             bit = vp56_rac_get_prob(&s->c, s->prob.p.mv_comp[idx].hp);
@@ -261,7 +261,7 @@ static av_always_inline int read_mv_component(VP9Context *s, int idx, int hp)
         bit = vp8_rac_get_tree(&s->c, ff_vp9_mv_fp_tree,
                                s->prob.p.mv_comp[idx].class0_fp[n]);
         s->counts.mv_comp[idx].class0_fp[n][bit]++;
-        n = (n << 3) | (bit << 1);
+        n = (n * (1 << 3)) | (bit * (1 << 1));
         if (hp) {
             bit = vp56_rac_get_prob(&s->c, s->prob.p.mv_comp[idx].class0_hp);
             s->counts.mv_comp[idx].class0_hp[bit]++;

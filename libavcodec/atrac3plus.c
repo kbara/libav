@@ -236,7 +236,7 @@ static int num_coded_units(GetBitContext *gb, Atrac3pChanParams *chan,
         }
 
         if (chan->fill_mode == 3)
-            chan->split_point = get_bits(gb, 2) + (chan->ch_num << 1) + 1;
+            chan->split_point = get_bits(gb, 2) + (chan->ch_num * (1 << 1)) + 1;
     }
 
     return 0;

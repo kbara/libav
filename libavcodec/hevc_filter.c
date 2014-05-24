@@ -281,12 +281,12 @@ static void sao_filter_CTB(HEVCContext *s, int x, int y)
         int height = FFMIN(ctb_size,
                            (s->sps->height >> s->sps->vshift[c_idx]) - y0);
 
-        uint8_t *src = &s->frame->data[c_idx][y0 * stride + (x0 << s->sps->pixel_shift)];
-        uint8_t *dst = &s->sao_frame->data[c_idx][y0 * stride + (x0 << s->sps->pixel_shift)];
-        int offset = (y_shift >> chroma) * stride + ((x_shift >> chroma) << s->sps->pixel_shift);
+        uint8_t *src = &s->frame->data[c_idx][y0 * stride + (x0 * (1 << s->sps->pixel_shift))];
+        uint8_t *dst = &s->sao_frame->data[c_idx][y0 * stride + (x0 * (1 << s->sps->pixel_shift))];
+        int offset = (y_shift >> chroma) * stride + ((x_shift >> chroma) * (1 << s->sps->pixel_shift));
 
         copy_CTB(dst - offset, src - offset,
-                 (edges[2] ? width  + (x_shift >> chroma) : width)  << s->sps->pixel_shift,
+                 (edges[2] ? width + (x_shift >> chroma) : width) * (1 << s->sps->pixel_shift),
                  (edges[3] ? height + (y_shift >> chroma) : height), stride);
 
         for (class_index = 0; class_index < class; class_index++) {
@@ -332,7 +332,7 @@ static int get_pcm(HEVCContext *s, int x, int y)
 
 #define TC_CALC(qp, bs)                                                 \
     tctable[av_clip((qp) + DEFAULT_INTRA_TC_OFFSET * ((bs) - 1) +       \
-                    (tc_offset >> 1 << 1),                              \
+                    ((tc_offset >> 1) * (1 << 1)),                              \
                     0, MAX_QP + DEFAULT_INTRA_TC_OFFSET)]
 
 static void deblocking_filter_CTB(HEVCContext *s, int x0, int y0)
@@ -382,7 +382,7 @@ static void deblocking_filter_CTB(HEVCContext *s, int x0, int y0)
                 beta[1] = betatable[av_clip(qp1 + beta_offset, 0, MAX_QP)];
                 tc[0]   = bs0 ? TC_CALC(qp0, bs0) : 0;
                 tc[1]   = bs1 ? TC_CALC(qp1, bs1) : 0;
-                src     = &s->frame->data[LUMA][y * s->frame->linesize[LUMA] + (x << s->sps->pixel_shift)];
+                src     = &s->frame->data[LUMA][y * s->frame->linesize[LUMA] + (x * (1 << s->sps->pixel_shift))];
                 if (pcmf) {
                     no_p[0] = get_pcm(s, x - 1, y);
                     no_p[1] = get_pcm(s, x - 1, y + 4);
@@ -411,7 +411,7 @@ static void deblocking_filter_CTB(HEVCContext *s, int x0, int y0)
 
                     c_tc[0] = (bs0 == 2) ? chroma_tc(s, qp0, chroma, tc_offset) : 0;
                     c_tc[1] = (bs1 == 2) ? chroma_tc(s, qp1, chroma, tc_offset) : 0;
-                    src     = &s->frame->data[chroma][y / 2 * s->frame->linesize[chroma] + ((x / 2) << s->sps->pixel_shift)];
+                    src     = &s->frame->data[chroma][y / 2 * s->frame->linesize[chroma] + ((x / 2) * (1 << s->sps->pixel_shift))];
                     if (pcmf) {
                         no_p[0] = get_pcm(s, x - 1, y);
                         no_p[1] = get_pcm(s, x - 1, y + 8);
@@ -447,7 +447,7 @@ static void deblocking_filter_CTB(HEVCContext *s, int x0, int y0)
                 beta[1] = betatable[av_clip(qp1 + beta_offset, 0, MAX_QP)];
                 tc[0]   = bs0 ? TC_CALC(qp0, bs0) : 0;
                 tc[1]   = bs1 ? TC_CALC(qp1, bs1) : 0;
-                src     = &s->frame->data[LUMA][y * s->frame->linesize[LUMA] + (x << s->sps->pixel_shift)];
+                src     = &s->frame->data[LUMA][y * s->frame->linesize[LUMA] + (x * (1 << s->sps->pixel_shift))];
                 if (pcmf) {
                     no_p[0] = get_pcm(s, x, y - 1);
                     no_p[1] = get_pcm(s, x + 4, y - 1);
@@ -489,7 +489,7 @@ static void deblocking_filter_CTB(HEVCContext *s, int x0, int y0)
                     tc_offset = x >= x0 ? cur_tc_offset : left_tc_offset;
                     c_tc[0]   = bs0 == 2 ? chroma_tc(s, qp0, chroma, tc_offset)     : 0;
                     c_tc[1]   = bs1 == 2 ? chroma_tc(s, qp1, chroma, cur_tc_offset) : 0;
-                    src       = &s->frame->data[chroma][y / 2 * s->frame->linesize[chroma] + ((x / 2) << s->sps->pixel_shift)];
+                    src       = &s->frame->data[chroma][y / 2 * s->frame->linesize[chroma] + ((x / 2) * (1 << s->sps->pixel_shift))];
                     if (pcmf) {
                         no_p[0] = get_pcm(s, x, y - 1);
                         no_p[1] = get_pcm(s, x + 8, y - 1);

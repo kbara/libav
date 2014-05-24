@@ -433,8 +433,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
         int b;
         for (b = 0; b < s->num_sfb[i]; b++) {
             int x;
-            int offset = ((s->sfb_offsets[i][b]
-                           + s->sfb_offsets[i][b + 1] - 1) << i) >> 1;
+            int offset = ((s->sfb_offsets[i][b] + s->sfb_offsets[i][b + 1] - 1) * (1 << i)) >> 1;
             for (x = 0; x < num_possible_block_sizes; x++) {
                 int v = 0;
                 while (s->sfb_offsets[x][v + 1] << x < offset)
@@ -1533,7 +1532,7 @@ static int decode_packet(AVCodecContext *avctx, void *data,
 
         s->next_packet_start = buf_size - avctx->block_align;
         buf_size = avctx->block_align;
-        s->buf_bit_size = buf_size << 3;
+        s->buf_bit_size = buf_size * (1 << 3);
 
         /** parse packet header */
         init_get_bits(gb, buf, s->buf_bit_size);

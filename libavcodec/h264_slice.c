@@ -347,7 +347,7 @@ static void init_dequant8_coeff_table(H264Context *h)
             int shift = div6[q];
             int idx   = rem6[q];
             for (x = 0; x < 64; x++)
-                h->dequant8_coeff[i][q][(x >> 3) | ((x & 7) << 3)] =
+                h->dequant8_coeff[i][q][(x >> 3) | ((x & 7) * (1 << 3))] =
                     ((uint32_t)dequant8_coeff_init[idx][dequant8_coeff_init_scan[((x >> 1) & 12) | (x & 3)]] *
                      h->pps.scaling_matrix8[i][x]) << shift;
         }
@@ -373,7 +373,7 @@ static void init_dequant4_coeff_table(H264Context *h)
             int shift = div6[q] + 2;
             int idx   = rem6[q];
             for (x = 0; x < 16; x++)
-                h->dequant4_coeff[i][q][(x >> 2) | ((x << 2) & 0xF)] =
+                h->dequant4_coeff[i][q][(x >> 2) | ((x * (1 << 2)) & 0xF)] =
                     ((uint32_t)dequant4_coeff_init[idx][(x & 1) + ((x >> 2) & 1)] *
                      h->pps.scaling_matrix4[i][x]) << shift;
         }
@@ -708,14 +708,14 @@ static int h264_frame_start(H264Context *h)
     assert(h->linesize && h->uvlinesize);
 
     for (i = 0; i < 16; i++) {
-        h->block_offset[i]           = (4 * ((scan8[i] - scan8[0]) & 7) << pixel_shift) + 4 * h->linesize * ((scan8[i] - scan8[0]) >> 3);
-        h->block_offset[48 + i]      = (4 * ((scan8[i] - scan8[0]) & 7) << pixel_shift) + 8 * h->linesize * ((scan8[i] - scan8[0]) >> 3);
+        h->block_offset[i]           = ((4 * ((scan8[i] - scan8[0]) & 7)) * (1 << pixel_shift)) + 4 * h->linesize * ((scan8[i] - scan8[0]) >> 3);
+        h->block_offset[48 + i]      = ((4 * ((scan8[i] - scan8[0]) & 7)) * (1 << pixel_shift)) + 8 * h->linesize * ((scan8[i] - scan8[0]) >> 3);
     }
     for (i = 0; i < 16; i++) {
         h->block_offset[16 + i]      =
-        h->block_offset[32 + i]      = (4 * ((scan8[i] - scan8[0]) & 7) << pixel_shift) + 4 * h->uvlinesize * ((scan8[i] - scan8[0]) >> 3);
+        h->block_offset[32 + i]      = ((4 * ((scan8[i] - scan8[0]) & 7)) * (1 << pixel_shift)) + 4 * h->uvlinesize * ((scan8[i] - scan8[0]) >> 3);
         h->block_offset[48 + 16 + i] =
-        h->block_offset[48 + 32 + i] = (4 * ((scan8[i] - scan8[0]) & 7) << pixel_shift) + 8 * h->uvlinesize * ((scan8[i] - scan8[0]) >> 3);
+        h->block_offset[48 + 32 + i] = ((4 * ((scan8[i] - scan8[0]) & 7)) * (1 << pixel_shift)) + 8 * h->uvlinesize * ((scan8[i] - scan8[0]) >> 3);
     }
 
     /* can't be in alloc_tables because linesize isn't known there.
@@ -2073,12 +2073,12 @@ static void loop_filter(H264Context *h, int start_x, int end_x)
                 h->mb_x = mb_x;
                 h->mb_y = mb_y;
                 dest_y  = h->cur_pic.f.data[0] +
-                          ((mb_x << pixel_shift) + mb_y * h->linesize) * 16;
+                          ((mb_x * (1 << pixel_shift)) + mb_y * h->linesize) * 16;
                 dest_cb = h->cur_pic.f.data[1] +
-                          (mb_x << pixel_shift) * (8 << CHROMA444(h)) +
+                          (mb_x * (1 << pixel_shift)) * (8 << CHROMA444(h)) +
                           mb_y * h->uvlinesize * block_h;
                 dest_cr = h->cur_pic.f.data[2] +
-                          (mb_x << pixel_shift) * (8 << CHROMA444(h)) +
+                          (mb_x * (1 << pixel_shift)) * (8 << CHROMA444(h)) +
                           mb_y * h->uvlinesize * block_h;
                 // FIXME simplify above
 
@@ -2135,7 +2135,7 @@ static void decode_finish_row(H264Context *h)
     int top            = 16 * (h->mb_y      >> FIELD_PICTURE(h));
     int pic_height     = 16 *  h->mb_height >> FIELD_PICTURE(h);
     int height         =  16      << FRAME_MBAFF(h);
-    int deblock_border = (16 + 4) << FRAME_MBAFF(h);
+    int deblock_border = (16 + 4) * (1 << FRAME_MBAFF(h));
 
     if (h->deblocking_filter) {
         if ((top + height) >= pic_height)

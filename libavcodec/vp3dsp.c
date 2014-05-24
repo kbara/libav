@@ -174,10 +174,10 @@ static av_always_inline void idct(uint8_t *dst, int stride,
                 dst[4*stride] =
                 dst[5*stride] =
                 dst[6*stride] =
-                dst[7*stride] = av_clip_uint8(128 + ((xC4S4 * ip[0] + (IdctAdjustBeforeShift << 16)) >> 20));
+                dst[7*stride] = av_clip_uint8(128 + ((xC4S4 * ip[0] + (IdctAdjustBeforeShift * (1 << 16))) >> 20));
             } else {
                 if (ip[0]) {
-                    int v = (xC4S4 * ip[0] + (IdctAdjustBeforeShift << 16)) >> 20;
+                    int v = (xC4S4 * ip[0] + (IdctAdjustBeforeShift * (1 << 16))) >> 20;
                     dst[0 * stride] = av_clip_uint8(dst[0 * stride] + v);
                     dst[1 * stride] = av_clip_uint8(dst[1 * stride] + v);
                     dst[2 * stride] = av_clip_uint8(dst[2 * stride] + v);

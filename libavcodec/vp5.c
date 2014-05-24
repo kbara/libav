@@ -59,7 +59,7 @@ static int vp5_parse_header(VP56Context *s, const uint8_t *buf, int buf_size,
         cols = vp56_rac_gets(c, 8);  /* number of stored macroblock cols */
         if (!rows || !cols) {
             av_log(s->avctx, AV_LOG_ERROR, "Invalid size %dx%d\n",
-                   cols << 4, rows << 4);
+                   cols * (1 << 4), rows * (1 << 4));
             return AVERROR_INVALIDDATA;
         }
         vp56_rac_gets(c, 8);  /* number of displayed macroblock rows */
@@ -89,10 +89,10 @@ static void vp5_parse_vector_adjustment(VP56Context *s, VP56mv *vect)
         if (vp56_rac_get_prob(c, model->vector_dct[comp])) {
             int sign = vp56_rac_get_prob(c, model->vector_sig[comp]);
             di  = vp56_rac_get_prob(c, model->vector_pdi[comp][0]);
-            di |= vp56_rac_get_prob(c, model->vector_pdi[comp][1]) << 1;
+            di |= vp56_rac_get_prob(c, model->vector_pdi[comp][1]) * (1 << 1);
             delta = vp56_rac_get_tree(c, ff_vp56_pva_tree,
                                       model->vector_pdv[comp]);
-            delta = di | (delta << 2);
+            delta = di | (delta * (1 << 2));
             delta = (delta ^ -sign) + sign;
         }
         if (!comp)
@@ -202,7 +202,7 @@ static void vp5_parse_coeff(VP56Context *s)
                         sign = vp56_rac_get(c);
                         coeff = ff_vp56_coeff_bias[idx+5];
                         for (i=ff_vp56_coeff_bit_length[idx]; i>=0; i--)
-                            coeff += vp56_rac_get_prob(c, ff_vp56_coeff_parse_table[idx][i]) << i;
+                            coeff += vp56_rac_get_prob(c, ff_vp56_coeff_parse_table[idx][i]) * (1 << i);
                     } else {
                         if (vp56_rac_get_prob(c, model2[4])) {
                             coeff = 3 + vp56_rac_get_prob(c, model1[5]);

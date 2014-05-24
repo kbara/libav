@@ -267,7 +267,7 @@ void ff_h263_pred_acdc(MpegEncContext * s, int16_t *block, int n)
             if (a != 1024) {
                 ac_val -= 16;
                 for(i=1;i<8;i++) {
-                    block[s->dsp.idct_permutation[i<<3]] += ac_val[i];
+                    block[s->dsp.idct_permutation[i * (1 << 3)]] += ac_val[i];
                 }
                 pred_dc = a;
             }
@@ -304,7 +304,7 @@ void ff_h263_pred_acdc(MpegEncContext * s, int16_t *block, int n)
 
     /* left copy */
     for(i=1;i<8;i++)
-        ac_val1[i    ] = block[s->dsp.idct_permutation[i<<3]];
+        ac_val1[i    ] = block[s->dsp.idct_permutation[i * (1 << 3)]];
     /* top copy */
     for(i=1;i<8;i++)
         ac_val1[8 + i] = block[s->dsp.idct_permutation[i   ]];

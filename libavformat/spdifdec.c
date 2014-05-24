@@ -117,7 +117,7 @@ static int spdif_probe(AVProbeData *p)
     for (; buf < probe_end; buf++) {
         state = (state << 8) | *buf;
 
-        if (state == (AV_BSWAP16C(SYNCWORD1) << 16 | AV_BSWAP16C(SYNCWORD2))
+        if (state == (AV_BSWAP16C(SYNCWORD1) * (1 << 16) | AV_BSWAP16C(SYNCWORD2))
                 && buf[1] < 0x37) {
             sync_codes++;
 
@@ -169,7 +169,7 @@ static int spdif_read_packet(AVFormatContext *s, AVPacket *pkt)
     uint32_t state = 0;
     int pkt_size_bits, offset, ret;
 
-    while (state != (AV_BSWAP16C(SYNCWORD1) << 16 | AV_BSWAP16C(SYNCWORD2))) {
+    while (state != (AV_BSWAP16C(SYNCWORD1) * (1 << 16) | AV_BSWAP16C(SYNCWORD2))) {
         state = (state << 8) | avio_r8(pb);
         if (pb->eof_reached)
             return AVERROR_EOF;

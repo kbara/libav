@@ -905,7 +905,7 @@ static void decode_clnpass(Jpeg2000DecoderContext *s, Jpeg2000T1Context *t1,
                     continue;
                 runlen = ff_mqc_decode(&t1->mqc,
                                        t1->mqc.cx_states + MQC_CX_UNI);
-                runlen = (runlen << 1) | ff_mqc_decode(&t1->mqc,
+                runlen = (runlen * (1 << 1)) | ff_mqc_decode(&t1->mqc,
                                                        t1->mqc.cx_states +
                                                        MQC_CX_UNI);
                 dec = 1;
@@ -942,9 +942,9 @@ static void decode_clnpass(Jpeg2000DecoderContext *s, Jpeg2000T1Context *t1,
     if (seg_symbols) {
         int val;
         val = ff_mqc_decode(&t1->mqc, t1->mqc.cx_states + MQC_CX_UNI);
-        val = (val << 1) + ff_mqc_decode(&t1->mqc, t1->mqc.cx_states + MQC_CX_UNI);
-        val = (val << 1) + ff_mqc_decode(&t1->mqc, t1->mqc.cx_states + MQC_CX_UNI);
-        val = (val << 1) + ff_mqc_decode(&t1->mqc, t1->mqc.cx_states + MQC_CX_UNI);
+        val = (val * (1 << 1)) + ff_mqc_decode(&t1->mqc, t1->mqc.cx_states + MQC_CX_UNI);
+        val = (val * (1 << 1)) + ff_mqc_decode(&t1->mqc, t1->mqc.cx_states + MQC_CX_UNI);
+        val = (val * (1 << 1)) + ff_mqc_decode(&t1->mqc, t1->mqc.cx_states + MQC_CX_UNI);
         if (val != 0xa)
             av_log(s->avctx, AV_LOG_ERROR,
                    "Segmentation symbol value incorrect\n");
@@ -1188,7 +1188,7 @@ static int jpeg2000_decode_tile(Jpeg2000DecoderContext *s, Jpeg2000Tile *tile,
                         int val = lrintf(*datap) + (1 << (cbps - 1));
                         /* DC level shift and clip see ISO 15444-1:2002 G.1.2 */
                         val = av_clip(val, 0, (1 << cbps) - 1);
-                        *dst = val << (8 - cbps);
+                        *dst = val * (1 << (8 - cbps));
                         datap++;
                         dst += s->ncomponents;
                     }
@@ -1197,7 +1197,7 @@ static int jpeg2000_decode_tile(Jpeg2000DecoderContext *s, Jpeg2000Tile *tile,
                         int val = *i_datap + (1 << (cbps - 1));
                         /* DC level shift and clip see ISO 15444-1:2002 G.1.2 */
                         val = av_clip(val, 0, (1 << cbps) - 1);
-                        *dst = val << (8 - cbps);
+                        *dst = val * (1 << (8 - cbps));
                         i_datap++;
                         dst += s->ncomponents;
                     }
@@ -1227,7 +1227,7 @@ static int jpeg2000_decode_tile(Jpeg2000DecoderContext *s, Jpeg2000Tile *tile,
                         /* DC level shift and clip see ISO 15444-1:2002 G.1.2 */
                         val = av_clip(val, 0, (1 << cbps) - 1);
                         /* align 12 bit values in little-endian mode */
-                        *dst = val << (16 - cbps);
+                        *dst = val * (1 << (16 - cbps));
                         datap++;
                         dst += s->ncomponents;
                     }
@@ -1237,7 +1237,7 @@ static int jpeg2000_decode_tile(Jpeg2000DecoderContext *s, Jpeg2000Tile *tile,
                         /* DC level shift and clip see ISO 15444-1:2002 G.1.2 */
                         val = av_clip(val, 0, (1 << cbps) - 1);
                         /* align 12 bit values in little-endian mode */
-                        *dst = val << (16 - cbps);
+                        *dst = val * (1 << (16 - cbps));
                         i_datap++;
                         dst += s->ncomponents;
                     }

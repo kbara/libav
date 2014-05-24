@@ -321,11 +321,11 @@ static inline int decode_vlc_codeword(GetBitContext *gb, unsigned codebook)
             LAST_SKIP_BITS(re, gb, log + 1);
         } else {
             prefix_len = log + 1;
-            code = (log << rice_order) + NEG_USR32(buf << prefix_len, rice_order);
+            code = (log * (1 << rice_order)) + NEG_USR32(buf << prefix_len, rice_order);
             LAST_SKIP_BITS(re, gb, prefix_len + rice_order);
         }
     } else { /* otherwise we got a exp golomb code */
-        len  = (log << 1) - switch_bits + exp_order + 1;
+        len  = (log * (1 << 1)) - switch_bits + exp_order + 1;
         code = NEG_USR32(buf, len) - (1 << exp_order) + (switch_bits << rice_order);
         LAST_SKIP_BITS(re, gb, len);
     }
@@ -381,7 +381,7 @@ static inline int decode_ac_coeffs(GetBitContext *gb, int16_t *out,
     run   = 4;
     level = 2;
 
-    max_coeffs = blocks_per_slice << 6;
+    max_coeffs = blocks_per_slice * (1 << 6);
     block_mask = blocks_per_slice - 1;
 
     for (pos = blocks_per_slice - 1; pos < max_coeffs;) {
@@ -409,7 +409,7 @@ static inline int decode_ac_coeffs(GetBitContext *gb, int16_t *out,
             break;
 
         sign = get_sbits(gb, 1);
-        out[((pos & block_mask) << 6) + scan[pos >> plane_size_factor]] =
+        out[((pos & block_mask) * (1 << 6)) + scan[pos >> plane_size_factor]] =
             (level ^ sign) - sign;
     }
 
@@ -435,7 +435,7 @@ static int decode_slice_plane(ProresContext *ctx, ProresThreadData *td,
 
     memset(td->blocks, 0, 8 * 4 * 64 * sizeof(*td->blocks));
 
-    init_get_bits(&gb, buf, data_size << 3);
+    init_get_bits(&gb, buf, data_size * (1 << 3));
 
     decode_dc_coeffs(&gb, td->blocks, blocks_per_slice);
 
@@ -504,7 +504,7 @@ static void unpack_alpha(GetBitContext *gb, uint16_t *dst, int num_coeffs,
             if (num_bits == 16)
                 dst[idx++] = alpha_val >> 6;
             else
-                dst[idx++] = (alpha_val << 2) | (alpha_val >> 6);
+                dst[idx++] = (alpha_val * (1 << 2)) | (alpha_val >> 6);
             if (idx >= num_coeffs - 1)
                 break;
         } while (get_bits1(gb));
@@ -518,7 +518,7 @@ static void unpack_alpha(GetBitContext *gb, uint16_t *dst, int num_coeffs,
                 dst[idx++] = alpha_val >> 6;
         else
             for (i = 0; i < val; i++)
-                dst[idx++] = (alpha_val << 2) | (alpha_val >> 6);
+                dst[idx++] = (alpha_val * (1 << 2)) | (alpha_val >> 6);
     } while (idx < num_coeffs);
 }
 
@@ -536,7 +536,7 @@ static void decode_alpha_plane(ProresContext *ctx, ProresThreadData *td,
 
     memset(td->blocks, 0, 8 * 4 * 64 * sizeof(*td->blocks));
 
-    init_get_bits(&gb, buf, data_size << 3);
+    init_get_bits(&gb, buf, data_size * (1 << 3));
 
     if (ctx->alpha_info == 2)
         unpack_alpha(&gb, td->blocks, mbs_per_slice * 4 * 64, 16);
@@ -598,11 +598,11 @@ static int decode_slice(AVCodecContext *avctx, void *tdata)
         v_linesize <<= 1;
         a_linesize <<= 1;
     }
-    y_data += (mb_y_pos << 4) * y_linesize + (mb_x_pos << 5);
-    u_data += (mb_y_pos << 4) * u_linesize + (mb_x_pos << ctx->mb_chroma_factor);
-    v_data += (mb_y_pos << 4) * v_linesize + (mb_x_pos << ctx->mb_chroma_factor);
+    y_data += (mb_y_pos * (1 << 4)) * y_linesize + (mb_x_pos * (1 << 5));
+    u_data += (mb_y_pos * (1 << 4)) * u_linesize + (mb_x_pos * (1 << ctx->mb_chroma_factor));
+    v_data += (mb_y_pos * (1 << 4)) * v_linesize + (mb_x_pos * (1 << ctx->mb_chroma_factor));
     if (a_data)
-        a_data += (mb_y_pos << 4) * a_linesize + (mb_x_pos << 5);
+        a_data += (mb_y_pos * (1 << 4)) * a_linesize + (mb_x_pos * (1 << 5));
 
     if (slice_data_size < 6) {
         av_log(avctx, AV_LOG_ERROR, "slice data too small\n");
@@ -628,7 +628,7 @@ static int decode_slice(AVCodecContext *avctx, void *tdata)
     }
 
     sf = av_clip(buf[1], 1, 224);
-    sf = sf > 128 ? (sf - 96) << 2 : sf;
+    sf = sf > 128 ? (sf - 96) * (1 << 2) : sf;
 
     /* scale quantization matrixes according with slice's scale factor */
     /* TODO: this can be SIMD-optimized a lot */

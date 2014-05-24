@@ -1062,7 +1062,7 @@ static int bit_alloc(AC3EncodeContext *s, int snr_offset)
 {
     int blk, ch;
 
-    snr_offset = (snr_offset - 240) << 2;
+    snr_offset = (snr_offset - 240) * (1 << 2);
 
     reset_block_bap(s);
     for (blk = 0; blk < s->num_blocks; blk++) {
@@ -1099,7 +1099,7 @@ static int cbr_bit_allocation(AC3EncodeContext *s)
     if (bits_left < 0)
         return AVERROR(EINVAL);
 
-    snr_offset = s->coarse_snr_offset << 4;
+    snr_offset = s->coarse_snr_offset * (1 << 4);
 
     /* if previous frame SNR offset was 1023, check if current frame can also
        use SNR offset of 1023. if so, skip the search. */
@@ -1180,7 +1180,7 @@ static inline int asym_quant(int c, int e, int qbits)
 {
     int m;
 
-    c = (((c << e) >> (24 - qbits)) + 1) >> 1;
+    c = (((c * (1 << e)) >> (24 - qbits)) + 1) >> 1;
     m = (1 << (qbits-1));
     if (c >= m)
         c = m - 1;
@@ -1615,7 +1615,7 @@ static void output_frame_end(AC3EncodeContext *s)
     int frame_size_58, pad_bytes, crc1, crc2_partial, crc2, crc_inv;
     uint8_t *frame;
 
-    frame_size_58 = ((s->frame_size >> 2) + (s->frame_size >> 4)) << 1;
+    frame_size_58 = ((s->frame_size >> 2) + (s->frame_size >> 4)) * (1 << 1);
 
     /* pad the remainder of the frame with zeros */
     av_assert2(s->frame_size * 8 - put_bits_count(&s->pb) >= 18);
@@ -2192,7 +2192,7 @@ static av_cold int validate_options(AC3EncodeContext *s)
         }
 
         /* make sure the minimum frame size is below the average frame size */
-        s->frame_size_code = min_br_code << 1;
+        s->frame_size_code = min_br_code * (1 << 1);
         while (wpf > 1 && wpf * s->sample_rate / AC3_FRAME_SIZE * 16 > avctx->bit_rate)
             wpf--;
         s->frame_size_min = 2 * wpf;
@@ -2210,7 +2210,7 @@ static av_cold int validate_options(AC3EncodeContext *s)
                 break;
         }
         avctx->bit_rate    = best_br;
-        s->frame_size_code = best_code << 1;
+        s->frame_size_code = best_code * (1 << 1);
         s->frame_size_min  = 2 * ff_ac3_frame_size_tab[s->frame_size_code][s->bit_alloc.sr_code];
         s->num_blks_code   = 0x3;
         s->num_blocks      = 6;
@@ -2444,10 +2444,10 @@ av_cold int ff_ac3_encode_init(AVCodecContext *avctx)
     s->samples_written = 0;
 
     /* calculate crc_inv for both possible frame sizes */
-    frame_size_58 = (( s->frame_size    >> 2) + ( s->frame_size    >> 4)) << 1;
+    frame_size_58 = ((s->frame_size >> 2) + (s->frame_size >> 4)) * (1 << 1);
     s->crc_inv[0] = pow_poly((CRC16_POLY >> 1), (8 * frame_size_58) - 16, CRC16_POLY);
     if (s->bit_alloc.sr_code == 1) {
-        frame_size_58 = (((s->frame_size+2) >> 2) + ((s->frame_size+2) >> 4)) << 1;
+        frame_size_58 = (((s->frame_size + 2) >> 2) + ((s->frame_size + 2) >> 4)) * (1 << 1);
         s->crc_inv[1] = pow_poly((CRC16_POLY >> 1), (8 * frame_size_58) - 16, CRC16_POLY);
     }
 

@@ -78,7 +78,8 @@ static int vp6_parse_header(VP56Context *s, const uint8_t *buf, int buf_size,
         /* buf[4] is number of displayed macroblock rows */
         /* buf[5] is number of displayed macroblock cols */
         if (!rows || !cols) {
-            av_log(s->avctx, AV_LOG_ERROR, "Invalid size %dx%d\n", cols << 4, rows << 4);
+            av_log(s->avctx, AV_LOG_ERROR, "Invalid size %dx%d\n",
+                   cols * (1 << 4), rows * (1 << 4));
             return AVERROR_INVALIDDATA;
         }
 
@@ -137,7 +138,7 @@ static int vp6_parse_header(VP56Context *s, const uint8_t *buf, int buf_size,
     if (parse_filter_info) {
         if (vp56_rac_get(c)) {
             s->filter_mode = 2;
-            s->sample_variance_threshold = vp56_rac_gets(c, 5) << vrt_shift;
+            s->sample_variance_threshold = vp56_rac_gets(c, 5) * (1 << vrt_shift);
             s->max_vector_length = 2 << vp56_rac_gets(c, 3);
         } else if (vp56_rac_get(c)) {
             s->filter_mode = 1;
@@ -163,7 +164,7 @@ static int vp6_parse_header(VP56Context *s, const uint8_t *buf, int buf_size,
         }
         if (s->use_huffman) {
             s->parse_coeff = vp6_parse_coeff_huffman;
-            init_get_bits(&s->gb, buf, buf_size<<3);
+            init_get_bits(&s->gb, buf, buf_size * (1 << 3));
         } else {
             ff_vp56_init_range_decoder(&s->cc, buf, buf_size);
             s->ccp = &s->cc;
@@ -342,10 +343,10 @@ static void vp6_parse_vector_adjustment(VP56Context *s, VP56mv *vect)
             static const uint8_t prob_order[] = {0, 1, 2, 7, 6, 5, 4};
             for (i=0; i<sizeof(prob_order); i++) {
                 int j = prob_order[i];
-                delta |= vp56_rac_get_prob(c, model->vector_fdv[comp][j])<<j;
+                delta |= vp56_rac_get_prob(c, model->vector_fdv[comp][j]) * (1 << j);
             }
             if (delta & 0xF0)
-                delta |= vp56_rac_get_prob(c, model->vector_fdv[comp][3])<<3;
+                delta |= vp56_rac_get_prob(c, model->vector_fdv[comp][3]) * (1 << 3);
             else
                 delta |= 8;
         } else {
@@ -468,7 +469,7 @@ static void vp6_parse_coeff(VP56Context *s)
                         idx = vp56_rac_get_tree(c, ff_vp56_pc_tree, model1);
                         coeff = ff_vp56_coeff_bias[idx+5];
                         for (i=ff_vp56_coeff_bit_length[idx]; i>=0; i--)
-                            coeff += vp56_rac_get_prob(c, ff_vp56_coeff_parse_table[idx][i]) << i;
+                            coeff += vp56_rac_get_prob(c, ff_vp56_coeff_parse_table[idx][i]) * (1 << i);
                     } else {
                         if (vp56_rac_get_prob(c, model2[4]))
                             coeff = 3 + vp56_rac_get_prob(c, model1[5]);
@@ -498,7 +499,7 @@ static void vp6_parse_coeff(VP56Context *s)
                     run = vp56_rac_get_tree(c, vp6_pcr_tree, model3);
                     if (!run)
                         for (run=9, i=0; i<6; i++)
-                            run += vp56_rac_get_prob(c, model3[i+8]) << i;
+                            run += vp56_rac_get_prob(c, model3[i + 8]) * (1 << i);
                 }
             }
             coeff_idx += run;

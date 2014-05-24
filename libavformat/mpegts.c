@@ -1957,7 +1957,7 @@ static int parse_pcr(int64_t *ppcr_high, int *ppcr_low, const uint8_t *packet)
     if (len < 6)
         return AVERROR_INVALIDDATA;
     v          = AV_RB32(p);
-    *ppcr_high = ((int64_t) v << 1) | (p[4] >> 7);
+    *ppcr_high = ((int64_t)v * (1LL << 1)) | (p[4] >> 7);
     *ppcr_low  = ((p[4] & 1) << 8) | p[5];
     return 0;
 }

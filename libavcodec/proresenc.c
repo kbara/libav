@@ -308,7 +308,7 @@ static void get_alpha_data(ProresContext *ctx, const uint16_t *src,
                 blocks[j] >>= 2;
         else
             for (j = 0; j < copy_w; j++)
-                blocks[j] = (blocks[j] << 6) | (blocks[j] >> 4);
+                blocks[j] = (blocks[j] * (1 << 6)) | (blocks[j] >> 4);
         for (j = copy_w; j < slice_width; j++)
             blocks[j] = blocks[copy_w - 1];
         blocks += slice_width;
@@ -390,7 +390,7 @@ static void encode_acs(PutBitContext *pb, int16_t *blocks,
     int run, level, run_cb, lev_cb;
     int max_coeffs, abs_level;
 
-    max_coeffs = blocks_per_slice << 6;
+    max_coeffs = blocks_per_slice * (1 << 6);
     run_cb     = ff_prores_run_to_cb_index[4];
     lev_cb     = ff_prores_lev_to_cb_index[2];
     run        = 0;
@@ -536,13 +536,13 @@ static int encode_slice(AVCodecContext *avctx, const AVFrame *pic,
         if (is_chroma)
             plane_factor += ctx->chroma_factor - 3;
         if (!is_chroma || ctx->chroma_factor == CFACTOR_Y444) {
-            xp          = x << 4;
-            yp          = y << 4;
+            xp          = x * (1 << 4);
+            yp          = y * (1 << 4);
             num_cblocks = 4;
             pwidth      = avctx->width;
         } else {
-            xp          = x << 3;
-            yp          = y << 4;
+            xp          = x * (1 << 3);
+            yp          = y * (1 << 4);
             num_cblocks = 2;
             pwidth      = avctx->width >> 1;
         }
@@ -635,7 +635,7 @@ static int estimate_acs(int *error, int16_t *blocks, int blocks_per_slice,
     int max_coeffs, abs_level;
     int bits = 0;
 
-    max_coeffs = blocks_per_slice << 6;
+    max_coeffs = blocks_per_slice * (1 << 6);
     run_cb     = ff_prores_run_to_cb_index[4];
     lev_cb     = ff_prores_lev_to_cb_index[2];
     run        = 0;
@@ -771,13 +771,13 @@ static int find_slice_quant(AVCodecContext *avctx, const AVFrame *pic,
         if (is_chroma[i])
             plane_factor[i] += ctx->chroma_factor - 3;
         if (!is_chroma[i] || ctx->chroma_factor == CFACTOR_Y444) {
-            xp             = x << 4;
-            yp             = y << 4;
+            xp             = x * (1 << 4);
+            yp             = y * (1 << 4);
             num_cblocks[i] = 4;
             pwidth         = avctx->width;
         } else {
-            xp             = x << 3;
-            yp             = y << 4;
+            xp             = x * (1 << 3);
+            yp             = y * (1 << 4);
             num_cblocks[i] = 2;
             pwidth         = avctx->width >> 1;
         }
@@ -993,7 +993,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         bytestream_put_byte  (&buf, 0x40);          // picture header size (in bits)
         buf += 4;                                   // picture data size will be stored here
         bytestream_put_be16  (&buf, ctx->slices_per_picture);
-        bytestream_put_byte  (&buf, av_log2(ctx->mbs_per_slice) << 4); // slice width and height in MBs
+        bytestream_put_byte  (&buf, av_log2(ctx->mbs_per_slice) * (1 << 4)); // slice width and height in MBs
 
         // seek table - will be filled during slice encoding
         slice_sizes = buf;
@@ -1016,7 +1016,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                 while (ctx->mb_width - x < mbs_per_slice)
                     mbs_per_slice >>= 1;
 
-                bytestream_put_byte(&buf, slice_hdr_size << 3);
+                bytestream_put_byte(&buf, slice_hdr_size * (1 << 3));
                 slice_hdr = buf;
                 buf += slice_hdr_size - 1;
                 init_put_bits(&pb, buf, (pkt_size - (buf - orig_buf)) * 8);

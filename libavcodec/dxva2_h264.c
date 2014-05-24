@@ -92,14 +92,13 @@ static void fill_picture_parameters(struct dxva_context *ctx, const H264Context 
     pp->wFrameHeightInMbsMinus1       = h->mb_height - 1;
     pp->num_ref_frames                = h->sps.ref_frame_count;
 
-    pp->wBitFields                    = ((h->picture_structure != PICT_FRAME) <<  0) |
-                                        ((h->sps.mb_aff &&
-                                        (h->picture_structure == PICT_FRAME)) <<  1) |
+    pp->wBitFields                    = ((h->picture_structure != PICT_FRAME) * (1 << 0)) |
+                                        ((h->sps.mb_aff && (h->picture_structure == PICT_FRAME)) * (1 << 1)) |
                                         (h->sps.residual_color_transform_flag <<  2) |
                                         /* sp_for_switch_flag (not implemented by Libav) */
                                         (0                                    <<  3) |
                                         (h->sps.chroma_format_idc             <<  4) |
-                                        ((h->nal_ref_idc != 0)                <<  6) |
+                                        ((h->nal_ref_idc != 0) * (1 << 6)) |
                                         (h->pps.constrained_intra_pred        <<  7) |
                                         (h->pps.weighted_pred                 <<  8) |
                                         (h->pps.weighted_bipred_idc           <<  9) |
@@ -107,7 +106,7 @@ static void fill_picture_parameters(struct dxva_context *ctx, const H264Context 
                                         (1                                    << 11) |
                                         (h->sps.frame_mbs_only_flag           << 12) |
                                         (h->pps.transform_8x8_mode            << 13) |
-                                        ((h->sps.level_idc >= 31)             << 14) |
+                                        ((h->sps.level_idc >= 31) * (1 << 14)) |
                                         /* IntraPicFlag (Modified if we detect a non
                                          * intra slice in dxva2_h264_decode_slice) */
                                         (1                                    << 15);

@@ -108,7 +108,7 @@ static inline void dv_calc_mb_coordinates(const DVprofile *d, int chan, int seq,
                   x = shuf1[m] + (chan&1)*9 + k%9;
                   y = (i*3+k/9)*2 + (chan>>1) + 1;
               }
-              tbl[m] = (x<<1)|(y<<9);
+              tbl[m] = (x * (1 << 1))|(y * (1 << 9));
               break;
          case 1280:
               blk = (chan*10+seq)*27+slot;
@@ -120,10 +120,10 @@ static inline void dv_calc_mb_coordinates(const DVprofile *d, int chan, int seq,
               y = (i*3+k/9)*2 + (chan>>1) + 4;
 
               if (x >= 80) {
-                  x = remap[y][0]+((x-80)<<(y>59));
+                  x = remap[y][0]+((x - 80) * (1LL << (y > 59)));
                   y = remap[y][1];
               }
-              tbl[m] = (x<<1)|(y<<9);
+              tbl[m] = (x * (1 << 1))|(y * (1 << 9));
               break;
        case 960:
               blk = (chan*10+seq)*27+slot;
@@ -133,21 +133,21 @@ static inline void dv_calc_mb_coordinates(const DVprofile *d, int chan, int seq,
 
               x = shuf2[m] + k%6 + 6*(chan&1);
               y = l_start[i] + k/6 + 45*(chan>>1);
-              tbl[m] = (x<<1)|(y<<9);
+              tbl[m] = (x * (1 << 1))|(y * (1 << 9));
               break;
         case 720:
               switch (d->pix_fmt) {
               case AV_PIX_FMT_YUV422P:
                    x = shuf3[m] + slot/3;
                    y = serpent1[slot] +
-                       ((((seq + off[m]) % d->difseg_size)<<1) + chan)*3;
-                   tbl[m] = (x<<1)|(y<<8);
+                       ((((seq + off[m]) % d->difseg_size) * (1 << 1)) + chan)*3;
+                   tbl[m] = (x * (1 << 1))|(y * (1 << 8));
                    break;
               case AV_PIX_FMT_YUV420P:
                    x = shuf3[m] + slot/3;
                    y = serpent1[slot] +
                        ((seq + off[m]) % d->difseg_size)*3;
-                   tbl[m] = (x<<1)|(y<<9);
+                   tbl[m] = (x * (1 << 1))|(y * (1 << 9));
                    break;
               case AV_PIX_FMT_YUV411P:
                    i = (seq + off[m]) % d->difseg_size;
@@ -157,7 +157,7 @@ static inline void dv_calc_mb_coordinates(const DVprofile *d, int chan, int seq,
                    y = serpent2[k] + i*6;
                    if (x>21)
                        y = y*2 - i*6;
-                   tbl[m] = (x<<2)|(y<<8);
+                   tbl[m] = (x * (1 << 2))|(y * (1 << 8));
                    break;
               }
         default:
@@ -224,7 +224,7 @@ int ff_dv_init_dynamic_tables(const DVprofile *d)
                 for (s = 0; s < 22; s++) {
                     for (i = c = 0; c < 4; c++) {
                         for (; i < dv_quant_areas[c]; i++) {
-                            *factor1   = iweight1[i] << (ff_dv_quant_shifts[s][c] + 1);
+                            *factor1   = iweight1[i] * (1 << (ff_dv_quant_shifts[s][c] + 1));
                             *factor2++ = (*factor1++) << 1;
                         }
                     }

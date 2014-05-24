@@ -101,7 +101,7 @@ void ff_ac3_bit_alloc_calc_psd(int8_t *exp, int start, int end, int16_t *psd,
 
     /* exponent mapping to PSD */
     for (bin = start; bin < end; bin++) {
-        psd[bin]=(3072 - (exp[bin] << 7));
+        psd[bin]=(3072 - (exp[bin] * (1 << 7)));
     }
 
     /* PSD integration */
@@ -168,8 +168,8 @@ int ff_ac3_bit_alloc_calc_mask(AC3BitAllocParameters *s, int16_t *band_psd,
     } else {
         /* coupling channel */
         begin = band_start;
-        fastleak = (s->cpl_fast_leak << 8) + 768;
-        slowleak = (s->cpl_slow_leak << 8) + 768;
+        fastleak = (s->cpl_fast_leak * (1 << 8)) + 768;
+        slowleak = (s->cpl_slow_leak * (1 << 8)) + 768;
     }
 
     for (band = begin; band < band_end; band++) {

@@ -135,13 +135,13 @@ static av_cold int dnxhd_init_vlc(DNXHDEncContext *ctx)
     ctx->vlc_bits  += max_level * 2;
     for (level = -max_level; level < max_level; level++) {
         for (run = 0; run < 2; run++) {
-            int index = (level << 1) | run;
+            int index = (level * (1 << 1)) | run;
             int sign, offset = 0, alevel = level;
 
             MASK_ABS(sign, alevel);
             if (alevel > 64) {
                 offset  = (alevel - 1) >> 6;
-                alevel -= offset << 6;
+                alevel -= offset * (1 << 6);
             }
             for (j = 0; j < 257; j++) {
                 if (ctx->cid_table->ac_level[j] == alevel &&
@@ -440,7 +440,7 @@ void dnxhd_encode_block(DNXHDEncContext *ctx, int16_t *block,
         slevel = block[j];
         if (slevel) {
             int run_level = i - last_non_zero - 1;
-            int rlevel = (slevel << 1) | !!run_level;
+            int rlevel = (slevel * (1 << 1)) | !!run_level;
             put_bits(&ctx->m.pb, ctx->vlc_bits[rlevel], ctx->vlc_codes[rlevel]);
             if (run_level)
                 put_bits(&ctx->m.pb, ctx->run_bits[run_level],
@@ -515,7 +515,7 @@ int dnxhd_calc_ac_bits(DNXHDEncContext *ctx, int16_t *block, int last_index)
         level = block[j];
         if (level) {
             int run_level = i - last_non_zero - 1;
-            bits += ctx->vlc_bits[(level << 1) |
+            bits += ctx->vlc_bits[(level * (1 << 1)) |
                     !!run_level] + ctx->run_bits[run_level];
             last_non_zero = i;
         }
@@ -529,11 +529,11 @@ void dnxhd_get_blocks(DNXHDEncContext *ctx, int mb_x, int mb_y)
     const int bs = ctx->block_width_l2;
     const int bw = 1 << bs;
     const uint8_t *ptr_y = ctx->thread[0]->src[0] +
-                           ((mb_y << 4) * ctx->m.linesize) + (mb_x << bs + 1);
+                           ((mb_y * (1 << 4)) * ctx->m.linesize) + (mb_x * (1 << bs + 1));
     const uint8_t *ptr_u = ctx->thread[0]->src[1] +
-                           ((mb_y << 4) * ctx->m.uvlinesize) + (mb_x << bs);
+                           ((mb_y * (1 << 4)) * ctx->m.uvlinesize) + (mb_x * (1 << bs));
     const uint8_t *ptr_v = ctx->thread[0]->src[2] +
-                           ((mb_y << 4) * ctx->m.uvlinesize) + (mb_x << bs);
+                           ((mb_y * (1 << 4)) * ctx->m.uvlinesize) + (mb_x * (1 << bs));
     DSPContext *dsp = &ctx->m.dsp;
 
     dsp->get_pixels(ctx->blocks[0], ptr_y,      ctx->m.linesize);
@@ -660,7 +660,7 @@ static int dnxhd_encode_thread(AVCodecContext *avctx, void *arg,
         int qscale = ctx->mb_qscale[mb];
         int i;
 
-        put_bits(&ctx->m.pb, 12, qscale << 1);
+        put_bits(&ctx->m.pb, 12, qscale * (1 << 1));
 
         dnxhd_get_blocks(ctx, mb_x, mb_y);
 
@@ -709,7 +709,7 @@ static int dnxhd_mb_var_thread(AVCodecContext *avctx, void *arg,
 
     ctx = ctx->thread[threadnr];
     if (ctx->cid_table->bit_depth == 8) {
-        uint8_t *pix = ctx->thread[0]->src[0] + ((mb_y << 4) * ctx->m.linesize);
+        uint8_t *pix = ctx->thread[0]->src[0] + ((mb_y * (1 << 4)) * ctx->m.linesize);
         for (mb_x = 0; mb_x < ctx->m.mb_width; ++mb_x, pix += 16) {
             unsigned mb = mb_y * ctx->m.mb_width + mb_x;
             int sum;
@@ -739,7 +739,7 @@ static int dnxhd_mb_var_thread(AVCodecContext *avctx, void *arg,
         int const linesize = ctx->m.linesize >> 1;
         for (mb_x = 0; mb_x < ctx->m.mb_width; ++mb_x) {
             uint16_t *pix = (uint16_t *)ctx->thread[0]->src[0] +
-                            ((mb_y << 4) * linesize) + (mb_x << 4);
+                            ((mb_y * (1 << 4)) * linesize) + (mb_x * (1 << 4));
             unsigned mb  = mb_y * ctx->m.mb_width + mb_x;
             int sum = 0;
             int sqsum = 0;

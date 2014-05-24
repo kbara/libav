@@ -161,7 +161,7 @@ static MacroBlock decode_macroblock(Escape124Context* s, GetBitContext* gb,
     block_index = depth ? get_bits(gb, depth) : 0;
 
     if (*codebook_index == 1) {
-        block_index += superblock_index << s->codebooks[1].depth;
+        block_index += superblock_index * (1 << s->codebooks[1].depth);
     }
 
     // This condition can occur with invalid bitstreams and

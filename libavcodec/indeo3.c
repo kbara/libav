@@ -228,15 +228,15 @@ static int copy_cell(Indeo3DecodeContext *ctx, Plane *plane, Cell *cell)
     uint8_t *src, *dst;
 
     /* setup output and reference pointers */
-    offset_dst  = (cell->ypos << 2) * plane->pitch + (cell->xpos << 2);
+    offset_dst  = (cell->ypos * (1 << 2)) * plane->pitch + (cell->xpos * (1 << 2));
     dst         = plane->pixels[ctx->buf_sel] + offset_dst;
     mv_y        = cell->mv_ptr[0];
     mv_x        = cell->mv_ptr[1];
 
     /* -1 because there is an extra line on top for prediction */
-    if ((cell->ypos << 2) + mv_y < -1 || (cell->xpos << 2) + mv_x < 0 ||
-        ((cell->ypos + cell->height) << 2) + mv_y > plane->height     ||
-        ((cell->xpos + cell->width)  << 2) + mv_x > plane->width) {
+    if ((cell->ypos * (1 << 2)) + mv_y < -1 || (cell->xpos * (1 << 2)) + mv_x < 0 ||
+        ((cell->ypos + cell->height) * (1 << 2)) + mv_y > plane->height     ||
+        ((cell->xpos + cell->width) * (1 << 2)) + mv_x > plane->width) {
         av_log(ctx->avctx, AV_LOG_ERROR,
                "Motion vectors point out of the frame.\n");
         return AVERROR_INVALIDDATA;
@@ -245,17 +245,17 @@ static int copy_cell(Indeo3DecodeContext *ctx, Plane *plane, Cell *cell)
     offset      = offset_dst + mv_y * plane->pitch + mv_x;
     src         = plane->pixels[ctx->buf_sel ^ 1] + offset;
 
-    h = cell->height << 2;
+    h = cell->height * (1 << 2);
 
     for (w = cell->width; w > 0;) {
         /* copy using 16xH blocks */
-        if (!((cell->xpos << 2) & 15) && w >= 4) {
+        if (!((cell->xpos * (1 << 2)) & 15) && w >= 4) {
             for (; w >= 4; src += 16, dst += 16, w -= 4)
                 ctx->hdsp.put_pixels_tab[0][0](dst, src, plane->pitch, h);
         }
 
         /* copy using 8xH blocks */
-        if (!((cell->xpos << 2) & 7) && w >= 2) {
+        if (!((cell->xpos * (1 << 2)) & 7) && w >= 2) {
             ctx->hdsp.put_pixels_tab[1][0](dst, src, plane->pitch, h);
             w -= 2;
             src += 8;
@@ -429,7 +429,7 @@ static int decode_cell_data(Indeo3DecodeContext *ctx, Cell *cell,
     int           row_offset, blk_row_offset, line_offset;
 
     row_offset     =  pitch;
-    blk_row_offset = (row_offset << (2 + v_zoom)) - (cell->width << 2);
+    blk_row_offset = (row_offset * (1 << (2 + v_zoom))) - (cell->width * (1 << 2));
     line_offset    = v_zoom ? row_offset : 0;
 
     if (cell->height & v_zoom || cell->width & h_zoom)
@@ -539,8 +539,8 @@ static int decode_cell_data(Indeo3DecodeContext *ctx, Cell *cell,
                     }
 
                     line += num_lines;
-                    ref  += row_offset * (num_lines << v_zoom);
-                    dst  += row_offset * (num_lines << v_zoom);
+                    ref  += row_offset * (num_lines * (1 << v_zoom));
+                    dst  += row_offset * (num_lines * (1 << v_zoom));
                 }
             }
 
@@ -587,7 +587,7 @@ static int decode_cell(Indeo3DecodeContext *ctx, AVCodecContext *avctx,
     vq_index = code & 0xF;
 
     /* setup output and reference pointers */
-    offset = (cell->ypos << 2) * plane->pitch + (cell->xpos << 2);
+    offset = (cell->ypos * (1 << 2)) * plane->pitch + (cell->xpos * (1 << 2));
     block  =  plane->pixels[ctx->buf_sel] + offset;
     if (!cell->mv_ptr) {
         /* use previous line as reference for INTRA cells */
@@ -604,9 +604,9 @@ static int decode_cell(Indeo3DecodeContext *ctx, AVCodecContext *avctx,
         mv_x      = cell->mv_ptr[1];
 
         /* -1 because there is an extra line on top for prediction */
-        if ((cell->ypos << 2) + mv_y < -1 || (cell->xpos << 2) + mv_x < 0 ||
-            ((cell->ypos + cell->height) << 2) + mv_y > plane->height     ||
-            ((cell->xpos + cell->width)  << 2) + mv_x > plane->width) {
+        if ((cell->ypos * (1 << 2)) + mv_y < -1 || (cell->xpos * (1 << 2)) + mv_x < 0 ||
+            ((cell->ypos + cell->height) * (1 << 2)) + mv_y > plane->height     ||
+            ((cell->xpos + cell->width) * (1 << 2)) + mv_x > plane->width) {
             av_log(ctx->avctx, AV_LOG_ERROR,
                    "Motion vectors point out of the frame.\n");
             return AVERROR_INVALIDDATA;
@@ -642,7 +642,7 @@ static int decode_cell(Indeo3DecodeContext *ctx, AVCodecContext *avctx,
     /* requantize the prediction if VQ index of this cell differs from VQ index */
     /* of the predicted cell in order to avoid overflows. */
     if (vq_index >= 8 && ref_block) {
-        for (x = 0; x < cell->width << 2; x++)
+        for (x = 0; x < cell->width * (1 << 2); x++)
             ref_block[x] = requant_tab[vq_index & 7][ref_block[x]];
     }
 
@@ -718,7 +718,7 @@ enum {
 };
 
 
-#define SPLIT_CELL(size, new_size) (new_size) = ((size) > 2) ? ((((size) + 2) >> 2) << 1) : 1
+#define SPLIT_CELL(size, new_size) (new_size) = ((size) > 2) ? ((((size) + 2) >> 2) * (1 << 1)) : 1
 
 #define UPDATE_BITPOS(n) \
     ctx->skip_bits  += (n); \
@@ -762,7 +762,7 @@ static int parse_bintree(Indeo3DecodeContext *ctx, AVCodecContext *avctx,
     } else if (code == V_SPLIT) {
         if (curr_cell.width > strip_width) {
             /* split strip */
-            curr_cell.width = (curr_cell.width <= (strip_width << 1) ? 1 : 2) * strip_width;
+            curr_cell.width = (curr_cell.width <= (strip_width * (1 << 1)) ? 1 : 2) * strip_width;
         } else
             SPLIT_CELL(ref_cell->width, curr_cell.width);
         ref_cell->xpos  += curr_cell.width;
@@ -824,7 +824,7 @@ static int parse_bintree(Indeo3DecodeContext *ctx, AVCodecContext *avctx,
                 if (bytes_used < 0)
                     return AVERROR_INVALIDDATA;
 
-                UPDATE_BITPOS(bytes_used << 3);
+                UPDATE_BITPOS(bytes_used * (1 << 3));
                 ctx->next_cell_data += bytes_used;
                 return 0;
             }
@@ -858,7 +858,8 @@ static int decode_plane(Indeo3DecodeContext *ctx, AVCodecContext *avctx,
     ctx->mc_vectors  = num_vectors ? data : 0;
 
     /* init the bitreader */
-    init_get_bits(&ctx->gb, &data[num_vectors * 2], (data_size - num_vectors * 2) << 3);
+    init_get_bits(&ctx->gb, &data[num_vectors * 2],
+                  (data_size - num_vectors * 2) * (1 << 3));
     ctx->skip_bits   = 0;
     ctx->need_resync = 0;
 
@@ -1020,7 +1021,7 @@ static void output_plane(const Plane *plane, int buf_sel, uint8_t *dst,
     for (y = 0; y < dst_height; y++) {
         /* convert four pixels at once using SWAR */
         for (x = 0; x < plane->width >> 2; x++) {
-            AV_WN32A(dst, (AV_RN32A(src) & 0x7F7F7F7F) << 1);
+            AV_WN32A(dst, (AV_RN32A(src) & 0x7F7F7F7F) * (1 << 1));
             src += 4;
             dst += 4;
         }

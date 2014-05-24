@@ -110,7 +110,7 @@ static const uint8_t ac3_default_coeffs[8][5][2] = {
 static inline int
 symmetric_dequant(int code, int levels)
 {
-    return ((code - (levels >> 1)) << 24) / levels;
+    return ((code - (levels >> 1)) * (1 << 24)) / levels;
 }
 
 /*
@@ -160,7 +160,7 @@ static av_cold void ac3_tables_init(void)
     /* generate dynamic range table
        reference: Section 7.7.1 Dynamic Range Control */
     for (i = 0; i < 256; i++) {
-        int v = (i >> 5) - ((i >> 7) << 3) - 5;
+        int v = (i >> 5) - ((i >> 7) * (1 << 3)) - 5;
         dynamic_range_tab[i] = powf(2.0f, v) * ((i & 0x1F) | 0x20);
     }
 }
@@ -988,9 +988,9 @@ static int decode_audio_block(AC3DecodeContext *s, int blk)
                         cpl_coord_exp = get_bits(gbc, 4);
                         cpl_coord_mant = get_bits(gbc, 4);
                         if (cpl_coord_exp == 15)
-                            s->cpl_coords[ch][bnd] = cpl_coord_mant << 22;
+                            s->cpl_coords[ch][bnd] = cpl_coord_mant * (1 << 22);
                         else
-                            s->cpl_coords[ch][bnd] = (cpl_coord_mant + 16) << 21;
+                            s->cpl_coords[ch][bnd] = (cpl_coord_mant + 16) * (1 << 21);
                         s->cpl_coords[ch][bnd] >>= (cpl_coord_exp + master_cpl_coord);
                     }
                 } else if (!blk) {

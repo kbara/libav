@@ -361,7 +361,7 @@ static av_cold int twinvq_decode_init(AVCodecContext *avctx)
         return AVERROR_INVALIDDATA;
     }
 
-    switch ((isampf << 8) + ibps) {
+    switch ((isampf * (1 << 8)) + ibps) {
     case (8 << 8) + 8:
         tctx->mtab = &mode_08_08;
         break;

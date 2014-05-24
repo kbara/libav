@@ -58,7 +58,7 @@ static av_cold void init_mv_table(MVTable *tab)
     for(i=0;i<tab->n;i++) {
         x = tab->table_mvx[i];
         y = tab->table_mvy[i];
-        tab->table_mv_index[(x << 6) | y] = i;
+        tab->table_mv_index[(x * (1 << 6)) | y] = i;
     }
 }
 
@@ -311,7 +311,7 @@ void ff_msmpeg4_encode_motion(MpegEncContext * s,
 #endif
     mv = &ff_mv_tables[s->mv_table_index];
 
-    code = mv->table_mv_index[(mx << 6) | my];
+    code = mv->table_mv_index[(mx * (1 << 6)) | my];
     put_bits(&s->pb,
              mv->table_mv_bits[code],
              mv->table_mv_code[code]);
@@ -439,14 +439,14 @@ void ff_msmpeg4_encode_mb(MpegEncContext * s,
         for (i = 0; i < 6; i++) {
             int val, pred;
             val = (s->block_last_index[i] >= 1);
-            cbp |= val << (5 - i);
+            cbp |= val * (1 << (5 - i));
             if (i < 4) {
                 /* predict value for close blocks only for luma */
                 pred = ff_msmpeg4_coded_block_pred(s, i, &coded_block);
                 *coded_block = val;
                 val = val ^ pred;
             }
-            coded_cbp |= val << (5 - i);
+            coded_cbp |= val * (1 << (5 - i));
         }
 
         if(s->msmpeg4_version<=2){

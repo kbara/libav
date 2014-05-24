@@ -39,7 +39,7 @@ static int mp_yuv_to_rgb(int y, int v, int u, int clip_rgb) {
     if (clip_rgb)
         return ((cm[r * 8] & 0xF8) << 7) | ((cm[g * 8] & 0xF8) << 2) | (cm[b * 8] >> 3);
     if ((unsigned)r < 32 && (unsigned)g < 32 && (unsigned)b < 32)
-        return (r << 10) | (g << 5) | b;
+        return (r * (1 << 10)) | (g * (1 << 5)) | b;
     return 1 << 15;
 }
 

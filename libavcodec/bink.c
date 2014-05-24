@@ -164,7 +164,7 @@ static void init_lengths(BinkContext *c, int width, int bw)
     c->bundle[BINK_SRC_X_OFF].len =
     c->bundle[BINK_SRC_Y_OFF].len = av_log2((width >> 3) + 511) + 1;
 
-    c->bundle[BINK_SRC_PATTERN].len = av_log2((bw << 3) + 511) + 1;
+    c->bundle[BINK_SRC_PATTERN].len = av_log2((bw * (1 << 3)) + 511) + 1;
 
     c->bundle[BINK_SRC_RUN].len = av_log2(bw*48 + 511) + 1;
 }
@@ -262,7 +262,7 @@ static void read_tree(GetBitContext *gb, Tree *tree)
             in[i] = i;
         for (i = 0; i <= len; i++) {
             int size = 1 << i;
-            for (t = 0; t < 16; t += size << 1)
+            for (t = 0; t < 16; t += size * (1 << 1))
                 merge(gb, out + t, in + t, size);
             FFSWAP(uint8_t*, in, out);
         }
@@ -433,7 +433,7 @@ static int read_colors(GetBitContext *gb, Bundle *b, BinkContext *c)
     if (get_bits1(gb)) {
         c->col_lastval = GET_HUFF(gb, c->col_high[c->col_lastval]);
         v = GET_HUFF(gb, b->tree);
-        v = (c->col_lastval << 4) | v;
+        v = (c->col_lastval * (1 << 4)) | v;
         if (c->version < 'i') {
             sign = ((int8_t) v) >> 7;
             v = ((v & 0x7F) ^ sign) - sign;
@@ -445,7 +445,7 @@ static int read_colors(GetBitContext *gb, Bundle *b, BinkContext *c)
         while (b->cur_dec < dec_end) {
             c->col_lastval = GET_HUFF(gb, c->col_high[c->col_lastval]);
             v = GET_HUFF(gb, b->tree);
-            v = (c->col_lastval << 4) | v;
+            v = (c->col_lastval * (1 << 4)) | v;
             if (c->version < 'i') {
                 sign = ((int8_t) v) >> 7;
                 v = ((v & 0x7F) ^ sign) - sign;

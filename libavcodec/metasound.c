@@ -307,7 +307,7 @@ static av_cold int metasound_decode_init(AVCodecContext *avctx)
 
     ibps = avctx->bit_rate / (1000 * avctx->channels);
 
-    switch ((avctx->channels << 16) + (isampf << 8) + ibps) {
+    switch ((avctx->channels << 16) + (isampf * (1 << 8)) + ibps) {
     case (1 << 16) + ( 8 << 8) +  6:
         tctx->mtab = &ff_metasound_mode0806;
         break;

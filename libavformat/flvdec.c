@@ -462,7 +462,7 @@ static int amf_parse_object(AVFormatContext *s, AVStream *astream,
                 if (!strcmp(key, "videocodecid") && vcodec) {
                     flv_set_video_codec(s, vstream, num_val, 0);
                 } else if (!strcmp(key, "audiocodecid") && acodec) {
-                    int id = ((int)num_val) << FLV_AUDIO_CODECID_OFFSET;
+                    int id = ((int)num_val) * (1 << FLV_AUDIO_CODECID_OFFSET);
                     flv_set_audio_codec(s, astream, acodec, id);
                 } else if (!strcmp(key, "audiosamplerate") && acodec) {
                     acodec->sample_rate = num_val;
@@ -754,7 +754,7 @@ static int flv_read_packet(AVFormatContext *s, AVPacket *pkt)
         type = avio_r8(s->pb);
         size = avio_rb24(s->pb);
         dts  = avio_rb24(s->pb);
-        dts |= avio_r8(s->pb) << 24;
+        dts |= avio_r8(s->pb) * (1 << 24);
         av_dlog(s, "type:%d, size:%d, dts:%"PRId64"\n", type, size, dts);
         if (s->pb->eof_reached)
             return AVERROR_EOF;
@@ -850,7 +850,7 @@ skip:
         avio_seek(s->pb, fsize - 3 - size, SEEK_SET);
         if (size == avio_rb24(s->pb) + 11) {
             uint32_t ts = avio_rb24(s->pb);
-            ts         |= avio_r8(s->pb) << 24;
+            ts         |= avio_r8(s->pb) * (1 << 24);
             s->duration = ts * (int64_t)AV_TIME_BASE / 1000;
         }
         avio_seek(s->pb, pos, SEEK_SET);

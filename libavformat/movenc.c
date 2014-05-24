@@ -1509,7 +1509,7 @@ static int mov_write_tkhd_tag(AVIOContext *pb, MOVTrack *track, AVStream *st)
                track->enc->codec_type == AVMEDIA_TYPE_SUBTITLE)) {
         if (track->mode == MODE_MOV) {
             avio_wb32(pb, track->enc->width << 16);
-            avio_wb32(pb, track->height << 16);
+            avio_wb32(pb, track->height * (1 << 16));
         } else {
             double sample_aspect_ratio = av_q2d(st->sample_aspect_ratio);
             if (!sample_aspect_ratio || track->height != track->enc->height)
@@ -1537,13 +1537,13 @@ static int mov_write_tapt_tag(AVIOContext *pb, MOVTrack *track)
     avio_wb32(pb, 20);
     ffio_wfourcc(pb, "clef");
     avio_wb32(pb, 0);
-    avio_wb32(pb, width << 16);
+    avio_wb32(pb, width * (1 << 16));
     avio_wb32(pb, track->enc->height << 16);
 
     avio_wb32(pb, 20);
     ffio_wfourcc(pb, "prof");
     avio_wb32(pb, 0);
-    avio_wb32(pb, width << 16);
+    avio_wb32(pb, width * (1 << 16));
     avio_wb32(pb, track->enc->height << 16);
 
     avio_wb32(pb, 20);
@@ -1965,8 +1965,8 @@ static int ascii_to_wc(AVIOContext *pb, const uint8_t *b)
 
 static uint16_t language_code(const char *str)
 {
-    return (((str[0] - 0x60) & 0x1F) << 10) +
-           (((str[1] - 0x60) & 0x1F) <<  5) +
+    return (((str[0] - 0x60) & 0x1F) * (1 << 10)) +
+           (((str[1] - 0x60) & 0x1F) * (1 << 5)) +
            (( str[2] - 0x60) & 0x1F);
 }
 
@@ -3228,7 +3228,7 @@ static uint32_t rgb_to_yuv(uint32_t rgb)
     cb = av_clip_uint8(128. -  0.148 * r - 0.291 * g + 0.439 * b);
     cr = av_clip_uint8(128. +  0.439 * r - 0.368 * g - 0.071 * b);
 
-    return (y << 16) | (cr << 8) | cb;
+    return (y * (1 << 16)) | (cr * (1 << 8)) | cb;
 }
 
 static int mov_create_dvd_sub_decoder_specific_info(MOVTrack *track,

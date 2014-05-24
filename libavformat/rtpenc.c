@@ -313,7 +313,7 @@ void ff_rtp_send_data(AVFormatContext *s1, const uint8_t *buf1, int len, int m)
 
     /* build the RTP header */
     avio_w8(s1->pb, RTP_VERSION << 6);
-    avio_w8(s1->pb, (s->payload_type & 0x7f) | ((m & 0x01) << 7));
+    avio_w8(s1->pb, (s->payload_type & 0x7f) | ((m & 0x01) * (1 << 7)));
     avio_wb16(s1->pb, s->seq);
     avio_wb32(s1->pb, s->timestamp);
     avio_wb32(s1->pb, s->ssrc);

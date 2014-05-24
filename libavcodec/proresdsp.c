@@ -42,7 +42,7 @@ static void put_pixels(uint16_t *dst, int stride, const int16_t *in)
 
     for (y = 0, dst_offset = 0; y < 8; y++, dst_offset += stride) {
         for (x = 0; x < 8; x++) {
-            src_offset = (y << 3) + x;
+            src_offset = (y * (1 << 3)) + x;
 
             dst[dst_offset + x] = CLIP_AND_BIAS(in[src_offset]);
         }

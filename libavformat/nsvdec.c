@@ -754,7 +754,7 @@ static int nsv_probe(AVProbeData *p)
             auxcount = p->buf[i+19];
             vsize = p->buf[i+20]  | p->buf[i+21] << 8;
             asize = p->buf[i+22]  | p->buf[i+23] << 8;
-            vsize = (vsize << 4) | (auxcount >> 4);
+            vsize = (vsize * (1 << 4)) | (auxcount >> 4);
             if ((asize + vsize + i + 23) <  p->buf_size - 2) {
                 if (p->buf[i+23+asize+vsize+1] == 0xEF &&
                     p->buf[i+23+asize+vsize+2] == 0xBE)

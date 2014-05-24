@@ -103,13 +103,13 @@ static int decode_frame(AVCodecContext *avctx,
             else
                 c1 += xl_table[val & 0x1F];
 
-            Y[j + 0] = y0 << 1;
-            Y[j + 1] = y1 << 1;
-            Y[j + 2] = y2 << 1;
-            Y[j + 3] = y3 << 1;
+            Y[j + 0] = y0 * (1 << 1);
+            Y[j + 1] = y1 * (1 << 1);
+            Y[j + 2] = y2 * (1 << 1);
+            Y[j + 3] = y3 * (1 << 1);
 
-            U[j >> 2] = c0 << 1;
-            V[j >> 2] = c1 << 1;
+            U[j >> 2] = c0 * (1 << 1);
+            V[j >> 2] = c1 * (1 << 1);
         }
 
         buf += avctx->width + 4;

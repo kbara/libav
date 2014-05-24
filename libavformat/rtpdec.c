@@ -301,7 +301,7 @@ int ff_rtp_check_and_send_back_rr(RTPDemuxContext *s, URLContext *fd,
     if (expected_interval == 0 || lost_interval <= 0)
         fraction = 0;
     else
-        fraction = (lost_interval << 8) / expected_interval;
+        fraction = (lost_interval * (1 << 8)) / expected_interval;
 
     fraction = (fraction << 24) | lost;
 
@@ -625,7 +625,7 @@ static int rtp_parse_packet_internal(RTPDemuxContext *s, AVPacket *pkt,
             return -1;
         /* calculate the header extension length (stored as number
          * of 32-bit words) */
-        ext = (AV_RB16(buf + 2) + 1) << 2;
+        ext = (AV_RB16(buf + 2) + 1) * (1 << 2);
 
         if (len < ext)
             return -1;

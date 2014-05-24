@@ -86,7 +86,7 @@ static int jpeg_create_huffman_table(PutByteContext *p, int table_class,
 {
     int i, n = 0;
 
-    bytestream2_put_byte(p, table_class << 4 | table_id);
+    bytestream2_put_byte(p, table_class * (1 << 4) | table_id);
 
     for (i = 1; i <= 16; i++) {
         n += bits_table[i];

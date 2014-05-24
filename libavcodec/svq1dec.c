@@ -115,7 +115,7 @@ static const uint8_t string_table[256] = {
         /* add child nodes */                                           \
         list[n++] = list[i];                                            \
         list[n++] = list[i] +                                           \
-                    (((level & 1) ? pitch : 1) << (level / 2 + 1));     \
+                    (((level & 1) ? pitch : 1) * (1 << (level / 2 + 1)));     \
     }
 
 #define SVQ1_ADD_CODEBOOK()                                             \
@@ -358,7 +358,7 @@ static int svq1_motion_inter_block(HpelDSPContext *hdsp, GetBitContext *bitbuf,
     src = &previous[(x + (mv.x >> 1)) + (y + (mv.y >> 1)) * pitch];
     dst = current;
 
-    hdsp->put_pixels_tab[0][(mv.y & 1) << 1 | (mv.x & 1)](dst, src, pitch, 16);
+    hdsp->put_pixels_tab[0][(mv.y & 1) * (1 << 1) | (mv.x & 1)](dst, src, pitch, 16);
 
     return 0;
 }
@@ -432,7 +432,7 @@ static int svq1_motion_inter_4v_block(HpelDSPContext *hdsp, GetBitContext *bitbu
         src = &previous[(x + (mvx >> 1)) + (y + (mvy >> 1)) * pitch];
         dst = current;
 
-        hdsp->put_pixels_tab[1][((mvy & 1) << 1) | (mvx & 1)](dst, src, pitch, 8);
+        hdsp->put_pixels_tab[1][((mvy & 1) * (1 << 1)) | (mvx & 1)](dst, src, pitch, 8);
 
         /* select next block */
         if (i & 1)

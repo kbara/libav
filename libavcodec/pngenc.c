@@ -60,9 +60,9 @@ static void png_get_interlaced_row(uint8_t *dst, int row_size,
         dst_x = 0;
         for (x = 0; x < width; x++) {
             j = (x & 7);
-            if ((mask << j) & 0x80) {
+            if ((mask * (1 << j)) & 0x80) {
                 b = (src[x >> 3] >> (7 - j)) & 1;
-                dst[dst_x >> 3] |= b << (7 - (dst_x & 7));
+                dst[dst_x >> 3] |= b * (1 << (7 - (dst_x & 7)));
                 dst_x++;
             }
         }
@@ -73,7 +73,7 @@ static void png_get_interlaced_row(uint8_t *dst, int row_size,
         s = src;
         for (x = 0; x < width; x++) {
             j = x & 7;
-            if ((mask << j) & 0x80) {
+            if ((mask * (1 << j)) & 0x80) {
                 memcpy(d, s, bpp);
                 d += bpp;
             }
@@ -309,7 +309,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     s->bytestream       = pkt->data;
     s->bytestream_end   = pkt->data + pkt->size;
 
-    crow_base = av_malloc((row_size + 32) << (s->filter_type == PNG_FILTER_VALUE_MIXED));
+    crow_base = av_malloc((row_size + 32) * (1 << (s->filter_type == PNG_FILTER_VALUE_MIXED)));
     if (!crow_base)
         goto fail;
     // pixel data should be aligned, but there's a control byte before it

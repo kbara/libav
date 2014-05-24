@@ -87,9 +87,9 @@ static inline void comp_block(MadContext *t, AVFrame *frame,
                               int j, int mv_x, int mv_y, int add)
 {
     if (j < 4) {
-        comp(frame->data[0] + (mb_y*16 + ((j&2)<<2))*frame->linesize[0] + mb_x*16 + ((j&1)<<3),
+        comp(frame->data[0] + (mb_y*16 + ((j & 2) * (1 << 2)))*frame->linesize[0] + mb_x*16 + ((j & 1) * (1 << 3)),
              frame->linesize[0],
-             t->last_frame->data[0] + (mb_y*16 + ((j&2)<<2) + mv_y)*t->last_frame->linesize[0] + mb_x*16 + ((j&1)<<3) + mv_x,
+             t->last_frame->data[0] + (mb_y*16 + ((j & 2) * (1 << 2)) + mv_y)*t->last_frame->linesize[0] + mb_x*16 + ((j & 1) * (1 << 3)) + mv_x,
              t->last_frame->linesize[0], add);
     } else if (!(t->avctx->flags & CODEC_FLAG_GRAY)) {
         int index = j - 3;
@@ -105,7 +105,7 @@ static inline void idct_put(MadContext *t, AVFrame *frame, int16_t *block,
 {
     if (j < 4) {
         ff_ea_idct_put_c(
-            frame->data[0] + (mb_y*16 + ((j&2)<<2))*frame->linesize[0] + mb_x*16 + ((j&1)<<3),
+            frame->data[0] + (mb_y*16 + ((j & 2) * (1 << 2)))*frame->linesize[0] + mb_x*16 + ((j & 1) * (1 << 3)),
             frame->linesize[0], block);
     } else if (!(t->avctx->flags & CODEC_FLAG_GRAY)) {
         int index = j - 3;

@@ -64,7 +64,7 @@ static av_cold void rv40_init_tables(void)
     for(i = 0; i < AIC_MODE1_NUM; i++){
         // Every tenth VLC table is empty
         if((i % 10) == 9) continue;
-        aic_mode1_vlc[i].table = &aic_mode1_table[i << AIC_MODE1_BITS];
+        aic_mode1_vlc[i].table = &aic_mode1_table[i * (1 << AIC_MODE1_BITS)];
         aic_mode1_vlc[i].table_allocated = 1 << AIC_MODE1_BITS;
         init_vlc(&aic_mode1_vlc[i], AIC_MODE1_BITS, AIC_MODE1_SIZE,
                  aic_mode1_vlc_bits[i],  1, 1,
@@ -78,7 +78,7 @@ static av_cold void rv40_init_tables(void)
                  aic_mode2_vlc_codes[i], 2, 2, INIT_VLC_USE_NEW_STATIC);
     }
     for(i = 0; i < NUM_PTYPE_VLCS; i++){
-        ptype_vlc[i].table = &ptype_table[i << PTYPE_VLC_BITS];
+        ptype_vlc[i].table = &ptype_table[i * (1 << PTYPE_VLC_BITS)];
         ptype_vlc[i].table_allocated = 1 << PTYPE_VLC_BITS;
         ff_init_vlc_sparse(&ptype_vlc[i], PTYPE_VLC_BITS, PTYPE_VLC_SIZE,
                             ptype_vlc_bits[i],  1, 1,
@@ -86,7 +86,7 @@ static av_cold void rv40_init_tables(void)
                             ptype_vlc_syms,     1, 1, INIT_VLC_USE_NEW_STATIC);
     }
     for(i = 0; i < NUM_BTYPE_VLCS; i++){
-        btype_vlc[i].table = &btype_table[i << BTYPE_VLC_BITS];
+        btype_vlc[i].table = &btype_table[i * (1 << BTYPE_VLC_BITS)];
         btype_vlc[i].table_allocated = 1 << BTYPE_VLC_BITS;
         ff_init_vlc_sparse(&btype_vlc[i], BTYPE_VLC_BITS, BTYPE_VLC_SIZE,
                             btype_vlc_bits[i],  1, 1,
@@ -110,7 +110,7 @@ static int get_dimension(GetBitContext *gb, const int *dim)
     if(!val){
         do{
             t = get_bits(gb, 8);
-            val += t << 2;
+            val += t * (1 << 2);
         }while(t == 0xFF);
     }
     return val;
@@ -172,7 +172,7 @@ static int rv40_decode_intra_types(RV34DecContext *r, GetBitContext *gb, int8_t 
             dst[0] = (pattern >> 2) & 2;
             dst[1] = (pattern >> 1) & 2;
             dst[2] =  pattern       & 2;
-            dst[3] = (pattern << 1) & 2;
+            dst[3] = (pattern * (1 << 1)) & 2;
             continue;
         }
         ptr = dst;
@@ -416,7 +416,7 @@ static void rv40_loop_filter(RV34DecContext *r, int row)
          * 3/4 pel in any component (any edge orientation for some reason).
          */
         y_h_deblock =   y_to_deblock
-                    | ((cbp[POS_CUR]                           <<  4) & ~MASK_Y_TOP_ROW)
+                    | ((cbp[POS_CUR] * (1 << 4)) & ~MASK_Y_TOP_ROW)
                     | ((cbp[POS_TOP]        & MASK_Y_LAST_ROW) >> 12);
         /* This pattern contains bits signalling that vertical edges of
          * the current block can be filtered.
@@ -425,7 +425,7 @@ static void rv40_loop_filter(RV34DecContext *r, int row)
          * 3/4 pel in any component (any edge orientation for some reason).
          */
         y_v_deblock =   y_to_deblock
-                    | ((cbp[POS_CUR]                      << 1) & ~MASK_Y_LEFT_COL)
+                    | ((cbp[POS_CUR] * (1 << 1)) & ~MASK_Y_LEFT_COL)
                     | ((cbp[POS_LEFT] & MASK_Y_RIGHT_COL) >> 3);
         if(!mb_x)
             y_v_deblock &= ~MASK_Y_LEFT_COL;
@@ -437,13 +437,13 @@ static void rv40_loop_filter(RV34DecContext *r, int row)
          * no motion vector pattern for them.
          */
         for(i = 0; i < 2; i++){
-            c_to_deblock[i] = (uvcbp[POS_BOTTOM][i] << 4) | uvcbp[POS_CUR][i];
+            c_to_deblock[i] = (uvcbp[POS_BOTTOM][i] * (1 << 4)) | uvcbp[POS_CUR][i];
             c_v_deblock[i] =   c_to_deblock[i]
-                           | ((uvcbp[POS_CUR] [i]                       << 1) & ~MASK_C_LEFT_COL)
+                           | ((uvcbp[POS_CUR][i] * (1 << 1)) & ~MASK_C_LEFT_COL)
                            | ((uvcbp[POS_LEFT][i]   & MASK_C_RIGHT_COL) >> 1);
             c_h_deblock[i] =   c_to_deblock[i]
                            | ((uvcbp[POS_TOP][i]    & MASK_C_LAST_ROW)  >> 2)
-                           |  (uvcbp[POS_CUR][i]                        << 2);
+                           |  (uvcbp[POS_CUR][i] * (1 << 2));
             if(!mb_x)
                 c_v_deblock[i] &= ~MASK_C_LEFT_COL;
             if(!row)

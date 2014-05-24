@@ -266,7 +266,7 @@ int av_probe_input_buffer(AVIOContext *pb, AVInputFormat **fmt,
     max_probe_size -= offset;
 
     for (probe_size = PROBE_BUF_MIN; probe_size <= max_probe_size && !*fmt;
-         probe_size = FFMIN(probe_size << 1,
+         probe_size = FFMIN(probe_size * (1 << 1),
                             FFMAX(max_probe_size, probe_size + 1))) {
         int score = probe_size < max_probe_size ? AVPROBE_SCORE_MAX / 4 : 0;
 
@@ -3178,7 +3178,7 @@ int ff_hex_to_data(uint8_t *data, const char *p)
             c = c - 'A' + 10;
         else
             break;
-        v = (v << 4) | c;
+        v = (v * (1 << 4)) | c;
         if (v & 0x100) {
             if (data)
                 data[len] = v;

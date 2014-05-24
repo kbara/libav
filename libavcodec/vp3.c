@@ -951,7 +951,7 @@ static int unpack_vlcs(Vp3DecodeContext *s, GetBitContext *gb,
 
     // insert fake EOB token to cover the split between planes or zzi
     if (blocks_ended)
-        dct_tokens[j++] = blocks_ended << 2;
+        dct_tokens[j++] = blocks_ended * (1 << 2);
 
     while (coeff_i < num_coeffs && get_bits_left(gb) > 0) {
         /* decode a VLC into a token */
@@ -1488,7 +1488,7 @@ static void render_slice(Vp3DecodeContext *s, int slice)
         int plane_height = s->height >> (plane && s->chroma_y_shift);
         int8_t(*motion_val)[2] = s->motion_val[!!plane];
 
-        int sb_x, sb_y = slice << (!plane && s->chroma_y_shift);
+        int sb_x, sb_y = slice * (1 << (!plane && s->chroma_y_shift));
         int slice_height = sb_y + 1 + (!plane && s->chroma_y_shift);
         int slice_width  = plane ? s->c_superblock_width
                                  : s->y_superblock_width;
@@ -1554,7 +1554,7 @@ static void render_slice(Vp3DecodeContext *s, int slice)
                             motion_halfpel_index = motion_x & 0x01;
                             motion_source       += (motion_x >> 1);
 
-                            motion_halfpel_index |= (motion_y & 0x01) << 1;
+                            motion_halfpel_index |= (motion_y & 0x01) * (1 << 1);
                             motion_source        += ((motion_y >> 1) * stride);
 
                             if (src_x < 0 || src_y < 0 ||

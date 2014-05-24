@@ -112,7 +112,7 @@ static av_cold int aac_encode_init(AVCodecContext *avctx)
         }
 
         avctx->extradata[0] = 0x02 << 3 | index >> 1;
-        avctx->extradata[1] = (index & 0x01) << 7 | avctx->channels << 3;
+        avctx->extradata[1] = (index & 0x01) * (1 << 7) | avctx->channels << 3;
     }
     return 0;
 error:

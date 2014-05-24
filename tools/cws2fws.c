@@ -64,7 +64,7 @@ int main(int argc, char *argv[])
 
     fstat(fd_in, &statbuf);
     comp_len   = statbuf.st_size;
-    uncomp_len = buf_in[4] | (buf_in[5] << 8) | (buf_in[6] << 16) | (buf_in[7] << 24);
+    uncomp_len = buf_in[4] | (buf_in[5] * (1 << 8)) | (buf_in[6] * (1 << 16)) | (buf_in[7] * (1 << 24));
 
     printf("Compressed size: %d Uncompressed size: %d\n",
            comp_len - 4, uncomp_len - 4);

@@ -123,7 +123,7 @@ static void generate_joint_tables(HYuvContext *s)
                         continue;
                     len[i] = len0 + len1;
                     bits[i] = (s->bits[0][y] << len1) + s->bits[p][u];
-                    symbols[i] = (y << 8) + u;
+                    symbols[i] = (y * (1 << 8)) + u;
                     if(symbols[i] != 0xffff) // reserved to mean "invalid"
                         i++;
                 }
@@ -156,7 +156,7 @@ static void generate_joint_tables(HYuvContext *s)
                     if (len2 > limit1)
                         continue;
                     len[i] = len0 + len1 + len2;
-                    bits[i] = (code << len2) + s->bits[2][r & 255];
+                    bits[i] = (code * (1 << len2)) + s->bits[2][r & 255];
                     if (s->decorrelate) {
                         map[i][G] = g;
                         map[i][B] = g + b;

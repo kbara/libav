@@ -48,7 +48,7 @@ static inline int mpc8_dec_base(GetBitContext *gb, int k, int n)
     int code = len ? get_bits_long(gb, len) : 0;
 
     if (code >= mpc8_cnk_lost[k-1][n-1])
-        code = ((code << 1) | get_bits1(gb)) - mpc8_cnk_lost[k-1][n-1];
+        code = ((code * (1 << 1)) | get_bits1(gb)) - mpc8_cnk_lost[k-1][n-1];
 
     return code;
 }
@@ -84,7 +84,7 @@ static int mpc8_get_mask(GetBitContext *gb, int size, int t)
 
     if(t && t != size)
          mask = mpc8_dec_enum(gb, FFMIN(t, size - t), size);
-    if((t << 1) > size) mask = ~mask;
+    if((t * (1 << 1)) > size) mask = ~mask;
 
     return mask;
 }
@@ -330,7 +330,7 @@ static int mpc8_decode_frame(AVCodecContext * avctx, void *data,
                 bands[i].scf_idx[ch][0] = ((bands[i].scf_idx[ch][2] + t - 25) & 0x7F) - 6;
             }
             for(j = 0; j < 2; j++){
-                if((bands[i].scfi[ch] << j) & 2)
+                if((bands[i].scfi[ch] * (1 << j)) & 2)
                     bands[i].scf_idx[ch][j + 1] = bands[i].scf_idx[ch][j];
                 else{
                     t = get_vlc2(gb, dscf_vlc[0].table, MPC8_DSCF0_BITS, 2);
@@ -410,7 +410,7 @@ static int mpc8_decode_frame(AVCodecContext * avctx, void *data,
 
     c->last_bits_used = get_bits_count(gb);
     if(get_bits_left(gb) < 8) // we have only padding left
-        c->last_bits_used = buf_size << 3;
+        c->last_bits_used = buf_size * (1 << 3);
     if(c->cur_frame >= c->frames)
         c->cur_frame = 0;
 

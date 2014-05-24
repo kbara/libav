@@ -246,7 +246,7 @@ static void append_extra_bits(int32_t *buffer[2], int32_t *extra_bits_buffer[2],
 
     for (ch = 0; ch < channels; ch++)
         for (i = 0; i < nb_samples; i++)
-            buffer[ch][i] = (buffer[ch][i] << extra_bits) | extra_bits_buffer[ch][i];
+            buffer[ch][i] = (buffer[ch][i] * (1 << extra_bits)) | extra_bits_buffer[ch][i];
 }
 
 static int decode_element(AVCodecContext *avctx, AVFrame *frame, int ch_index,

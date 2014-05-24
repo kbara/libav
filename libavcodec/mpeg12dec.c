@@ -111,7 +111,7 @@ static int mpeg_decode_motion(MpegEncContext *s, int fcode, int pred)
     shift = fcode - 1;
     val   = code;
     if (shift) {
-        val  = (val - 1) << shift;
+        val  = (val - 1) * (1 << shift);
         val |= get_bits(&s->gb, shift);
         val++;
     }
@@ -546,7 +546,7 @@ static inline int mpeg2_decode_block_intra(MpegEncContext *s,
     dc  = s->last_dc[component];
     dc += diff;
     s->last_dc[component] = dc;
-    block[0] = dc << (3 - s->intra_dc_precision);
+    block[0] = dc * (1 << (3 - s->intra_dc_precision));
     av_dlog(s->avctx, "dc=%d\n", block[0]);
     mismatch = block[0] ^ 1;
     i = 0;
@@ -626,7 +626,7 @@ static inline int mpeg2_fast_decode_block_intra(MpegEncContext *s,
     dc = s->last_dc[component];
     dc += diff;
     s->last_dc[component] = dc;
-    block[0] = dc << (3 - s->intra_dc_precision);
+    block[0] = dc * (1 << (3 - s->intra_dc_precision));
     i = 0;
     if (s->intra_vlc_format)
         rl = &ff_rl_mpeg2;
@@ -695,7 +695,7 @@ static inline int get_qscale(MpegEncContext *s)
     if (s->q_scale_type)
         return non_linear_qscale[qscale];
     else
-        return qscale << 1;
+        return qscale * (1 << 1);
 }
 
 /* motion type (for MPEG-2) */
@@ -1378,10 +1378,10 @@ static void mpeg_decode_sequence_extension(Mpeg1Context *s1)
     s->chroma_format        = get_bits(&s->gb, 2); /* chroma_format 1=420, 2=422, 3=444 */
     horiz_size_ext          = get_bits(&s->gb, 2);
     vert_size_ext           = get_bits(&s->gb, 2);
-    s->width  |= (horiz_size_ext << 12);
-    s->height |= (vert_size_ext  << 12);
+    s->width  |= (horiz_size_ext * (1 << 12));
+    s->height |= (vert_size_ext * (1 << 12));
     bit_rate_ext = get_bits(&s->gb, 12);  /* XXX: handle it */
-    s->bit_rate += (bit_rate_ext << 18) * 400;
+    s->bit_rate += (bit_rate_ext * (1 << 18)) * 400;
     skip_bits1(&s->gb); /* marker */
     s->avctx->rc_buffer_size += get_bits(&s->gb, 8) * 1024 * 16 << 10;
 

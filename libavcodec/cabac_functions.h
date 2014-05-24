@@ -81,7 +81,7 @@ static void refill2(CABACContext *c){
         x+= c->bytestream[0]<<1;
 #endif
 
-    c->low += x<<i;
+    c->low += x * (1 << i);
     if (c->bytestream < c->bytestream_end)
         c->bytestream += CABAC_BITS/8;
 }
@@ -92,9 +92,9 @@ static av_always_inline int get_cabac_inline(CABACContext *c, uint8_t * const st
     int bit, lps_mask;
 
     c->range -= RangeLPS;
-    lps_mask= ((c->range<<(CABAC_BITS+1)) - c->low)>>31;
+    lps_mask= ((c->range * (1 << (CABAC_BITS + 1))) - c->low)>>31;
 
-    c->low -= (c->range<<(CABAC_BITS+1)) & lps_mask;
+    c->low -= (c->range * (1 << (CABAC_BITS + 1))) & lps_mask;
     c->range += (RangeLPS - c->range) & lps_mask;
 
     s^=lps_mask;
@@ -126,7 +126,7 @@ static int av_unused get_cabac_bypass(CABACContext *c){
     if(!(c->low & CABAC_MASK))
         refill(c);
 
-    range= c->range<<(CABAC_BITS+1);
+    range= c->range * (1 << (CABAC_BITS + 1));
     if(c->low < range){
         return 0;
     }else{
@@ -144,7 +144,7 @@ static av_always_inline int get_cabac_bypass_sign(CABACContext *c, int val){
     if(!(c->low & CABAC_MASK))
         refill(c);
 
-    range= c->range<<(CABAC_BITS+1);
+    range= c->range * (1 << (CABAC_BITS + 1));
     c->low -= range;
     mask= c->low >> 31;
     range &= mask;
@@ -159,7 +159,7 @@ static av_always_inline int get_cabac_bypass_sign(CABACContext *c, int val){
  */
 static int av_unused get_cabac_terminate(CABACContext *c){
     c->range -= 2;
-    if(c->low < c->range<<(CABAC_BITS+1)){
+    if(c->low < c->range * (1 << (CABAC_BITS + 1))){
         renorm_cabac_decoder_once(c);
         return 0;
     }else{

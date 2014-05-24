@@ -242,7 +242,7 @@ av_cold int ff_wma_init(AVCodecContext *avctx, int flags2)
                     for (i = 0; i < 25; i++) {
                         a = ff_wma_critical_freqs[i];
                         b = avctx->sample_rate;
-                        pos = ((block_len * 2 * a) + (b << 1)) / (4 * b);
+                        pos = ((block_len * 2 * a) + (b * (1 << 1))) / (4 * b);
                         pos <<= 2;
                         if (pos > block_len)
                             pos = block_len;
@@ -445,7 +445,7 @@ int ff_wma_run_level_decode(AVCodecContext* avctx, GetBitContext* gb,
             /** normal code */
             offset += run_table[code];
             sign = get_bits1(gb) - 1;
-            iptr[offset & coef_mask] = ilvl[code] ^ sign<<31;
+            iptr[offset & coef_mask] = ilvl[code] ^ sign * (1LL << 31);
         } else if (code == 1) {
             /** EOB */
             break;

@@ -1670,7 +1670,7 @@ vbv_retry:
             s->vbv_delay_ptr[0] |= vbv_delay >> 13;
             s->vbv_delay_ptr[1]  = vbv_delay >> 5;
             s->vbv_delay_ptr[2] &= 0x07;
-            s->vbv_delay_ptr[2] |= vbv_delay << 3;
+            s->vbv_delay_ptr[2] |= vbv_delay * (1 << 3);
             avctx->vbv_delay     = vbv_delay * 300;
         }
         s->total_bits     += s->frame_bits;
@@ -2290,7 +2290,7 @@ static inline void encode_mb_hq(MpegEncContext *s, MpegEncContext *backup, MpegE
         ff_MPV_decode_mb(s, s->block);
 
         score *= s->lambda2;
-        score += sse_mb(s) << FF_LAMBDA_SHIFT;
+        score += sse_mb(s) * (1 << FF_LAMBDA_SHIFT);
     }
 
     if(*next_block){
@@ -3478,7 +3478,7 @@ static int dct_quantize_trellis_c(MpegEncContext *s,
                 q = s->y_dc_scale;
             else
                 q = s->c_dc_scale;
-            q = q << 3;
+            q = q * (1 << 3);
         } else{
             /* For AIC we skip quant/dequant of INTRADC */
             q = 1 << 3;
@@ -3579,7 +3579,7 @@ static int dct_quantize_trellis_c(MpegEncContext *s,
                         unquant_coeff = (int)(  alevel  * qscale * s->intra_matrix[j]) >> 3;
                         unquant_coeff =   (unquant_coeff - 1) | 1;
                 }else{
-                        unquant_coeff = (((  alevel  << 1) + 1) * qscale * ((int) s->inter_matrix[j])) >> 4;
+                        unquant_coeff = (((alevel * (1 << 1)) + 1) * qscale * ((int) s->inter_matrix[j])) >> 4;
                         unquant_coeff =   (unquant_coeff - 1) | 1;
                 }
                 unquant_coeff<<= 3;
@@ -3695,7 +3695,7 @@ static int dct_quantize_trellis_c(MpegEncContext *s,
             if(s->out_format == FMT_H263){
                     unquant_coeff= (alevel*qmul + qadd)>>3;
             }else{ //MPEG1
-                    unquant_coeff = (((  alevel  << 1) + 1) * qscale * ((int) s->inter_matrix[0])) >> 4;
+                    unquant_coeff = (((alevel * (1 << 1)) + 1) * qscale * ((int) s->inter_matrix[0])) >> 4;
                     unquant_coeff =   (unquant_coeff - 1) | 1;
             }
             unquant_coeff = (unquant_coeff + 4) >> 3;
@@ -4147,7 +4147,7 @@ int ff_dct_quantize_c(MpegEncContext *s,
                 q = s->y_dc_scale;
             else
                 q = s->c_dc_scale;
-            q = q << 3;
+            q = q * (1 << 3);
         } else
             /* For AIC we skip quant/dequant of INTRADC */
             q = 1 << 3;
@@ -4157,12 +4157,12 @@ int ff_dct_quantize_c(MpegEncContext *s,
         start_i = 1;
         last_non_zero = 0;
         qmat = s->q_intra_matrix[qscale];
-        bias= s->intra_quant_bias<<(QMAT_SHIFT - QUANT_BIAS_SHIFT);
+        bias= s->intra_quant_bias * (1 << (QMAT_SHIFT - QUANT_BIAS_SHIFT));
     } else {
         start_i = 0;
         last_non_zero = -1;
         qmat = s->q_inter_matrix[qscale];
-        bias= s->inter_quant_bias<<(QMAT_SHIFT - QUANT_BIAS_SHIFT);
+        bias= s->inter_quant_bias * (1 << (QMAT_SHIFT - QUANT_BIAS_SHIFT));
     }
     threshold1= (1<<QMAT_SHIFT) - bias - 1;
     threshold2= (threshold1<<1);

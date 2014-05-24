@@ -239,16 +239,16 @@ void ff_xvmc_decode_mb(MpegEncContext *s)
                 if (s->picture_structure == PICT_FRAME) {
 
                     mv_block->PMV[0][0][0] = s->mv[0][0][0];      // top from top
-                    mv_block->PMV[0][0][1] = s->mv[0][0][1] << 1;
+                    mv_block->PMV[0][0][1] = s->mv[0][0][1] * (1 << 1);
 
                     mv_block->PMV[0][1][0] = s->mv[0][0][0];      // bottom from bottom
-                    mv_block->PMV[0][1][1] = s->mv[0][0][1] << 1;
+                    mv_block->PMV[0][1][1] = s->mv[0][0][1] * (1 << 1);
 
                     mv_block->PMV[1][0][0] = s->mv[0][2][0];      // dmv00, top from bottom
-                    mv_block->PMV[1][0][1] = s->mv[0][2][1] << 1; // dmv01
+                    mv_block->PMV[1][0][1] = s->mv[0][2][1] * (1 << 1); // dmv01
 
                     mv_block->PMV[1][1][0] = s->mv[0][3][0];      // dmv10, bottom from top
-                    mv_block->PMV[1][1][1] = s->mv[0][3][1] << 1; // dmv11
+                    mv_block->PMV[1][1][1] = s->mv[0][3][1] * (1 << 1); // dmv11
 
                 } else {
                     mv_block->PMV[0][1][0] = s->mv[0][2][0];      // dmv00
@@ -264,9 +264,9 @@ void ff_xvmc_decode_mb(MpegEncContext *s)
         // set correct field references
         if (s->mv_type == MV_TYPE_FIELD || s->mv_type == MV_TYPE_16X8) {
             mv_block->motion_vertical_field_select |= s->field_select[0][0];
-            mv_block->motion_vertical_field_select |= s->field_select[1][0] << 1;
-            mv_block->motion_vertical_field_select |= s->field_select[0][1] << 2;
-            mv_block->motion_vertical_field_select |= s->field_select[1][1] << 3;
+            mv_block->motion_vertical_field_select |= s->field_select[1][0] * (1 << 1);
+            mv_block->motion_vertical_field_select |= s->field_select[0][1] * (1 << 2);
+            mv_block->motion_vertical_field_select |= s->field_select[1][1] * (1 << 3);
         }
     } // !intra
     // time to handle data blocks

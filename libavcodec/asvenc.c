@@ -32,7 +32,7 @@
 #include "mpeg12data.h"
 
 static inline void asv2_put_bits(PutBitContext *pb, int n, int v){
-    put_bits(pb, n, ff_reverse[ v << (8-n) ]);
+    put_bits(pb, n, ff_reverse[ v * (1 << (8 - n)) ]);
 }
 
 static inline void asv1_put_level(PutBitContext *pb, int level){

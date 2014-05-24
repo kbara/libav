@@ -132,7 +132,7 @@ static int mpegps_read_header(AVFormatContext *s)
     m->sofdec = -1;
     do {
         v = avio_r8(s->pb);
-        m->header_state = m->header_state << 8 | v;
+        m->header_state = m->header_state * (1 << 8) | v;
         m->sofdec++;
     } while (v == sofdec[i] && i++ < 6);
 
@@ -348,7 +348,7 @@ redo:
                 if ((ext2_len & 0x7f) > 0) {
                     id_ext = avio_r8(s->pb);
                     if ((id_ext & 0x80) == 0)
-                        startcode = ((startcode & 0xff) << 8) | id_ext;
+                        startcode = ((startcode & 0xff) * (1 << 8)) | id_ext;
                     header_len--;
                 }
             }

@@ -49,7 +49,7 @@ static inline Float11* i2f(int i, Float11* f)
     if (f->sign)
         i = -i;
     f->exp = av_log2_16bit(i) + !!i;
-    f->mant = i? (i<<6) >> f->exp : 1<<5;
+    f->mant = i? (i * (1 << 6)) >> f->exp : 1<<5;
     return f;
 }
 
@@ -59,7 +59,7 @@ static inline int16_t mult(Float11* f1, Float11* f2)
 
         exp = f1->exp + f2->exp;
         res = (((f1->mant * f2->mant) + 0x30) >> 4);
-        res = exp > 19 ? res << (exp - 19) : res >> (19 - exp);
+        res = exp > 19 ? res * (1 << (exp - 19)) : res >> (19 - exp);
         return (f1->sign ^ f2->sign) ? -res : res;
 }
 
@@ -164,7 +164,7 @@ static inline uint8_t quant(G726Context* c, int d)
         d = -d;
     }
     exp = av_log2_16bit(d);
-    dln = ((exp<<7) + (((d<<7)>>exp)&0x7f)) - (c->y>>2);
+    dln = ((exp * (1 << 7)) + (((d * (1 << 7))>>exp)&0x7f)) - (c->y>>2);
 
     while (c->tbls.quant[i] < INT_MAX && c->tbls.quant[i] < dln)
         ++i;
@@ -187,7 +187,7 @@ static inline int16_t inverse_quant(G726Context* c, int i)
     dql = c->tbls.iquant[i] + (c->y >> 2);
     dex = (dql>>7) & 0xf;        /* 4bit exponent */
     dqt = (1<<7) + (dql & 0x7f); /* log2 -> linear */
-    return (dql < 0) ? 0 : ((dqt<<dex) >> 7);
+    return (dql < 0) ? 0 : ((dqt * (1 << dex)) >> 7);
 }
 
 static int16_t g726_decode(G726Context* c, int I)
@@ -201,7 +201,7 @@ static int16_t g726_decode(G726Context* c, int I)
     /* Transition detect */
     ylint = (c->yl >> 15);
     ylfrac = (c->yl >> 10) & 0x1f;
-    thr2 = (ylint > 9) ? 0x1f << 10 : (0x20 + ylfrac) << ylint;
+    thr2 = (ylint > 9) ? 0x1f << 10 : (0x20 + ylfrac) * (1 << ylint);
     tr= (c->td == 1 && dq > ((3*thr2)>>2));
 
     if (I_sig)  /* get the sign */
@@ -248,7 +248,7 @@ static int16_t g726_decode(G726Context* c, int I)
         c->ap = 256;
     else {
         c->ap += (-c->ap) >> 4;
-        if (c->y <= 1535 || c->td || abs((c->dms << 2) - c->dml) >= (c->dml >> 3))
+        if (c->y <= 1535 || c->td || abs((c->dms * (1 << 2)) - c->dml) >= (c->dml >> 3))
             c->ap += 0x20;
     }
 
@@ -269,7 +269,7 @@ static int16_t g726_decode(G726Context* c, int I)
         c->se += mult(i2f(c->a[i] >> 2, &f), &c->sr[i]);
     c->se >>= 1;
 
-    return av_clip(re_signal << 2, -0xffff, 0xffff);
+    return av_clip(re_signal * (1 << 2), -0xffff, 0xffff);
 }
 
 static av_cold int g726_reset(G726Context *c)

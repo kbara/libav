@@ -93,17 +93,17 @@ static int dv_write_pack(enum dv_pack_type pack_id, DVMuxContext *c, uint8_t* bu
         ltc_frame = (c->frames + 2 * ct / 60 - 2 * ct / 600) % c->sys->ltc_divisor;
         buf[1] = (0                 << 7) | /* color frame: 0 - unsync; 1 - sync mode */
                  (1                 << 6) | /* drop frame timecode: 0 - nondrop; 1 - drop */
-                 ((ltc_frame / 10)  << 4) | /* tens of frames */
+                 ((ltc_frame / 10) * (1 << 4)) | /* tens of frames */
                  (ltc_frame % 10);          /* units of frames */
         buf[2] = (1                 << 7) | /* biphase mark polarity correction: 0 - even; 1 - odd */
-                 ((tc.tm_sec / 10)  << 4) | /* tens of seconds */
+                 ((tc.tm_sec / 10) * (1 << 4)) | /* tens of seconds */
                  (tc.tm_sec % 10);          /* units of seconds */
         buf[3] = (1                 << 7) | /* binary group flag BGF0 */
-                 ((tc.tm_min / 10)  << 4) | /* tens of minutes */
+                 ((tc.tm_min / 10) * (1 << 4)) | /* tens of minutes */
                  (tc.tm_min % 10);          /* units of minutes */
         buf[4] = (1                 << 7) | /* binary group flag BGF2 */
                  (1                 << 6) | /* binary group flag BGF1 */
-                 ((tc.tm_hour / 10) << 4) | /* tens of hours */
+                 ((tc.tm_hour / 10) * (1 << 4)) | /* tens of hours */
                  (tc.tm_hour % 10);         /* units of hours */
         break;
     case dv_audio_source:  /* AAUX source pack */
@@ -119,7 +119,7 @@ static int dv_write_pack(enum dv_pack_type pack_id, DVMuxContext *c, uint8_t* bu
                  !!va_arg(ap, int); /* audio mode        */
         buf[3] = (1 << 7) | /* res               */
                  (1 << 6) | /* multi-language flag */
-                 (c->sys->dsf << 5) | /*  system: 60fields/50fields */
+                 (c->sys->dsf * (1 << 5)) | /*  system: 60fields/50fields */
                  (c->sys->n_difchan & 2); /* definition: 0 -- 25Mbps, 2 -- 50Mbps */
         buf[4] = (1 << 7) | /* emphasis: 1 -- off */
                  (0 << 6) | /* emphasis time constant: 0 -- reserved */
@@ -150,12 +150,12 @@ static int dv_write_pack(enum dv_pack_type pack_id, DVMuxContext *c, uint8_t* bu
         buf[1] = 0xff; /* ds, tm, tens of time zone, units of time zone */
                        /* 0xff is very likely to be "unknown" */
         buf[2] = (3 << 6) | /* reserved -- always 1 */
-                 ((tc.tm_mday / 10) << 4) | /* Tens of day */
+                 ((tc.tm_mday / 10) * (1 << 4)) | /* Tens of day */
                  (tc.tm_mday % 10);         /* Units of day */
         buf[3] = /* we set high 4 bits to 0, shouldn't we set them to week? */
-                 ((tc.tm_mon / 10) << 4) |    /* Tens of month */
+                 ((tc.tm_mon / 10) * (1 << 4)) |    /* Tens of month */
                  (tc.tm_mon  % 10);           /* Units of month */
-        buf[4] = (((tc.tm_year % 100) / 10) << 4) | /* Tens of year */
+        buf[4] = (((tc.tm_year % 100) / 10) * (1 << 4)) | /* Tens of year */
                  (tc.tm_year % 10);                 /* Units of year */
         break;
     case dv_audio_rectime:  /* AAUX recording time */
@@ -166,13 +166,13 @@ static int dv_write_pack(enum dv_pack_type pack_id, DVMuxContext *c, uint8_t* bu
         buf[1] = (3 << 6) | /* reserved -- always 1 */
                  0x3f; /* tens of frame, units of frame: 0x3f - "unknown" ? */
         buf[2] = (1 << 7) | /* reserved -- always 1 */
-                 ((tc.tm_sec / 10) << 4) | /* Tens of seconds */
+                 ((tc.tm_sec / 10) * (1 << 4)) | /* Tens of seconds */
                  (tc.tm_sec % 10);         /* Units of seconds */
         buf[3] = (1 << 7) | /* reserved -- always 1 */
-                 ((tc.tm_min / 10) << 4) | /* Tens of minutes */
+                 ((tc.tm_min / 10) * (1 << 4)) | /* Tens of minutes */
                  (tc.tm_min % 10);         /* Units of minutes */
         buf[4] = (3 << 6) | /* reserved -- always 1 */
-                 ((tc.tm_hour / 10) << 4) | /* Tens of hours */
+                 ((tc.tm_hour / 10) * (1 << 4)) | /* Tens of hours */
                  (tc.tm_hour % 10);         /* Units of hours */
         break;
     default:
@@ -262,7 +262,7 @@ static int dv_assemble_frame(DVMuxContext *c, AVStream* st,
         av_fifo_generic_write(c->audio_data[i], data, data_size, NULL);
 
         /* Let us see if we've got enough audio for one DV frame. */
-        c->has_audio |= ((reqasize <= av_fifo_size(c->audio_data[i])) << i);
+        c->has_audio |= ((reqasize <= av_fifo_size(c->audio_data[i])) * (1 << i));
 
         break;
     default:
@@ -276,7 +276,7 @@ static int dv_assemble_frame(DVMuxContext *c, AVStream* st,
         for (i=0; i < c->n_ast; i++) {
             dv_inject_audio(c, i, *frame);
             av_fifo_drain(c->audio_data[i], reqasize);
-            c->has_audio |= ((reqasize <= av_fifo_size(c->audio_data[i])) << i);
+            c->has_audio |= ((reqasize <= av_fifo_size(c->audio_data[i])) * (1 << i));
         }
 
         c->has_video = 0;

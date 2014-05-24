@@ -55,14 +55,14 @@ static void dvd_encode_rle(uint8_t **pq,
             color = cmap[color];
             assert(color < 4);
             if (len < 0x04) {
-                PUTNIBBLE((len << 2)|color);
+                PUTNIBBLE((len * (1 << 2))|color);
             } else if (len < 0x10) {
                 PUTNIBBLE(len >> 2);
-                PUTNIBBLE((len << 2)|color);
+                PUTNIBBLE((len * (1 << 2))|color);
             } else if (len < 0x40) {
                 PUTNIBBLE(0);
                 PUTNIBBLE(len >> 2);
-                PUTNIBBLE((len << 2)|color);
+                PUTNIBBLE((len * (1 << 2))|color);
             } else if (x+len == w) {
                 PUTNIBBLE(0);
                 PUTNIBBLE(0);
@@ -74,7 +74,7 @@ static void dvd_encode_rle(uint8_t **pq,
                 PUTNIBBLE(0);
                 PUTNIBBLE(len >> 6);
                 PUTNIBBLE(len >> 2);
-                PUTNIBBLE((len << 2)|color);
+                PUTNIBBLE((len * (1 << 2))|color);
             }
         }
         /* end of line */
@@ -176,11 +176,11 @@ static int encode_dvd_subtitles(uint8_t *outbuf, int outbuf_size,
         *q++ = 0x05;
         // x1 x2 -> 6 nibbles
         *q++ = h->rects[object_id]->x >> 4;
-        *q++ = (h->rects[object_id]->x << 4) | ((x2 >> 8) & 0xf);
+        *q++ = (h->rects[object_id]->x * (1 << 4)) | ((x2 >> 8) & 0xf);
         *q++ = x2;
         // y1 y2 -> 6 nibbles
         *q++ = h->rects[object_id]->y >> 4;
-        *q++ = (h->rects[object_id]->y << 4) | ((y2 >> 8) & 0xf);
+        *q++ = (h->rects[object_id]->y * (1 << 4)) | ((y2 >> 8) & 0xf);
         *q++ = y2;
 
         *q++ = 0x06;

@@ -2558,7 +2558,7 @@ static int64_t getutime(void)
     FILETIME c, e, k, u;
     proc = GetCurrentProcess();
     GetProcessTimes(proc, &c, &e, &k, &u);
-    return ((int64_t) u.dwHighDateTime << 32 | u.dwLowDateTime) / 10;
+    return ((int64_t)u.dwHighDateTime * (1LL << 32) | u.dwLowDateTime) / 10;
 #else
     return av_gettime();
 #endif

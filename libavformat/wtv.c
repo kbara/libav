@@ -219,9 +219,10 @@ static AVIOContext * wtvfile_open_sector(int first_sector, uint64_t length, int 
 
     /* check length */
     length &= 0xFFFFFFFFFFFF;
-    if (length > ((int64_t)wf->nb_sectors << wf->sector_bits)) {
-        av_log(s, AV_LOG_WARNING, "reported file length (0x%"PRIx64") exceeds number of available sectors (0x%"PRIx64")\n", length, (int64_t)wf->nb_sectors << wf->sector_bits);
-        length = (int64_t)wf->nb_sectors <<  wf->sector_bits;
+    if (length > ((int64_t)wf->nb_sectors * (1LL << wf->sector_bits))) {
+        av_log(s, AV_LOG_WARNING, "reported file length (0x%"PRIx64") exceeds number of available sectors (0x%"PRIx64")\n", length,
+               (int64_t)wf->nb_sectors * (1LL << wf->sector_bits));
+        length = (int64_t)wf->nb_sectors * (1LL << wf->sector_bits);
     }
     wf->length = length;
 

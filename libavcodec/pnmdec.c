@@ -215,7 +215,7 @@ static int pnm_decode_frame(AVCodecContext *avctx, void *data,
                 g = *s->bytestream++;
                 b = *s->bytestream++;
                 a = *s->bytestream++;
-                ((uint32_t *)ptr)[j] = (a << 24) | (r << 16) | (g << 8) | b;
+                ((uint32_t *)ptr)[j] = (a * (1 << 24)) | (r * (1 << 16)) | (g * (1 << 8)) | b;
             }
             ptr += linesize;
         }

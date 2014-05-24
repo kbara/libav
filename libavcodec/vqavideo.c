@@ -289,7 +289,7 @@ static int decode_format80(GetByteContext *gb, int src_size,
         } else {
 
             count = ((opcode & 0x70) >> 4) + 3;
-            src_pos = bytestream2_get_byte(gb) | ((opcode & 0x0F) << 8);
+            src_pos = bytestream2_get_byte(gb) | ((opcode & 0x0F) * (1 << 8));
             av_dlog(NULL, "(5) copy %X bytes from relpos %X\n", count, src_pos);
             CHECK_COUNT();
             CHECK_COPY(dest_index - src_pos);
@@ -488,7 +488,7 @@ static int vqa_decode_chunk(VqaContext *s, AVFrame *frame)
             case 1:
                 lobyte = s->decode_buffer[lobytes * 2];
                 hibyte = s->decode_buffer[(lobytes * 2) + 1];
-                vector_index = ((hibyte << 8) | lobyte) >> 3;
+                vector_index = ((hibyte * (1 << 8)) | lobyte) >> 3;
                 vector_index <<= index_shift;
                 lines = s->vector_height;
                 /* uniform color fill - a quick hack */
@@ -507,7 +507,7 @@ static int vqa_decode_chunk(VqaContext *s, AVFrame *frame)
             case 2:
                 lobyte = s->decode_buffer[lobytes];
                 hibyte = s->decode_buffer[hibytes];
-                vector_index = (hibyte << 8) | lobyte;
+                vector_index = (hibyte * (1 << 8)) | lobyte;
                 vector_index <<= index_shift;
                 lines = s->vector_height;
                 break;

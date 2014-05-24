@@ -321,8 +321,8 @@ static int decode(MimicContext *ctx, int quality, int num_coeffs,
                 src += 8;
                 dst += 8;
             }
-            src += (stride - ctx->num_hblocks[plane]) << 3;
-            dst += (stride - ctx->num_hblocks[plane]) << 3;
+            src += (stride - ctx->num_hblocks[plane]) * (1 << 3);
+            dst += (stride - ctx->num_hblocks[plane]) * (1 << 3);
 
             ff_thread_report_progress(&ctx->frames[ctx->cur_index],
                                       cur_row++, 0);
@@ -425,7 +425,7 @@ static int mimic_decode_frame(AVCodecContext *avctx, void *data,
     ctx->dsp.bswap_buf(ctx->swap_buf,
                        (const uint32_t*) (buf + MIMIC_HEADER_SIZE),
                        swap_buf_size >> 2);
-    init_get_bits(&ctx->gb, ctx->swap_buf, swap_buf_size << 3);
+    init_get_bits(&ctx->gb, ctx->swap_buf, swap_buf_size * (1 << 3));
 
     res = decode(ctx, quality, num_coeffs, !is_pframe);
     ff_thread_report_progress(&ctx->frames[ctx->cur_index], INT_MAX, 0);

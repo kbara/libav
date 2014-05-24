@@ -155,9 +155,9 @@ static void mp3_write_xing(AVFormatContext *s)
 
     /* dummy MPEG audio header */
     header  =  0xff                                  << 24; // sync
-    header |= (0x7 << 5 | ver << 3 | 0x1 << 1 | 0x1) << 16; // sync/audio-version/layer 3/no crc*/
+    header |= (0x7 << 5 | ver * (1 << 3) | 0x1 << 1 | 0x1) << 16; // sync/audio-version/layer 3/no crc*/
     header |= (srate_idx << 2) << 8;
-    header |= channels << 6;
+    header |= channels * (1 << 6);
 
     lsf = !((header & (1 << 20) && header & (1 << 19)));
 
@@ -181,7 +181,7 @@ static void mp3_write_xing(AVFormatContext *s)
     }
 
     for (bitrate_idx = best_bitrate_idx; bitrate_idx < 15; bitrate_idx++) {
-        int32_t mask = bitrate_idx << (4 + 8);
+        int32_t mask = bitrate_idx * (1 << (4 + 8));
         header |= mask;
 
         avpriv_mpegaudio_decode_header(&mpah, header);

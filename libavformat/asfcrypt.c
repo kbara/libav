@@ -55,7 +55,7 @@ static void multiswap_init(const uint8_t keybuf[48], uint32_t keys[12])
 {
     int i;
     for (i = 0; i < 12; i++)
-        keys[i] = AV_RL32(keybuf + (i << 2)) | 1;
+        keys[i] = AV_RL32(keybuf + (i * (1 << 2))) | 1;
 }
 
 /**

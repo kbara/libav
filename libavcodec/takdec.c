@@ -164,8 +164,8 @@ static void set_sample_rate_params(AVCodecContext *avctx)
     TAKDecContext *s  = avctx->priv_data;
     int shift         = 3 - (avctx->sample_rate / 11025);
     shift             = FFMAX(0, shift);
-    s->uval           = FFALIGN(avctx->sample_rate + 511 >> 9, 4) << shift;
-    s->subframe_scale = FFALIGN(avctx->sample_rate + 511 >> 9, 4) << 1;
+    s->uval           = FFALIGN(avctx->sample_rate + 511 >> 9, 4) * (1 << shift);
+    s->subframe_scale = FFALIGN(avctx->sample_rate + 511 >> 9, 4) * (1 << 1);
 }
 
 static av_cold int tak_decode_init(AVCodecContext *avctx)
@@ -378,8 +378,8 @@ static void decode_filter_coeffs(TAKDecContext *s, int filter_order, int size,
 
     predictors[0] = get_sbits(gb, 10);
     predictors[1] = get_sbits(gb, 10);
-    predictors[2] = get_sbits(gb, size) << (10 - size);
-    predictors[3] = get_sbits(gb, size) << (10 - size);
+    predictors[2] = get_sbits(gb, size) * (1 << (10 - size));
+    predictors[3] = get_sbits(gb, size) * (1 << (10 - size));
     if (filter_order > 4) {
         int av_uninit(code_size);
         int code_size_base = size - get_bits1(gb);
@@ -387,11 +387,11 @@ static void decode_filter_coeffs(TAKDecContext *s, int filter_order, int size,
         for (i = 4; i < filter_order; i++) {
             if (!(i & 3))
                 code_size = code_size_base - get_bits(gb, 2);
-            predictors[i] = get_sbits(gb, code_size) << (10 - size);
+            predictors[i] = get_sbits(gb, code_size) * (1 << (10 - size));
         }
     }
 
-    filter_tmp[0] = predictors[0] << 6;
+    filter_tmp[0] = predictors[0] * (1 << 6);
     for (i = 1; i < filter_order; i++) {
         int *p1 = &filter_tmp[0];
         int *p2 = &filter_tmp[i - 1];
@@ -404,7 +404,7 @@ static void decode_filter_coeffs(TAKDecContext *s, int filter_order, int size,
             p2--;
         }
 
-        filter_tmp[i] = predictors[i] << 6;
+        filter_tmp[i] = predictors[i] * (1 << 6);
     }
 
     a = 1 << (32 - (15 - filter_quant));

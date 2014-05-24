@@ -166,7 +166,7 @@ void ff_jpeg2000_init_tier1_luts(void)
     for (i = 0; i < 16; i++)
         for (j = 0; j < 16; j++)
             ff_jpeg2000_sgnctxno_lut[i][j] =
-                getsgnctxno(i + (j << 8), &ff_jpeg2000_xorbit_lut[i][j]);
+                getsgnctxno(i + (j * (1 << 8)), &ff_jpeg2000_xorbit_lut[i][j]);
 }
 
 void ff_jpeg2000_set_significance(Jpeg2000T1Context *t1, int x, int y,
@@ -352,7 +352,7 @@ int ff_jpeg2000_init_component(Jpeg2000Component *comp,
                         /* Formula example for tbx_0 = ceildiv((tcx_0 - 2 ^ (declvl - 1) * x0_b) / declvl) */
                         band->coord[i][j] =
                             ff_jpeg2000_ceildivpow2(comp->coord_o[i][j] - comp->coord_o[i][0] -
-                                                    (((bandno + 1 >> i) & 1) << declvl - 1),
+                                                    (((bandno + 1 >> i) & 1) * (1 << declvl - 1)),
                                                     declvl);
                 /* TODO: Manage case of 3 band offsets here or
                  * in coding/decoding function? */
@@ -440,12 +440,12 @@ int ff_jpeg2000_init_component(Jpeg2000Component *comp,
                     /* Compute coordinates of codeblocks */
                     /* Compute Cx0*/
                     Cx0 = (prec->coord[0][0] >> band->log2_cblk_width) << band->log2_cblk_width;
-                    Cx0 = Cx0 + ((cblkno % prec->nb_codeblocks_width)  << band->log2_cblk_width);
+                    Cx0 = Cx0 + ((cblkno % prec->nb_codeblocks_width) * (1 << band->log2_cblk_width));
                     cblk->coord[0][0] = FFMAX(Cx0, prec->coord[0][0]);
 
                     /* Compute Cy0*/
                     Cy0 = (prec->coord[1][0] >> band->log2_cblk_height) << band->log2_cblk_height;
-                    Cy0 = Cy0 + ((cblkno / prec->nb_codeblocks_width)   << band->log2_cblk_height);
+                    Cy0 = Cy0 + ((cblkno / prec->nb_codeblocks_width) * (1 << band->log2_cblk_height));
                     cblk->coord[1][0] = FFMAX(Cy0, prec->coord[1][0]);
 
                     /* Compute Cx1 */

@@ -549,7 +549,7 @@ unsigned int avio_rl16(AVIOContext *s)
 {
     unsigned int val;
     val = avio_r8(s);
-    val |= avio_r8(s) << 8;
+    val |= avio_r8(s) * (1 << 8);
     return val;
 }
 
@@ -557,7 +557,7 @@ unsigned int avio_rl24(AVIOContext *s)
 {
     unsigned int val;
     val = avio_rl16(s);
-    val |= avio_r8(s) << 16;
+    val |= avio_r8(s) * (1 << 16);
     return val;
 }
 
@@ -580,7 +580,7 @@ uint64_t avio_rl64(AVIOContext *s)
 unsigned int avio_rb16(AVIOContext *s)
 {
     unsigned int val;
-    val = avio_r8(s) << 8;
+    val = avio_r8(s) * (1 << 8);
     val |= avio_r8(s);
     return val;
 }

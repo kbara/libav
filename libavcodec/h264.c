@@ -1307,7 +1307,7 @@ static int get_avc_nalsize(H264Context *h, const uint8_t *buf,
         return -1;
 
     for (i = 0; i < h->nal_length_size; i++)
-        nalsize = (nalsize << 8) | buf[(*buf_index)++];
+        nalsize = (nalsize * (1 << 8)) | buf[(*buf_index)++];
     if (nalsize <= 0 || nalsize > buf_size - *buf_index) {
         av_log(h->avctx, AV_LOG_ERROR,
                "AVC: nal size %d\n", nalsize);
@@ -1688,7 +1688,7 @@ static int output_frame(H264Context *h, AVFrame *dst, AVFrame *src)
     for (i = 0; i < 3; i++) {
         int hshift = (i > 0) ? h->chroma_x_shift : 0;
         int vshift = (i > 0) ? h->chroma_y_shift : 0;
-        int off    = ((h->sps.crop_left >> hshift) << h->pixel_shift) +
+        int off    = ((h->sps.crop_left >> hshift) * (1 << h->pixel_shift)) +
                      (h->sps.crop_top >> vshift) * dst->linesize[i];
         dst->data[i] += off;
     }

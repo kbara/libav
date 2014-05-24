@@ -213,7 +213,7 @@ int av_aes_init(AVAES *a, const uint8_t *key, int key_bits, int decrypt)
         }
         for (i = 0; i < 256; i++) {
             j = i ? alog8[255 - log8[i]] : 0;
-            j ^= (j << 1) ^ (j << 2) ^ (j << 3) ^ (j << 4);
+            j ^= (j * (1 << 1)) ^ (j * (1 << 2)) ^ (j * (1 << 3)) ^ (j * (1 << 4));
             j = (j ^ (j >> 8) ^ 99) & 255;
             inv_sbox[j] = i;
             sbox[i] = j;

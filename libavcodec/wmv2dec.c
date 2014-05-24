@@ -376,7 +376,7 @@ int ff_wmv2_decode_mb(MpegEncContext *s, int16_t block[6][64])
                 val = val ^ pred;
                 *coded_val = val;
             }
-            cbp |= val << (5 - i);
+            cbp |= val * (1 << (5 - i));
         }
     }
 

@@ -44,7 +44,7 @@ int64_t av_gettime(void)
     FILETIME ft;
     int64_t t;
     GetSystemTimeAsFileTime(&ft);
-    t = (int64_t)ft.dwHighDateTime << 32 | ft.dwLowDateTime;
+    t = (int64_t)ft.dwHighDateTime * (1LL << 32) | ft.dwLowDateTime;
     return t / 10 - 11644473600000000; /* Jan 1, 1601 */
 #else
     return -1;

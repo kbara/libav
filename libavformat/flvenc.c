@@ -531,7 +531,7 @@ static int flv_write_packet(AVFormatContext *s, AVPacket *pkt)
             if (enc->extradata_size)
                 avio_w8(pb, enc->extradata[0]);
             else
-                avio_w8(pb, ((FFALIGN(enc->width,  16) - enc->width) << 4) |
+                avio_w8(pb, ((FFALIGN(enc->width, 16) - enc->width) * (1 << 4)) |
                              (FFALIGN(enc->height, 16) - enc->height));
         } else if (enc->codec_id == AV_CODEC_ID_AAC)
             avio_w8(pb, 1); // AAC raw

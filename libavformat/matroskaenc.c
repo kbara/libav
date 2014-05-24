@@ -581,7 +581,7 @@ static int mkv_write_tracks(AVFormatContext *s)
         }
 
         if (!bit_depth)
-            bit_depth = av_get_bytes_per_sample(codec->sample_fmt) << 3;
+            bit_depth = av_get_bytes_per_sample(codec->sample_fmt) * (1 << 3);
 
         if (codec->codec_id == AV_CODEC_ID_AAC)
             get_aac_sample_rates(s, codec, &sample_rate, &output_sample_rate);
@@ -1288,7 +1288,8 @@ static int mkv_write_packet_internal(AVFormatContext *s, AVPacket *pkt)
     }
 
     if (codec->codec_type != AVMEDIA_TYPE_SUBTITLE) {
-        mkv_write_block(s, pb, MATROSKA_ID_SIMPLEBLOCK, pkt, keyframe << 7);
+        mkv_write_block(s, pb, MATROSKA_ID_SIMPLEBLOCK, pkt,
+                        keyframe * (1 << 7));
     } else if (codec->codec_id == AV_CODEC_ID_SSA) {
         duration = mkv_write_ass_blocks(s, pb, pkt);
     } else if (codec->codec_id == AV_CODEC_ID_SRT) {

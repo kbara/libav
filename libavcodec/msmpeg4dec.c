@@ -83,7 +83,7 @@ static int msmpeg4v2_decode_motion(MpegEncContext * s, int pred, int f_code)
     shift = f_code - 1;
     val = code;
     if (shift) {
-        val = (val - 1) << shift;
+        val = (val - 1) * (1 << shift);
         val |= get_bits(&s->gb, shift);
         val++;
     }
@@ -152,7 +152,7 @@ static int msmpeg4v12_decode_mb(MpegEncContext *s, int16_t block[6][64])
             return -1;
         }
 
-        cbp|= cbpy<<2;
+        cbp|= cbpy * (1 << 2);
         if(s->msmpeg4_version==1 || (cbp&3) != 3) cbp^= 0x3C;
 
         ff_h263_pred_motion(s, 0, 0, &mx, &my);
@@ -166,10 +166,10 @@ static int msmpeg4v12_decode_mb(MpegEncContext *s, int16_t block[6][64])
     } else {
         if(s->msmpeg4_version==2){
             s->ac_pred = get_bits1(&s->gb);
-            cbp|= get_vlc2(&s->gb, ff_h263_cbpy_vlc.table, CBPY_VLC_BITS, 1)<<2; //FIXME check errors
+            cbp|= get_vlc2(&s->gb, ff_h263_cbpy_vlc.table, CBPY_VLC_BITS, 1) * (1 << 2); //FIXME check errors
         } else{
             s->ac_pred = 0;
-            cbp|= get_vlc2(&s->gb, ff_h263_cbpy_vlc.table, CBPY_VLC_BITS, 1)<<2; //FIXME check errors
+            cbp|= get_vlc2(&s->gb, ff_h263_cbpy_vlc.table, CBPY_VLC_BITS, 1) * (1 << 2); //FIXME check errors
             if(s->pict_type==AV_PICTURE_TYPE_P) cbp^=0x3C;
         }
     }
@@ -230,7 +230,7 @@ static int msmpeg4v34_decode_mb(MpegEncContext *s, int16_t block[6][64])
                 val = val ^ pred;
                 *coded_val = val;
             }
-            cbp |= val << (5 - i);
+            cbp |= val * (1 << (5 - i));
         }
     }
 
@@ -678,7 +678,7 @@ int ff_msmpeg4_decode_block(MpegEncContext * s, int16_t * block,
         }
         rl_vlc= rl->rl_vlc[0];
     } else {
-        qmul = s->qscale << 1;
+        qmul = s->qscale * (1 << 1);
         qadd = (s->qscale - 1) | 1;
         i = -1;
         rl = &ff_rl_table[3 + s->rl_table_index];

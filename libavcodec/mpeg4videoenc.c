@@ -114,7 +114,7 @@ static inline void restore_ac_coeffs(MpegEncContext *s, int16_t block[6][64],
         } else {
             /* left prediction */
             for (i = 1; i < 8; i++)
-                block[n][s->dsp.idct_permutation[i << 3]] = ac_val[i];
+                block[n][s->dsp.idct_permutation[i * (1 << 3)]] = ac_val[i];
         }
     }
 }
@@ -154,7 +154,7 @@ static inline int decide_ac_pred(MpegEncContext *s, int16_t block[6][64],
                 for (i = 1; i < 8; i++) {
                     const int level = block[n][s->dsp.idct_permutation[i]];
                     block[n][s->dsp.idct_permutation[i]] = level - ac_val[i + 8];
-                    ac_val1[i]     = block[n][s->dsp.idct_permutation[i << 3]];
+                    ac_val1[i]     = block[n][s->dsp.idct_permutation[i * (1 << 3)]];
                     ac_val1[i + 8] = level;
                 }
             } else {
@@ -162,7 +162,7 @@ static inline int decide_ac_pred(MpegEncContext *s, int16_t block[6][64],
                 for (i = 1; i < 8; i++) {
                     const int level = block[n][s->dsp.idct_permutation[i]];
                     block[n][s->dsp.idct_permutation[i]] = level - ROUNDED_DIV(ac_val[i + 8] * qscale_table[xy], s->qscale);
-                    ac_val1[i]     = block[n][s->dsp.idct_permutation[i << 3]];
+                    ac_val1[i]     = block[n][s->dsp.idct_permutation[i * (1 << 3)]];
                     ac_val1[i + 8] = level;
                 }
             }
@@ -174,16 +174,16 @@ static inline int decide_ac_pred(MpegEncContext *s, int16_t block[6][64],
             if (s->mb_x == 0 || s->qscale == qscale_table[xy] || n == 1 || n == 3) {
                 /* same qscale */
                 for (i = 1; i < 8; i++) {
-                    const int level = block[n][s->dsp.idct_permutation[i << 3]];
-                    block[n][s->dsp.idct_permutation[i << 3]] = level - ac_val[i];
+                    const int level = block[n][s->dsp.idct_permutation[i * (1 << 3)]];
+                    block[n][s->dsp.idct_permutation[i * (1 << 3)]] = level - ac_val[i];
                     ac_val1[i]     = level;
                     ac_val1[i + 8] = block[n][s->dsp.idct_permutation[i]];
                 }
             } else {
                 /* different qscale, we must rescale */
                 for (i = 1; i < 8; i++) {
-                    const int level = block[n][s->dsp.idct_permutation[i << 3]];
-                    block[n][s->dsp.idct_permutation[i << 3]] = level - ROUNDED_DIV(ac_val[i] * qscale_table[xy], s->qscale);
+                    const int level = block[n][s->dsp.idct_permutation[i * (1 << 3)]];
+                    block[n][s->dsp.idct_permutation[i * (1 << 3)]] = level - ROUNDED_DIV(ac_val[i] * qscale_table[xy], s->qscale);
                     ac_val1[i]     = level;
                     ac_val1[i + 8] = block[n][s->dsp.idct_permutation[i]];
                 }
@@ -346,8 +346,8 @@ static inline void mpeg4_encode_block(MpegEncContext *s,
             } else {  // ESC3
                 put_bits(ac_pb,
                          7 + 2 + 1 + 6 + 1 + 12 + 1,
-                         (3 << 23) + (3 << 21) + (0 << 20) + (run << 14) +
-                         (1 << 13) + (((level - 64) & 0xfff) << 1) + 1);
+                         (3 << 23) + (3 << 21) + (0 << 20) + (run * (1 << 14)) +
+                         (1 << 13) + (((level - 64) & 0xfff) * (1 << 1)) + 1);
             }
             last_non_zero = i;
         }
@@ -362,8 +362,8 @@ static inline void mpeg4_encode_block(MpegEncContext *s,
         } else {  // ESC3
             put_bits(ac_pb,
                      7 + 2 + 1 + 6 + 1 + 12 + 1,
-                     (3 << 23) + (3 << 21) + (1 << 20) + (run << 14) +
-                     (1 << 13) + (((level - 64) & 0xfff) << 1) + 1);
+                     (3 << 23) + (3 << 21) + (1 << 20) + (run * (1 << 14)) +
+                     (1 << 13) + (((level - 64) & 0xfff) * (1 << 1)) + 1);
         }
     }
 }

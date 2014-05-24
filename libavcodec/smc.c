@@ -359,9 +359,9 @@ static void smc_decode_stream(SmcContext *s)
                 int val1 = bytestream2_get_be16(&s->gb);
                 int val2 = bytestream2_get_be16(&s->gb);
                 int val3 = bytestream2_get_be16(&s->gb);
-                color_flags_a = ((val1 & 0xFFF0) << 8) | (val2 >> 4);
-                color_flags_b = ((val3 & 0xFFF0) << 8) |
-                    ((val1 & 0x0F) << 8) | ((val2 & 0x0F) << 4) | (val3 & 0x0F);
+                color_flags_a = ((val1 & 0xFFF0) * (1 << 8)) | (val2 >> 4);
+                color_flags_b = ((val3 & 0xFFF0) * (1 << 8)) |
+                    ((val1 & 0x0F) * (1 << 8)) | ((val2 & 0x0F) * (1 << 4)) | (val3 & 0x0F);
 
                 color_flags = color_flags_a;
                 /* flag mask actually acts as a bit shift count here */

@@ -866,7 +866,7 @@ static void hls_sao_param(HEVCContext *s, int rx, int ry)
         // Inferred parameters
         sao->offset_val[c_idx][0] = 0;
         for (i = 0; i < 4; i++) {
-            sao->offset_val[c_idx][i + 1] = sao->offset_abs[c_idx][i] << shift;
+            sao->offset_val[c_idx][i + 1] = sao->offset_abs[c_idx][i] * (1 << shift);
             if (sao->type_idx[c_idx] == SAO_EDGE) {
                 if (i > 1)
                     sao->offset_val[c_idx][i + 1] = -sao->offset_val[c_idx][i + 1];
@@ -1242,12 +1242,12 @@ static int hls_transform_unit(HEVCContext *s, int x0, int y0,
 
         s->hpc.intra_pred[log2_trafo_size - 2](s, x0, y0, 0);
         if (log2_trafo_size > 2) {
-            trafo_size = trafo_size << (s->sps->hshift[1] - 1);
+            trafo_size = trafo_size * (1 << (s->sps->hshift[1] - 1));
             ff_hevc_set_neighbour_available(s, x0, y0, trafo_size, trafo_size);
             s->hpc.intra_pred[log2_trafo_size - 3](s, x0, y0, 1);
             s->hpc.intra_pred[log2_trafo_size - 3](s, x0, y0, 2);
         } else if (blk_idx == 3) {
-            trafo_size = trafo_size << s->sps->hshift[1];
+            trafo_size = trafo_size * (1 << s->sps->hshift[1]);
             ff_hevc_set_neighbour_available(s, xBase, yBase,
                                             trafo_size, trafo_size);
             s->hpc.intra_pred[log2_trafo_size - 2](s, xBase, yBase, 1);
@@ -1459,11 +1459,11 @@ static int hls_pcm_sample(HEVCContext *s, int x0, int y0, int log2_cb_size)
     GetBitContext gb;
     int cb_size   = 1 << log2_cb_size;
     int stride0   = s->frame->linesize[0];
-    uint8_t *dst0 = &s->frame->data[0][y0 * stride0 + (x0 << s->sps->pixel_shift)];
+    uint8_t *dst0 = &s->frame->data[0][y0 * stride0 + (x0 * (1 << s->sps->pixel_shift))];
     int   stride1 = s->frame->linesize[1];
-    uint8_t *dst1 = &s->frame->data[1][(y0 >> s->sps->vshift[1]) * stride1 + ((x0 >> s->sps->hshift[1]) << s->sps->pixel_shift)];
+    uint8_t *dst1 = &s->frame->data[1][(y0 >> s->sps->vshift[1]) * stride1 + ((x0 >> s->sps->hshift[1]) * (1 << s->sps->pixel_shift))];
     int   stride2 = s->frame->linesize[2];
-    uint8_t *dst2 = &s->frame->data[2][(y0 >> s->sps->vshift[2]) * stride2 + ((x0 >> s->sps->hshift[2]) << s->sps->pixel_shift)];
+    uint8_t *dst2 = &s->frame->data[2][(y0 >> s->sps->vshift[2]) * stride2 + ((x0 >> s->sps->hshift[2]) * (1 << s->sps->pixel_shift))];
 
     int length         = cb_size * cb_size * s->sps->pcm.bit_depth + ((cb_size * cb_size) >> 1) * s->sps->pcm.bit_depth_chroma;
     const uint8_t *pcm = skip_bytes(&s->HEVClc.cc, (length + 7) >> 3);
@@ -1537,15 +1537,15 @@ static void luma_mc(HEVCContext *s, int16_t *dst, ptrdiff_t dststride,
 
     x_off += mv->x >> 2;
     y_off += mv->y >> 2;
-    src   += y_off * srcstride + (x_off << s->sps->pixel_shift);
+    src   += y_off * srcstride + (x_off * (1 << s->sps->pixel_shift));
 
     if (x_off < extra_left || y_off < extra_top ||
         x_off >= pic_width - block_w - ff_hevc_qpel_extra_after[mx] ||
         y_off >= pic_height - block_h - ff_hevc_qpel_extra_after[my]) {
         const int edge_emu_stride = EDGE_EMU_BUFFER_STRIDE << s->sps->pixel_shift;
-        int offset = extra_top * srcstride + (extra_left << s->sps->pixel_shift);
+        int offset = extra_top * srcstride + (extra_left * (1 << s->sps->pixel_shift));
         int buf_offset = extra_top *
-                         edge_emu_stride + (extra_left << s->sps->pixel_shift);
+                         edge_emu_stride + (extra_left * (1 << s->sps->pixel_shift));
 
         s->vdsp.emulated_edge_mc(lc->edge_emu_buffer, src - offset,
                                  edge_emu_stride, srcstride,
@@ -1591,8 +1591,8 @@ static void chroma_mc(HEVCContext *s, int16_t *dst1, int16_t *dst2,
 
     x_off += mv->x >> 3;
     y_off += mv->y >> 3;
-    src1  += y_off * src1stride + (x_off << s->sps->pixel_shift);
-    src2  += y_off * src2stride + (x_off << s->sps->pixel_shift);
+    src1  += y_off * src1stride + (x_off * (1 << s->sps->pixel_shift));
+    src2  += y_off * src2stride + (x_off * (1 << s->sps->pixel_shift));
 
     if (x_off < EPEL_EXTRA_BEFORE || y_off < EPEL_EXTRA_AFTER ||
         x_off >= pic_width - block_w - EPEL_EXTRA_AFTER ||
@@ -2322,8 +2322,8 @@ static void hls_decode_neighbour(HEVCContext *s, int x_ctb, int y_ctb,
         slice_left_boundary = ctb_addr_in_slice > 0;
         slice_up_boundary   = ctb_addr_in_slice >= s->sps->ctb_width;
     }
-    lc->slice_or_tiles_left_boundary = (!slice_left_boundary) + (!tile_left_boundary << 1);
-    lc->slice_or_tiles_up_boundary   = (!slice_up_boundary + (!tile_up_boundary << 1));
+    lc->slice_or_tiles_left_boundary = (!slice_left_boundary) + (!tile_left_boundary * (1 << 1));
+    lc->slice_or_tiles_up_boundary   = (!slice_up_boundary + (!tile_up_boundary * (1 << 1)));
     lc->ctb_left_flag = ((x_ctb > 0) && (ctb_addr_in_slice > 0) && tile_left_boundary);
     lc->ctb_up_flag   = ((y_ctb > 0) && (ctb_addr_in_slice >= s->sps->ctb_width) && tile_up_boundary);
     lc->ctb_up_right_flag = ((y_ctb > 0)  && (ctb_addr_in_slice+1 >= s->sps->ctb_width) && (s->pps->tile_id[ctb_addr_ts] == s->pps->tile_id[s->pps->ctb_addr_rs_to_ts[ctb_addr_rs+1 - s->sps->ctb_width]]));
@@ -2411,8 +2411,8 @@ static void restore_tqb_pixels(HEVCContext *s)
                 if (s->is_pcm[y * s->sps->min_pu_width + x]) {
                     int n;
                     int len      = min_pu_size >> hshift;
-                    uint8_t *src = &s->frame->data[c_idx][((y << s->sps->log2_min_pu_size) >> vshift) * stride + (((x << s->sps->log2_min_pu_size) >> hshift) << s->sps->pixel_shift)];
-                    uint8_t *dst = &s->sao_frame->data[c_idx][((y << s->sps->log2_min_pu_size) >> vshift) * stride + (((x << s->sps->log2_min_pu_size) >> hshift) << s->sps->pixel_shift)];
+                    uint8_t *src = &s->frame->data[c_idx][((y * (1 << s->sps->log2_min_pu_size)) >> vshift) * stride + (((x * (1 << s->sps->log2_min_pu_size)) >> hshift) << s->sps->pixel_shift)];
+                    uint8_t *dst = &s->sao_frame->data[c_idx][((y * (1 << s->sps->log2_min_pu_size)) >> vshift) * stride + (((x * (1 << s->sps->log2_min_pu_size)) >> hshift) << s->sps->pixel_shift)];
                     for (n = 0; n < (min_pu_size >> vshift); n++) {
                         memcpy(dst, src, len);
                         src += stride;
@@ -2759,7 +2759,7 @@ static int decode_nal_units(HEVCContext *s, const uint8_t *buf, int length)
         if (s->is_nalff) {
             int i;
             for (i = 0; i < s->nal_length_size; i++)
-                extract_length = (extract_length << 8) | buf[i];
+                extract_length = (extract_length * (1 << 8)) | buf[i];
             buf    += s->nal_length_size;
             length -= s->nal_length_size;
 
@@ -2884,7 +2884,7 @@ static int verify_md5(HEVCContext *s, AVFrame *frame)
                 src = s->checksum_buf;
             }
 #endif
-            av_md5_update(s->md5_ctx, src, w << pixel_shift);
+            av_md5_update(s->md5_ctx, src, w * (1 << pixel_shift));
         }
         av_md5_final(s->md5_ctx, md5);
 

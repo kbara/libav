@@ -206,7 +206,7 @@ static inline int hpel_motion(MpegEncContext *s,
         dxy |= motion_x & 1;
     src_y = av_clip(src_y, -16, s->height);
     if (src_y != s->height)
-        dxy |= (motion_y & 1) << 1;
+        dxy |= (motion_y & 1) * (1 << 1);
     src += src_y * s->linesize + src_x;
 
     if (s->unrestricted_mv) {
@@ -257,17 +257,17 @@ void mpeg_motion_internal(MpegEncContext *s,
     linesize   = s->current_picture.f->linesize[0] << field_based;
     uvlinesize = s->current_picture.f->linesize[1] << field_based;
 
-    dxy   = ((motion_y & 1) << 1) | (motion_x & 1);
+    dxy   = ((motion_y & 1) * (1 << 1)) | (motion_x & 1);
     src_x = s->mb_x * 16 + (motion_x >> 1);
-    src_y = (mb_y << (4 - field_based)) + (motion_y >> 1);
+    src_y = (mb_y * (1 << (4 - field_based))) + (motion_y >> 1);
 
     if (!is_mpeg12 && s->out_format == FMT_H263) {
         if ((s->workaround_bugs & FF_BUG_HPEL_CHROMA) && field_based) {
             mx      = (motion_x >> 1) | (motion_x & 1);
             my      = motion_y >> 1;
-            uvdxy   = ((my & 1) << 1) | (mx & 1);
+            uvdxy   = ((my & 1) * (1 << 1)) | (mx & 1);
             uvsrc_x = s->mb_x * 8 + (mx >> 1);
-            uvsrc_y = (mb_y << (3 - field_based)) + (my >> 1);
+            uvsrc_y = (mb_y * (1 << (3 - field_based))) + (my >> 1);
         } else {
             uvdxy   = dxy | (motion_y & 2) | ((motion_x & 2) >> 1);
             uvsrc_x = src_x >> 1;
@@ -284,14 +284,14 @@ void mpeg_motion_internal(MpegEncContext *s,
         if (s->chroma_y_shift) {
             mx      = motion_x / 2;
             my      = motion_y / 2;
-            uvdxy   = ((my & 1) << 1) | (mx & 1);
+            uvdxy   = ((my & 1) * (1 << 1)) | (mx & 1);
             uvsrc_x = s->mb_x * 8 + (mx >> 1);
-            uvsrc_y = (mb_y << (3 - field_based)) + (my >> 1);
+            uvsrc_y = (mb_y * (1 << (3 - field_based))) + (my >> 1);
         } else {
             if (s->chroma_x_shift) {
                 // Chroma422
                 mx      = motion_x / 2;
-                uvdxy   = ((motion_y & 1) << 1) | (mx & 1);
+                uvdxy   = ((motion_y & 1) * (1 << 1)) | (mx & 1);
                 uvsrc_x = s->mb_x * 8 + (mx >> 1);
                 uvsrc_y = src_y;
             } else {
@@ -320,7 +320,7 @@ void mpeg_motion_internal(MpegEncContext *s,
         s->vdsp.emulated_edge_mc(s->edge_emu_buffer, ptr_y,
                                  s->linesize, s->linesize,
                                  17, 17 + field_based,
-                                 src_x, src_y << field_based,
+                                 src_x, src_y * (1 << field_based),
                                  s->h_edge_pos, s->v_edge_pos);
         ptr_y = s->edge_emu_buffer;
         if (!CONFIG_GRAY || !(s->flags & CODEC_FLAG_GRAY)) {
@@ -328,12 +328,12 @@ void mpeg_motion_internal(MpegEncContext *s,
             s->vdsp.emulated_edge_mc(uvbuf, ptr_cb,
                                      s->uvlinesize, s->uvlinesize,
                                      9, 9 + field_based,
-                                     uvsrc_x, uvsrc_y << field_based,
+                                     uvsrc_x, uvsrc_y * (1 << field_based),
                                      s->h_edge_pos >> 1, s->v_edge_pos >> 1);
             s->vdsp.emulated_edge_mc(uvbuf + 16, ptr_cr,
                                      s->uvlinesize, s->uvlinesize,
                                      9, 9 + field_based,
-                                     uvsrc_x, uvsrc_y << field_based,
+                                     uvsrc_x, uvsrc_y * (1 << field_based),
                                      s->h_edge_pos >> 1, s->v_edge_pos >> 1);
             ptr_cb = uvbuf;
             ptr_cr = uvbuf + 16;
@@ -604,7 +604,7 @@ static void chroma_4mv_motion(MpegEncContext *s,
     mx = ff_h263_round_chroma(mx);
     my = ff_h263_round_chroma(my);
 
-    dxy  = ((my & 1) << 1) | (mx & 1);
+    dxy  = ((my & 1) * (1 << 1)) | (mx & 1);
     mx >>= 1;
     my >>= 1;
 

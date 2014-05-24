@@ -180,14 +180,14 @@ void ff_wmv2_encode_mb(MpegEncContext * s,
         for (i = 0; i < 6; i++) {
             int val, pred;
             val = (s->block_last_index[i] >= 1);
-            cbp |= val << (5 - i);
+            cbp |= val * (1 << (5 - i));
             if (i < 4) {
                 /* predict value for close blocks only for luma */
                 pred = ff_msmpeg4_coded_block_pred(s, i, &coded_block);
                 *coded_block = val;
                 val = val ^ pred;
             }
-            coded_cbp |= val << (5 - i);
+            coded_cbp |= val * (1 << (5 - i));
         }
 
         if (s->pict_type == AV_PICTURE_TYPE_I) {

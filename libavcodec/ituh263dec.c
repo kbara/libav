@@ -281,7 +281,7 @@ int ff_h263_decode_motion(MpegEncContext * s, int pred, int f_code)
     shift = f_code - 1;
     val = code;
     if (shift) {
-        val = (val - 1) << shift;
+        val = (val - 1) * (1 << shift);
         val |= get_bits(&s->gb, shift);
         val++;
     }
@@ -520,7 +520,7 @@ retry:
                         level = get_sbits(&s->gb, 12);
                     }else{
                         level = get_bits(&s->gb, 5);
-                        level |= get_sbits(&s->gb, 6)<<5;
+                        level |= get_sbits(&s->gb, 6) * (1 << 5);
                     }
                 }
             }
@@ -641,7 +641,7 @@ int ff_h263_decode_mb(MpegEncContext *s,
         if(s->alt_inter_vlc==0 || (cbpc & 3)!=3)
             cbpy ^= 0xF;
 
-        cbp = (cbpc & 3) | (cbpy << 2);
+        cbp = (cbpc & 3) | (cbpy * (1 << 2));
         if (dquant) {
             h263_decode_dquant(s);
         }
@@ -740,7 +740,7 @@ int ff_h263_decode_mb(MpegEncContext *s,
             if(s->alt_inter_vlc==0 || (cbpc & 3)!=3)
                 cbpy ^= 0xF;
 
-            cbp = (cbpc & 3) | (cbpy << 2);
+            cbp = (cbpc & 3) | (cbpy * (1 << 2));
         }else
             cbp=0;
 
@@ -820,7 +820,7 @@ intra:
             av_log(s->avctx, AV_LOG_ERROR, "I cbpy damaged at %d %d\n", s->mb_x, s->mb_y);
             return -1;
         }
-        cbp = (cbpc & 3) | (cbpy << 2);
+        cbp = (cbpc & 3) | (cbpy * (1 << 2));
         if (dquant) {
             h263_decode_dquant(s);
         }
@@ -1134,7 +1134,7 @@ int ff_h263_decode_picture_header(MpegEncContext *s)
         for(i=0; i<13; i++){
             for(j=0; j<3; j++){
                 int v= get_bits(&s->gb, 8);
-                v |= get_sbits(&s->gb, 8)<<8;
+                v |= get_sbits(&s->gb, 8) * (1 << 8);
                 av_log(s->avctx, AV_LOG_DEBUG, " %5d", v);
             }
             av_log(s->avctx, AV_LOG_DEBUG, "\n");

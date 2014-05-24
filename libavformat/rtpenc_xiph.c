@@ -110,7 +110,7 @@ void ff_rtp_send_xiph(AVFormatContext *s1, const uint8_t *buff, int size)
         q = s->buf_ptr;
 
         // set packet headers
-        *q++ = (frag << 6) | (xdt << 4); // num_frames = 0
+        *q++ = (frag * (1 << 6)) | (xdt * (1 << 4)); // num_frames = 0
         *q++ = (len >> 8) & 0xff;
         *q++ = len & 0xff;
         // set packet body

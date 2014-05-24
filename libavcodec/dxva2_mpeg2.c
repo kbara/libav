@@ -82,21 +82,21 @@ static void fill_picture_parameters(AVCodecContext *avctx,
     pp->bPicBinPB                    = 0;
     pp->bMV_RPS                      = 0;
     pp->bReservedBits                = 0;
-    pp->wBitstreamFcodes             = (s->mpeg_f_code[0][0] << 12) |
-                                       (s->mpeg_f_code[0][1] <<  8) |
-                                       (s->mpeg_f_code[1][0] <<  4) |
+    pp->wBitstreamFcodes             = (s->mpeg_f_code[0][0] * (1 << 12)) |
+                                       (s->mpeg_f_code[0][1] * (1 << 8)) |
+                                       (s->mpeg_f_code[1][0] * (1 << 4)) |
                                        (s->mpeg_f_code[1][1]      );
-    pp->wBitstreamPCEelements        = (s->intra_dc_precision         << 14) |
-                                       (s->picture_structure          << 12) |
-                                       (s->top_field_first            << 11) |
-                                       (s->frame_pred_frame_dct       << 10) |
-                                       (s->concealment_motion_vectors <<  9) |
-                                       (s->q_scale_type               <<  8) |
-                                       (s->intra_vlc_format           <<  7) |
-                                       (s->alternate_scan             <<  6) |
-                                       (s->repeat_first_field         <<  5) |
-                                       (s->chroma_420_type            <<  4) |
-                                       (s->progressive_frame          <<  3);
+    pp->wBitstreamPCEelements        = (s->intra_dc_precision * (1 << 14)) |
+                                       (s->picture_structure * (1 << 12)) |
+                                       (s->top_field_first * (1 << 11)) |
+                                       (s->frame_pred_frame_dct * (1 << 10)) |
+                                       (s->concealment_motion_vectors * (1 << 9)) |
+                                       (s->q_scale_type * (1 << 8)) |
+                                       (s->intra_vlc_format * (1 << 7)) |
+                                       (s->alternate_scan * (1 << 6)) |
+                                       (s->repeat_first_field * (1 << 5)) |
+                                       (s->chroma_420_type * (1 << 4)) |
+                                       (s->progressive_frame * (1 << 3));
     pp->bBitstreamConcealmentNeed    = 0;
     pp->bBitstreamConcealmentMethod  = 0;
 }

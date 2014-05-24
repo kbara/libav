@@ -92,7 +92,7 @@
 #define IS_DIR(a, part, list) ((a) & (MB_TYPE_P0L0 << ((part) + 2 * (list))))
 
 // does this mb use listX, note does not work if subMBs
-#define USES_LIST(a, list) ((a) & ((MB_TYPE_P0L0 | MB_TYPE_P1L0) << (2 * (list))))
+#define USES_LIST(a, list) ((a) & ((MB_TYPE_P0L0 | MB_TYPE_P1L0) * (1 << (2 * (list)))))
 
 #define HAS_CBP(a)       ((a) & MB_TYPE_CBP)
 

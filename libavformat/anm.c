@@ -186,7 +186,9 @@ repeat:
 
     /* parse page header */
     if (anm->record < 0) {
-        avio_seek(pb, anm->page_table_offset + MAX_PAGES*6 + (anm->page<<16), SEEK_SET);
+        avio_seek(pb,
+                  anm->page_table_offset + MAX_PAGES*6 + (anm->page * (1 << 16)),
+                  SEEK_SET);
         avio_skip(pb, 8 + 2*p->nb_records);
         anm->record = 0;
     }
@@ -203,7 +205,7 @@ repeat:
 
     /* fetch record size */
     tmp = avio_tell(pb);
-    avio_seek(pb, anm->page_table_offset + MAX_PAGES*6 + (anm->page<<16) +
+    avio_seek(pb, anm->page_table_offset + MAX_PAGES*6 + (anm->page * (1 << 16)) +
               8 + anm->record * 2, SEEK_SET);
     record_size = avio_rl16(pb);
     avio_seek(pb, tmp, SEEK_SET);

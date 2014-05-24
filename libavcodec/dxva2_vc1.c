@@ -73,11 +73,11 @@ static void fill_picture_parameters(AVCodecContext *avctx,
     pp->bPicIntra               = s->pict_type == AV_PICTURE_TYPE_I || v->bi_type;
     pp->bPicBackwardPrediction  = s->pict_type == AV_PICTURE_TYPE_B && !v->bi_type;
     pp->bBidirectionalAveragingMode = (1                                           << 7) |
-                                      ((ctx->cfg->ConfigIntraResidUnsigned != 0)   << 6) |
-                                      ((ctx->cfg->ConfigResidDiffAccelerator != 0) << 5) |
-                                      ((v->lumscale != 32 || v->lumshift != 0)     << 4) |
-                                      ((v->profile == PROFILE_ADVANCED)            << 3);
-    pp->bMVprecisionAndChromaRelation = ((v->mv_mode == MV_PMODE_1MV_HPEL_BILIN) << 3) |
+                                      ((ctx->cfg->ConfigIntraResidUnsigned != 0) * (1 << 6)) |
+                                      ((ctx->cfg->ConfigResidDiffAccelerator != 0) * (1 << 5)) |
+                                      ((v->lumscale != 32 || v->lumshift != 0) * (1 << 4)) |
+                                      ((v->profile == PROFILE_ADVANCED) * (1 << 3));
+    pp->bMVprecisionAndChromaRelation = ((v->mv_mode == MV_PMODE_1MV_HPEL_BILIN) * (1 << 3)) |
                                         (1                                       << 2) |
                                         (0                                       << 1) |
                                         (!s->quarter_sample                          );
@@ -89,29 +89,29 @@ static void fill_picture_parameters(AVCodecContext *avctx,
     pp->bPicScanMethod          = ctx->report_id & 0xff;
     pp->bPicReadbackRequests    = 0;
     pp->bRcontrol               = v->rnd;
-    pp->bPicSpatialResid8       = (v->panscanflag  << 7) |
-                                  (v->refdist_flag << 6) |
-                                  (s->loop_filter  << 5) |
-                                  (v->fastuvmc     << 4) |
-                                  (v->extended_mv  << 3) |
-                                  (v->dquant       << 1) |
+    pp->bPicSpatialResid8       = (v->panscanflag * (1 << 7)) |
+                                  (v->refdist_flag * (1 << 6)) |
+                                  (s->loop_filter * (1 << 5)) |
+                                  (v->fastuvmc * (1 << 4)) |
+                                  (v->extended_mv * (1 << 3)) |
+                                  (v->dquant * (1 << 1)) |
                                   (v->vstransform      );
-    pp->bPicOverflowBlocks      = (v->quantizer_mode << 6) |
-                                  (v->multires       << 5) |
-                                  (v->resync_marker  << 4) |
-                                  (v->rangered       << 3) |
+    pp->bPicOverflowBlocks      = (v->quantizer_mode * (1 << 6)) |
+                                  (v->multires * (1 << 5)) |
+                                  (v->resync_marker * (1 << 4)) |
+                                  (v->rangered * (1 << 3)) |
                                   (s->max_b_frames       );
     pp->bPicExtrapolation       = (!v->interlace || v->fcm == PROGRESSIVE) ? 1 : 2;
-    pp->bPicDeblocked           = ((!pp->bPicBackwardPrediction && v->overlap)        << 6) |
-                                  ((v->profile != PROFILE_ADVANCED && v->rangeredfrm) << 5) |
-                                  (s->loop_filter                                     << 1);
-    pp->bPicDeblockConfined     = (v->postprocflag             << 7) |
-                                  (v->broadcast                << 6) |
-                                  (v->interlace                << 5) |
-                                  (v->tfcntrflag               << 4) |
-                                  (v->finterpflag              << 3) |
-                                  ((s->pict_type != AV_PICTURE_TYPE_B) << 2) |
-                                  (v->psf                      << 1) |
+    pp->bPicDeblocked           = ((!pp->bPicBackwardPrediction && v->overlap) * (1 << 6)) |
+                                  ((v->profile != PROFILE_ADVANCED && v->rangeredfrm) * (1 << 5)) |
+                                  (s->loop_filter * (1 << 1));
+    pp->bPicDeblockConfined     = (v->postprocflag * (1 << 7)) |
+                                  (v->broadcast * (1 << 6)) |
+                                  (v->interlace * (1 << 5)) |
+                                  (v->tfcntrflag * (1 << 4)) |
+                                  (v->finterpflag * (1 << 3)) |
+                                  ((s->pict_type != AV_PICTURE_TYPE_B) * (1 << 2)) |
+                                  (v->psf * (1 << 1)) |
                                   (v->extended_dmv                 );
     if (s->pict_type != AV_PICTURE_TYPE_I)
         pp->bPic4MVallowed      = v->mv_mode == MV_PMODE_MIXED_MV ||

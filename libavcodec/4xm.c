@@ -356,8 +356,8 @@ static int decode_p_block(FourXContext *f, uint16_t *dst, uint16_t *src,
         log2h--;
         if ((ret = decode_p_block(f, dst, src, log2w, log2h, stride)) < 0)
             return ret;
-        return decode_p_block(f, dst + (stride << log2h),
-                              src + (stride << log2h),
+        return decode_p_block(f, dst + (stride * (1 << log2h)),
+                              src + (stride * (1 << log2h)),
                               log2w, log2h, stride);
     } else if (code == 2) {
         log2w--;
@@ -546,13 +546,13 @@ static inline void idct_put(FourXContext *f, int x, int y)
             cb += cb;
 
             y               = temp[0];
-            dst[0]          = ((y + cb) >> 3) + (((y - cg) & 0xFC) << 3) + (((y + cr) & 0xF8) << 8);
+            dst[0]          = ((y + cb) >> 3) + (((y - cg) & 0xFC) * (1 << 3)) + (((y + cr) & 0xF8) * (1 << 8));
             y               = temp[1];
-            dst[1]          = ((y + cb) >> 3) + (((y - cg) & 0xFC) << 3) + (((y + cr) & 0xF8) << 8);
+            dst[1]          = ((y + cb) >> 3) + (((y - cg) & 0xFC) * (1 << 3)) + (((y + cr) & 0xF8) * (1 << 8));
             y               = temp[8];
-            dst[stride]     = ((y + cb) >> 3) + (((y - cg) & 0xFC) << 3) + (((y + cr) & 0xF8) << 8);
+            dst[stride]     = ((y + cb) >> 3) + (((y - cg) & 0xFC) * (1 << 3)) + (((y + cr) & 0xF8) * (1 << 8));
             y               = temp[9];
-            dst[1 + stride] = ((y + cb) >> 3) + (((y - cg) & 0xFC) << 3) + (((y + cr) & 0xF8) << 8);
+            dst[1 + stride] = ((y + cb) >> 3) + (((y - cg) & 0xFC) * (1 << 3)) + (((y + cr) & 0xF8) * (1 << 8));
             dst            += 2;
         }
         dst += 2 * stride - 2 * 8;

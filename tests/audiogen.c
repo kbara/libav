@@ -89,7 +89,7 @@ static int int_cos(int a)
     f = a & ((1 << CSHIFT) - 1);
     v = p[0] + (((p[1] - p[0]) * f + (1 << (CSHIFT - 1))) >> CSHIFT);
     v = (v ^ neg) - neg;
-    v = v << (FRAC_BITS - 15);
+    v = v * (1 << (FRAC_BITS - 15));
     return v;
 }
 

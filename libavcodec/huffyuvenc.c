@@ -133,7 +133,7 @@ static int store_table(HYuvContext *s, const uint8_t *len, uint8_t *buf)
             buf[index++] = val;
             buf[index++] = repeat;
         } else {
-            buf[index++] = val | (repeat << 5);
+            buf[index++] = val | (repeat * (1 << 5));
         }
     }
 
@@ -215,7 +215,7 @@ static av_cold int encode_init(AVCodecContext *avctx)
         return -1;
     }
 
-    ((uint8_t*)avctx->extradata)[0] = s->predictor | (s->decorrelate << 6);
+    ((uint8_t*)avctx->extradata)[0] = s->predictor | (s->decorrelate * (1 << 6));
     ((uint8_t*)avctx->extradata)[1] = s->bitstream_bpp;
     ((uint8_t*)avctx->extradata)[2] = s->interlaced ? 0x10 : 0x20;
     if (s->context)

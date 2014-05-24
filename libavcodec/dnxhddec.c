@@ -184,7 +184,7 @@ static int dnxhd_decode_header(DNXHDContext *ctx, AVFrame *frame,
     }
 
     for (i = 0; i < ctx->mb_height; i++) {
-        ctx->mb_scan_index[i] = AV_RB32(buf + 0x170 + (i << 2));
+        ctx->mb_scan_index[i] = AV_RB32(buf + 0x170 + (i * (1 << 2)));
         av_dlog(ctx->avctx, "mb scan index %d\n", ctx->mb_scan_index[i]);
         if (buf_size < ctx->mb_scan_index[i] + 0x280) {
             av_log(ctx->avctx, AV_LOG_ERROR, "invalid mb scan index\n");
@@ -322,9 +322,9 @@ static int dnxhd_decode_macroblock(DNXHDContext *ctx, AVFrame *frame,
         dct_linesize_chroma <<= 1;
     }
 
-    dest_y = frame->data[0] + ((y * dct_linesize_luma)   << 4) + (x << (4 + shift1));
-    dest_u = frame->data[1] + ((y * dct_linesize_chroma) << 4) + (x << (3 + shift1 + ctx->is_444));
-    dest_v = frame->data[2] + ((y * dct_linesize_chroma) << 4) + (x << (3 + shift1 + ctx->is_444));
+    dest_y = frame->data[0] + ((y * dct_linesize_luma) * (1 << 4)) + (x * (1 << (4 + shift1)));
+    dest_u = frame->data[1] + ((y * dct_linesize_chroma) * (1 << 4)) + (x * (1 << (3 + shift1 + ctx->is_444)));
+    dest_v = frame->data[2] + ((y * dct_linesize_chroma) * (1 << 4)) + (x * (1 << (3 + shift1 + ctx->is_444)));
 
     if (ctx->cur_field) {
         dest_y += frame->linesize[0];
@@ -332,7 +332,7 @@ static int dnxhd_decode_macroblock(DNXHDContext *ctx, AVFrame *frame,
         dest_v += frame->linesize[2];
     }
 
-    dct_y_offset = dct_linesize_luma << 3;
+    dct_y_offset = dct_linesize_luma * (1 << 3);
     dct_x_offset = 8 << shift1;
     if (!ctx->is_444) {
         ctx->dsp.idct_put(dest_y,                               dct_linesize_luma, ctx->blocks[0]);
@@ -341,7 +341,7 @@ static int dnxhd_decode_macroblock(DNXHDContext *ctx, AVFrame *frame,
         ctx->dsp.idct_put(dest_y + dct_y_offset + dct_x_offset, dct_linesize_luma, ctx->blocks[5]);
 
         if (!(ctx->avctx->flags & CODEC_FLAG_GRAY)) {
-            dct_y_offset = dct_linesize_chroma << 3;
+            dct_y_offset = dct_linesize_chroma * (1 << 3);
             ctx->dsp.idct_put(dest_u,                dct_linesize_chroma, ctx->blocks[2]);
             ctx->dsp.idct_put(dest_v,                dct_linesize_chroma, ctx->blocks[3]);
             ctx->dsp.idct_put(dest_u + dct_y_offset, dct_linesize_chroma, ctx->blocks[6]);
@@ -354,7 +354,7 @@ static int dnxhd_decode_macroblock(DNXHDContext *ctx, AVFrame *frame,
         ctx->dsp.idct_put(dest_y + dct_y_offset + dct_x_offset, dct_linesize_luma, ctx->blocks[7]);
 
         if (!(ctx->avctx->flags & CODEC_FLAG_GRAY)) {
-            dct_y_offset = dct_linesize_chroma << 3;
+            dct_y_offset = dct_linesize_chroma * (1 << 3);
             ctx->dsp.idct_put(dest_u,                               dct_linesize_chroma, ctx->blocks[2]);
             ctx->dsp.idct_put(dest_u + dct_x_offset,                dct_linesize_chroma, ctx->blocks[3]);
             ctx->dsp.idct_put(dest_u + dct_y_offset,                dct_linesize_chroma, ctx->blocks[8]);
@@ -377,7 +377,8 @@ static int dnxhd_decode_macroblocks(DNXHDContext *ctx, AVFrame *frame,
         ctx->last_dc[0] =
         ctx->last_dc[1] =
         ctx->last_dc[2] = 1 << (ctx->bit_depth + 2); // for levels +2^(bitdepth-1)
-        init_get_bits(&ctx->gb, buf + ctx->mb_scan_index[y], (buf_size - ctx->mb_scan_index[y]) << 3);
+        init_get_bits(&ctx->gb, buf + ctx->mb_scan_index[y],
+                      (buf_size - ctx->mb_scan_index[y]) * (1 << 3));
         for (x = 0; x < ctx->mb_width; x++) {
             //START_TIMER;
             dnxhd_decode_macroblock(ctx, frame, x, y);

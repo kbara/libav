@@ -152,12 +152,12 @@ static void dct_unquantize_mpeg1_inter_c(MpegEncContext *s,
         if (level) {
             if (level < 0) {
                 level = -level;
-                level = (((level << 1) + 1) * qscale *
+                level = (((level * (1 << 1)) + 1) * qscale *
                          ((int) (quant_matrix[j]))) >> 4;
                 level = (level - 1) | 1;
                 level = -level;
             } else {
-                level = (((level << 1) + 1) * qscale *
+                level = (((level * (1 << 1)) + 1) * qscale *
                          ((int) (quant_matrix[j]))) >> 4;
                 level = (level - 1) | 1;
             }
@@ -246,11 +246,11 @@ static void dct_unquantize_mpeg2_inter_c(MpegEncContext *s,
         if (level) {
             if (level < 0) {
                 level = -level;
-                level = (((level << 1) + 1) * qscale *
+                level = (((level * (1 << 1)) + 1) * qscale *
                          ((int) (quant_matrix[j]))) >> 4;
                 level = -level;
             } else {
-                level = (((level << 1) + 1) * qscale *
+                level = (((level * (1 << 1)) + 1) * qscale *
                          ((int) (quant_matrix[j]))) >> 4;
             }
             block[j] = level;
@@ -268,7 +268,7 @@ static void dct_unquantize_h263_intra_c(MpegEncContext *s,
 
     assert(s->block_last_index[n]>=0);
 
-    qmul = qscale << 1;
+    qmul = qscale * (1 << 1);
 
     if (!s->h263_aic) {
         if (n < 4)
@@ -306,7 +306,7 @@ static void dct_unquantize_h263_inter_c(MpegEncContext *s,
     assert(s->block_last_index[n]>=0);
 
     qadd = (qscale - 1) | 1;
-    qmul = qscale << 1;
+    qmul = qscale * (1 << 1);
 
     nCoeffs= s->inter_scantable.raster_end[ s->block_last_index[n] ];
 
@@ -1998,7 +1998,7 @@ int ff_MPV_lowest_referenced_row(MpegEncContext *s, int dir)
     }
 
     for (i = 0; i < mvs; i++) {
-        my = s->mv[dir][i][1]<<qpel_shift;
+        my = s->mv[dir][i][1] * (1 << qpel_shift);
         my_max = FFMAX(my_max, my);
         my_min = FFMIN(my_min, my);
     }
@@ -2344,20 +2344,20 @@ void ff_init_block_index(MpegEncContext *s){ //FIXME maybe rename
     s->block_index[5]= s->mb_stride*(s->mb_y + s->mb_height + 2) + s->b8_stride*s->mb_height*2 + s->mb_x - 1;
     //block_index is not used by mpeg2, so it is not affected by chroma_format
 
-    s->dest[0] = s->current_picture.f->data[0] + ((s->mb_x - 1) <<  mb_size);
-    s->dest[1] = s->current_picture.f->data[1] + ((s->mb_x - 1) << (mb_size - s->chroma_x_shift));
-    s->dest[2] = s->current_picture.f->data[2] + ((s->mb_x - 1) << (mb_size - s->chroma_x_shift));
+    s->dest[0] = s->current_picture.f->data[0] + ((s->mb_x - 1) * (1 << mb_size));
+    s->dest[1] = s->current_picture.f->data[1] + ((s->mb_x - 1) * (1 << (mb_size - s->chroma_x_shift)));
+    s->dest[2] = s->current_picture.f->data[2] + ((s->mb_x - 1) * (1 << (mb_size - s->chroma_x_shift)));
 
     if(!(s->pict_type==AV_PICTURE_TYPE_B && s->avctx->draw_horiz_band && s->picture_structure==PICT_FRAME))
     {
         if(s->picture_structure==PICT_FRAME){
-        s->dest[0] += s->mb_y *   linesize << mb_size;
-        s->dest[1] += s->mb_y * uvlinesize << (mb_size - s->chroma_y_shift);
-        s->dest[2] += s->mb_y * uvlinesize << (mb_size - s->chroma_y_shift);
+        s->dest[0] += (s->mb_y * linesize) * (1 << mb_size);
+        s->dest[1] += (s->mb_y * uvlinesize) * (1 << (mb_size - s->chroma_y_shift));
+        s->dest[2] += (s->mb_y * uvlinesize) * (1 << (mb_size - s->chroma_y_shift));
         }else{
-            s->dest[0] += (s->mb_y>>1) *   linesize << mb_size;
-            s->dest[1] += (s->mb_y>>1) * uvlinesize << (mb_size - s->chroma_y_shift);
-            s->dest[2] += (s->mb_y>>1) * uvlinesize << (mb_size - s->chroma_y_shift);
+            s->dest[0] += ((s->mb_y >> 1) * linesize) * (1 << mb_size);
+            s->dest[1] += ((s->mb_y >> 1) * uvlinesize) * (1 << (mb_size - s->chroma_y_shift));
+            s->dest[2] += ((s->mb_y >> 1) * uvlinesize) * (1 << (mb_size - s->chroma_y_shift));
             assert((s->mb_y&1) == (s->picture_structure == PICT_BOTTOM_FIELD));
         }
     }

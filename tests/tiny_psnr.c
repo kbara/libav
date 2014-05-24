@@ -69,7 +69,7 @@ static int64_t log16(uint64_t a)
 
     for (i = 20; i >= 0; i--) {
         int64_t b = exp16_table[i];
-        if (a < (b << 16))
+        if (a < (b * (1LL << 16)))
             continue;
         out |= 1 << i;
         a    = ((a / b) << 16) + (((a % b) << 16) + b / 2) / b;
@@ -246,7 +246,7 @@ int main(int argc, char *argv[])
         uint64_t psnr;
         uint64_t dev = int_sqrt(((sse / i) * F * F) + (((sse % i) * F * F) + i / 2) / i);
         if (sse)
-            psnr = ((2 * log16(max << 16) + log16(i) - log16(sse)) *
+            psnr = ((2 * log16(max * (1LL << 16)) + log16(i) - log16(sse)) *
                     284619LL * F + (1LL << 31)) / (1LL << 32);
         else
             psnr = 1000 * F - 1; // floating point free infinity :)

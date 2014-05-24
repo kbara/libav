@@ -99,7 +99,8 @@ static void do_adaptive_prediction(struct G722Band *band, const int cur_diff)
     band->part_reconst_mem[0] = cur_part_reconst;
 
     band->pole_mem[1] = av_clip((sg[0] * av_clip(band->pole_mem[0], -8191, 8191) >> 5) +
-                                (sg[1] << 7) + (band->pole_mem[1] * 127 >> 7), -12288, 12288);
+                                (sg[1] * (1 << 7)) + (band->pole_mem[1] * 127 >> 7),
+                                -12288, 12288);
 
     limit = 15360 - band->pole_mem[1];
     band->pole_mem[0] = av_clip(-192 * sg[0] + (band->pole_mem[0] * 255 >> 8), -limit, limit);
@@ -115,14 +116,14 @@ static void do_adaptive_prediction(struct G722Band *band, const int cur_diff)
 
     for (i = 5; i > 0; i--)
         band->diff_mem[i] = band->diff_mem[i-1];
-    band->diff_mem[0] = av_clip_int16(cur_diff << 1);
+    band->diff_mem[0] = av_clip_int16(cur_diff * (1 << 1));
 
     band->s_zero = 0;
     for (i = 5; i >= 0; i--)
         band->s_zero += (band->zero_mem[i]*band->diff_mem[i]) >> 15;
 
 
-    cur_qtzd_reconst = av_clip_int16((band->s_predictor + cur_diff) << 1);
+    cur_qtzd_reconst = av_clip_int16((band->s_predictor + cur_diff) * (1 << 1));
     band->s_predictor = av_clip_int16(band->s_zero +
                                       (band->pole_mem[0] * cur_qtzd_reconst >> 15) +
                                       (band->pole_mem[1] * band->prev_qtzd_reconst >> 15));
@@ -133,7 +134,7 @@ static inline int linear_scale_factor(const int log_factor)
 {
     const int wd1 = inv_log2_table[(log_factor >> 6) & 31];
     const int shift = log_factor >> 11;
-    return shift < 0 ? wd1 >> -shift : wd1 << shift;
+    return shift < 0 ? wd1 >> -shift : wd1 * (1 << shift);
 }
 
 void ff_g722_update_low_predictor(struct G722Band *band, const int ilow)

@@ -535,7 +535,7 @@ static int get_num(AVIOContext *pb, int *len)
     } else {
         n1 = avio_rb16(pb);
         (*len)-=2;
-        return (n << 16) | n1;
+        return (n * (1 << 16)) | n1;
     }
 }
 
