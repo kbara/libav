@@ -42,7 +42,7 @@
 static void put_xsub_rle(PutBitContext *pb, int len, int color)
 {
     if (len <= 255)
-        put_bits(pb, 2 + ((ff_log2_tab[len] >> 1) << 2), len);
+        put_bits(pb, 2 + ((ff_log2_tab[len] >> 1) * (1 << 2)), len);
     else
         put_bits(pb, 14, 0);
     put_bits(pb, 2, color);

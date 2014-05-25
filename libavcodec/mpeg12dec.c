@@ -1383,7 +1383,7 @@ static void mpeg_decode_sequence_extension(Mpeg1Context *s1)
     bit_rate_ext = get_bits(&s->gb, 12);  /* XXX: handle it */
     s->bit_rate += (bit_rate_ext * (1 << 18)) * 400;
     skip_bits1(&s->gb); /* marker */
-    s->avctx->rc_buffer_size += get_bits(&s->gb, 8) * 1024 * 16 << 10;
+    s->avctx->rc_buffer_size += (get_bits(&s->gb, 8) * 1024 * 16) * (1 << 10);
 
     s->low_delay = get_bits1(&s->gb);
     if (s->flags & CODEC_FLAG_LOW_DELAY)

@@ -430,7 +430,7 @@ xget_zpixmap(Display *dpy, Drawable d, XImage *image, int x, int y)
         return 0;
     }
 
-    nbytes = (long)rep.length << 2;
+    nbytes = (long)rep.length * (1 << 2);
     _XReadPad(dpy, image->data, nbytes);
 
     UnlockDisplay(dpy);

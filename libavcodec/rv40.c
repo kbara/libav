@@ -207,7 +207,7 @@ static int rv40_decode_intra_types(RV34DecContext *r, GetBitContext *gb, int8_t 
                         break;
                     case  0:
                     case  2: // code 0 -> 2, 1 -> 0
-                        v = (get_bits1(gb) ^ 1) << 1;
+                        v = (get_bits1(gb) ^ 1) * (1 << 1);
                         break;
                     }
                 }

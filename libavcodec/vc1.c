@@ -433,8 +433,8 @@ static int decode_sequence_header_adv(VC1Context *v, GetBitContext *gb)
     v->bitrtq_postproc       = get_bits(gb, 5); //common
     v->postprocflag          = get_bits1(gb);   //common
 
-    v->s.avctx->coded_width  = (get_bits(gb, 12) + 1) << 1;
-    v->s.avctx->coded_height = (get_bits(gb, 12) + 1) << 1;
+    v->s.avctx->coded_width  = (get_bits(gb, 12) + 1) * (1 << 1);
+    v->s.avctx->coded_height = (get_bits(gb, 12) + 1) * (1 << 1);
     v->s.avctx->width        = v->s.avctx->coded_width;
     v->s.avctx->height       = v->s.avctx->coded_height;
     v->broadcast             = get_bits1(gb);
@@ -546,8 +546,8 @@ int ff_vc1_decode_entry_point(AVCodecContext *avctx, VC1Context *v, GetBitContex
     }
 
     if (get_bits1(gb)) {
-        avctx->width  = avctx->coded_width  = (get_bits(gb, 12) + 1) << 1;
-        avctx->height = avctx->coded_height = (get_bits(gb, 12) + 1) << 1;
+        avctx->width  = avctx->coded_width  = (get_bits(gb, 12) + 1) * (1 << 1);
+        avctx->height = avctx->coded_height = (get_bits(gb, 12) + 1) * (1 << 1);
     }
     if (v->extended_mv)
         v->extended_dmv = get_bits1(gb);

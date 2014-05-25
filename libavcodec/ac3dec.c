@@ -1103,11 +1103,11 @@ static int decode_audio_block(AC3DecodeContext *s, int blk)
         if (s->snr_offset_strategy && get_bits1(gbc)) {
             int snr = 0;
             int csnr;
-            csnr = (get_bits(gbc, 6) - 15) << 4;
+            csnr = (get_bits(gbc, 6) - 15) * (1 << 4);
             for (i = ch = !cpl_in_use; ch <= s->channels; ch++) {
                 /* snr offset */
                 if (ch == i || s->snr_offset_strategy == 2)
-                    snr = (csnr + get_bits(gbc, 4)) << 2;
+                    snr = (csnr + get_bits(gbc, 4)) * (1 << 2);
                 /* run at least last bit allocation stage if snr offset changes */
                 if (blk && s->snr_offset[ch] != snr) {
                     bit_alloc_stages[ch] = FFMAX(bit_alloc_stages[ch], 1);

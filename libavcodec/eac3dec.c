@@ -379,7 +379,7 @@ int ff_eac3_parse_header(AC3DecodeContext *s)
                 case 1: skip_bits(gbc, 5);  break;
                 case 2: skip_bits(gbc, 12); break;
                 case 3: {
-                    int mix_data_size = (get_bits(gbc, 5) + 2) << 3;
+                    int mix_data_size = (get_bits(gbc, 5) + 2) * (1 << 3);
                     skip_bits_long(gbc, mix_data_size);
                     break;
                 }
@@ -560,8 +560,8 @@ int ff_eac3_parse_header(AC3DecodeContext *s)
 
     /* per-frame SNR offset */
     if (!s->snr_offset_strategy) {
-        int csnroffst = (get_bits(gbc, 6) - 15) << 4;
-        int snroffst = (csnroffst + get_bits(gbc, 4)) << 2;
+        int csnroffst = (get_bits(gbc, 6) - 15) * (1 << 4);
+        int snroffst = (csnroffst + get_bits(gbc, 4)) * (1 << 2);
         for (ch = 0; ch <= s->channels; ch++)
             s->snr_offset[ch] = snroffst;
     }
