@@ -19,8 +19,17 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+/* Format documentation:
+ * http://wiki.multimedia.cx/index.php?title=RealMedia
+ * https://common.helixcommunity.org/2003/HCS_SDK_r5/htmfiles/rmff.htm
+ */
+
 #include "avformat.h"
 #include "rm.h"
+
+/* Header for RealAudio 1.0 (.ra version 3
+ * and RealAudio 2.0 file (.ra version 4). */
+#define RA_HEADER ".ra\xfd"
 
 struct RMStream {
 };
@@ -30,7 +39,8 @@ typedef struct {
 
 static int rm_probe(AVProbeData *p)
 {
-    return 0;
+    /* RealAudio header; TODO: handle RMF later. */
+    return strncmp(p->buf, RA_HEADER, 4) ? 0 : AVPROBE_SCORE_MAX;
 }
 
 static int rm_read_header(AVFormatContext *s)
@@ -71,7 +81,7 @@ ff_rm_retrieve_cache (AVFormatContext *s, AVIOContext *pb,
 
 RMStream *ff_rm_alloc_rmstream (void)
 {
-    return NULL;
+    return av_mallocz(sizeof(RMSTREAM));
 }
 
 int
