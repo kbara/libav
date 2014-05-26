@@ -24,12 +24,15 @@
  * https://common.helixcommunity.org/2003/HCS_SDK_r5/htmfiles/rmff.htm
  */
 
+#include "libavutil/channel_layout.h"
+#include "libavutil/intreadwrite.h"
+
 #include "avformat.h"
 #include "rm.h"
 
 /* Header for RealAudio 1.0 (.ra version 3
  * and RealAudio 2.0 file (.ra version 4). */
-#define RA_HEADER ".ra\xfd"
+#define RA_HEADER MKTAG('.', 'r', 'a', 0xfd)
 
 struct RMStream {
 };
@@ -40,11 +43,51 @@ typedef struct {
 static int rm_probe(AVProbeData *p)
 {
     /* RealAudio header; TODO: handle RMF later. */
-    return strncmp(p->buf, RA_HEADER, 4) ? 0 : AVPROBE_SCORE_MAX;
+    /* TODO: check that this works */
+    uint32_t buftag = MKTAG(p->buf[0], p->buf[1], p->buf[2], p->buf[3]);
+    return (buftag == RA_HEADER) ? AVPROBE_SCORE_MAX : 0;
 }
 
 static int rm_read_header(AVFormatContext *s)
 {
+    AVIOContext *acpb = s->pb;
+    RMDemuxContext *rmdc = s->priv_data;
+    AVStream *st = NULL;
+
+    uint32_t tag;
+    uint16_t version, header_size;
+    char a, b, c, d;
+
+    tag = avio_rl32(acpb);
+
+    a = tag >> 24;
+    b = (tag >> 16) & 0xff;
+    c = (tag >> 8) & 0xff;
+    d = tag & 0xff;
+    printf("Got tag %c%c%c%c\n", a, b, c, d);
+    printf("tag %u, header %u\n", tag, RA_HEADER);
+    if (tag != RA_HEADER)
+        return AVERROR_INVALIDDATA;
+    version = avio_rb16(acpb);
+    printf("Version: %u\n", version);
+    if (version != 3) /* TODO: add v4 uspport */
+        return AVERROR_INVALIDDATA;
+    header_size = avio_rb16(acpb);
+    printf("Header size: %u\n", header_size);
+    avio_skip(acpb, header_size); /* TODO: read rest of header properly */
+
+    st = avformat_new_stream(s, NULL);
+    if (!st)
+        return AVERROR(ENOMEM);
+
+    st->codec->channel_layout = AV_CH_LAYOUT_MONO;
+    st->codec->channels = 1;
+    //st->codec->codec_tag = AV_RL32(st->codec->extradata); /* Why? */
+    //st->codec->codec_id = ff_codec_get_id(ff_rm_codec_tags, st->codec->codec_tag);
+    st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
+    st->codec->sample_rate = 8000;
+
+
     return 0;
 }
 
@@ -81,7 +124,7 @@ ff_rm_retrieve_cache (AVFormatContext *s, AVIOContext *pb,
 
 RMStream *ff_rm_alloc_rmstream (void)
 {
-    return av_mallocz(sizeof(RMSTREAM));
+    return av_mallocz(sizeof(RMStream));
 }
 
 int
