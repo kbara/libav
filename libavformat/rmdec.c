@@ -51,7 +51,7 @@ static int rm_probe(AVProbeData *p)
 static int rm_read_header(AVFormatContext *s)
 {
     AVIOContext *acpb = s->pb;
-    RMDemuxContext *rmdc = s->priv_data;
+    //RMDemuxContext *rmdc = s->priv_data;
     AVStream *st = NULL;
 
     uint32_t tag;
@@ -75,6 +75,7 @@ static int rm_read_header(AVFormatContext *s)
     header_size = avio_rb16(acpb);
     printf("Header size: %u\n", header_size);
     avio_skip(acpb, header_size); /* TODO: read rest of header properly */
+    /* TODO: make sure metadata round-trips, for example to AAC/mp4 */
 
     st = avformat_new_stream(s, NULL);
     if (!st)
@@ -87,12 +88,28 @@ static int rm_read_header(AVFormatContext *s)
     st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
     st->codec->sample_rate = 8000;
 
-
     return 0;
 }
 
 static int rm_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
+    //AVIOContext *acpb = s->pb;
+    //char a, b, c, d;
+    AVStream *avst;
+    uint64_t pos;
+    char a;
+
+    printf("rm_read_packet called\n");
+    printf("num_streams: %i\n", s->nb_streams);
+    avst = s->streams[0];
+    pos = avio_tell(s->pb);
+
+    while(!s->pb->eof_reached) {
+        a = avio_r8(s->pb); //(avst);
+        printf("%hhx ", a);
+    }
+    return AVERROR_EOF;
+
     return 0;
 }
 
@@ -136,6 +153,8 @@ ff_rm_read_mdpr_codecdata (AVFormatContext *s, AVIOContext *pb,
 
 void ff_rm_free_rmstream (RMStream *rms)
 {
+    if(rms)
+        av_freep(&rms);
 }
 
 AVInputFormat ff_rm_demuxer = {

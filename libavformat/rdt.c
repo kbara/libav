@@ -543,7 +543,7 @@ rdt_free_context (PayloadContext *rdt)
     for (i = 0; i < rdt->nb_rmst; i++)
         if (rdt->rmst[i]) {
             ff_rm_free_rmstream(rdt->rmst[i]);
-            av_freep(&rdt->rmst[i]);
+            //av_freep(&rdt->rmst[i]);
         }
     if (rdt->rmctx)
         avformat_close_input(&rdt->rmctx);
