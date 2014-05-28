@@ -34,13 +34,21 @@
  * and RealAudio 2.0 file (.ra version 4). */
 #define RA_HEADER MKTAG('.', 'r', 'a', 0xfd)
 
+/* The relevant VSELP format has 159-bit frames, stored in 20 bytes */
+#define RA144_PKT_SIZE 20
+
 struct RMStream {
 };
 
+/* Demux context for RealAudio */
+typedef struct {
+} RADemuxContext;
+
+/* Demux context for RealMedia (audio+video) */
 typedef struct {
 } RMDemuxContext;
 
-static int rm_probe(AVProbeData *p)
+static int ra_probe(AVProbeData *p)
 {
     /* RealAudio header; TODO: handle RMF later. */
     /* TODO: check that this works */
@@ -49,7 +57,7 @@ static int rm_probe(AVProbeData *p)
     return (buftag == RA_HEADER) ? AVPROBE_SCORE_MAX : 0;
 }
 
-static int rm_read_header(AVFormatContext *s)
+static int ra_read_header(AVFormatContext *s)
 {
     AVIOContext *acpb = s->pb;
     //RMDemuxContext *rmdc = s->priv_data;
@@ -91,9 +99,9 @@ static int rm_read_header(AVFormatContext *s)
     return 0;
 }
 
-static int rm_read_packet(AVFormatContext *s, AVPacket *pkt)
+static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
-    //AVIOContext *acpb = s->pb;
+/*    //AVIOContext *acpb = s->pb;
     //char a, b, c, d;
     AVStream *avst;
     uint64_t pos;
@@ -111,6 +119,35 @@ static int rm_read_packet(AVFormatContext *s, AVPacket *pkt)
     return AVERROR_EOF;
 
     return 0;
+*/
+    return av_get_packet(s->pb, pkt, RA144_PKT_SIZE);
+}
+
+static int ra_read_close(AVFormatContext *s)
+{
+    return 0;
+}
+
+static int64_t ra_read_dts(AVFormatContext *s, int stream_index,
+                               int64_t *ppos, int64_t pos_limit)
+{
+    return 0;
+}
+
+
+static int rm_probe(AVProbeData *p)
+{
+    return 0;
+}
+
+static int rm_read_header(AVFormatContext *s)
+{
+    return 0;
+}
+
+static int rm_read_packet(AVFormatContext *s, AVPacket *pkt)
+{
+    return 0;
 }
 
 static int rm_read_close(AVFormatContext *s)
@@ -119,10 +156,11 @@ static int rm_read_close(AVFormatContext *s)
 }
 
 static int64_t rm_read_dts(AVFormatContext *s, int stream_index,
-                               int64_t *ppos, int64_t pos_limit)
+                           int64_t *ppos, int64_t pos_limit)
 {
     return 0;
 }
+
 
 int
 ff_rm_parse_packet (AVFormatContext *s, AVIOContext *pb,
@@ -156,6 +194,17 @@ void ff_rm_free_rmstream (RMStream *rms)
     if(rms)
         av_freep(&rms);
 }
+
+AVInputFormat ff_ra_demuxer = {
+    .name           = "ra",
+    .long_name      = NULL_IF_CONFIG_SMALL("RealAudio"),
+    .priv_data_size = sizeof(RADemuxContext),
+    .read_probe     = ra_probe,
+    .read_header    = ra_read_header,
+    .read_packet    = ra_read_packet,
+    .read_close     = ra_read_close,
+    .read_timestamp = ra_read_dts,
+};
 
 AVInputFormat ff_rm_demuxer = {
     .name           = "rm",
