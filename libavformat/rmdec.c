@@ -44,6 +44,7 @@ static int rm_probe(AVProbeData *p)
 {
     /* RealAudio header; TODO: handle RMF later. */
     /* TODO: check that this works */
+    /* TODO: also check the version */
     uint32_t buftag = MKTAG(p->buf[0], p->buf[1], p->buf[2], p->buf[3]);
     return (buftag == RA_HEADER) ? AVPROBE_SCORE_MAX : 0;
 }
@@ -83,8 +84,7 @@ static int rm_read_header(AVFormatContext *s)
 
     st->codec->channel_layout = AV_CH_LAYOUT_MONO;
     st->codec->channels = 1;
-    //st->codec->codec_tag = AV_RL32(st->codec->extradata); /* Why? */
-    //st->codec->codec_id = ff_codec_get_id(ff_rm_codec_tags, st->codec->codec_tag);
+    st->codec->codec_id = AV_CODEC_ID_RA_144;
     st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
     st->codec->sample_rate = 8000;
 
