@@ -101,25 +101,6 @@ static int ra_read_header(AVFormatContext *s)
 
 static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
-/*    //AVIOContext *acpb = s->pb;
-    //char a, b, c, d;
-    AVStream *avst;
-    uint64_t pos;
-    char a;
-
-    printf("rm_read_packet called\n");
-    printf("num_streams: %i\n", s->nb_streams);
-    avst = s->streams[0];
-    pos = avio_tell(s->pb);
-
-    while(!s->pb->eof_reached) {
-        a = avio_r8(s->pb); //(avst);
-        printf("%hhx ", a);
-    }
-    return AVERROR_EOF;
-
-    return 0;
-*/
     return av_get_packet(s->pb, pkt, RA144_PKT_SIZE);
 }
 
@@ -142,6 +123,7 @@ static int rm_probe(AVProbeData *p)
 
 static int rm_read_header(AVFormatContext *s)
 {
+    printf("rm_read_header called...\n");
     return 0;
 }
 
