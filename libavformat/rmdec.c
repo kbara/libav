@@ -128,9 +128,9 @@ static int ra_read_header(AVFormatContext *s)
     AVIOContext *acpb = s->pb;
     AVStream *st = NULL;
 
-    int content_description_size, header_bytes_read;
+    int content_description_size;
     const int fourcc_bytes = 6;
-    uint32_t tag, fourcc_tag;
+    uint32_t tag, fourcc_tag, header_bytes_read;
     uint16_t version, header_size;
     uint8_t fourcc_len;
 
@@ -144,7 +144,7 @@ static int ra_read_header(AVFormatContext *s)
     }
     version = avio_rb16(acpb);
     if (version != 3) { /* TODO: add v4 support */
-        av_log(s, AV_LOG_ERROR, "RealAudio: Unsupported version %"PRIx32"\n", version);
+        av_log(s, AV_LOG_ERROR, "RealAudio: Unsupported version %"PRIx16"\n", version);
         return AVERROR_INVALIDDATA;
     }
     header_size = avio_rb16(acpb); /* Excluding bytes until now */
