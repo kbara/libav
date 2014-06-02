@@ -47,6 +47,9 @@
 /* RealAudio 1.0 (.ra version 3) only has one FourCC value */
 #define RA3_FOURCC MKTAG('l', 'p', 'c', 'J')
 
+/* An internal signature in RealAudio 2.0 (.ra version 4) headers */
+#define RA4_SIGNATURE MKTAG('.', 'r', 'a', '4')
+
 struct RMStream {
 };
 
@@ -57,6 +60,21 @@ typedef struct RADemuxContext {
 /* Demux context for RealMedia (audio+video) */
 typedef struct RMDemuxContext {
 } RMDemuxContext;
+
+
+static int ra_probe(AVProbeData *p)
+{
+    /* RealAudio header; for RMF, use rm_probe. */
+    uint8_t version;
+    if (MKTAG(p->buf[0], p->buf[1], p->buf[2], p->buf[3]) != RA_HEADER)
+       return 0;
+    version = p->buf[5];
+    /* Only v3 is currently supported, but v3-v4 should be. Does RA v5 exist? */
+    if ((version < 3) || (version > 4))
+        return 0;
+    return AVPROBE_SCORE_MAX;
+}
+
 
 /* Return value > 0: bytes read.
  * Return value < 0: error.
@@ -109,18 +127,20 @@ static int ra_read_content_description(AVFormatContext *s)
     return sought;
 }
 
-
-static int ra_probe(AVProbeData *p)
+static int get_fourcc(AVFormatContext *s, uint32_t *fourcc)
 {
-    /* RealAudio header; for RMF, use rm_probe. */
-    uint8_t version;
-    if (MKTAG(p->buf[0], p->buf[1], p->buf[2], p->buf[3]) != RA_HEADER)
-       return 0;
-    version = p->buf[5];
-    /* Only v3 is currently supported, but v3-v5 should be.*/
-    if ((version < 3) || (version > 5))
-        return 0;
-    return AVPROBE_SCORE_MAX;
+    uint8_t fourcc_len;
+
+    fourcc_len = avio_r8(s->pb);
+    if (fourcc_len != 4) {
+        av_log(s, AV_LOG_ERROR,
+               "RealAudio: Unexpected FourCC length %"PRIu8", expected 4.\n",
+               fourcc_len);
+        return AVERROR_INVALIDDATA;
+    }
+
+    *fourcc = avio_rl32(s->pb);
+    return 0;
 }
 
 static int ra_read_header_v3(AVFormatContext *s, uint16_t header_size)
@@ -128,10 +148,9 @@ static int ra_read_header_v3(AVFormatContext *s, uint16_t header_size)
     AVIOContext *acpb = s->pb;
     AVStream *st = NULL;
 
-    int content_description_size;
+    int content_description_size, is_fourcc_ok;
     const int fourcc_bytes = 6;
     uint32_t fourcc_tag, header_bytes_read;
-    uint8_t fourcc_len;
 
     avio_skip(acpb, 10); /* unknown */
     avio_skip(acpb, 4); /* Data size: currently unused by this code */
@@ -148,14 +167,9 @@ static int ra_read_header_v3(AVFormatContext *s, uint16_t header_size)
     /* An unknown byte, followed by FourCC data, is optionally present */
     if (header_bytes_read != header_size) { /* Looks like there is FourCC data */
         avio_skip(acpb, 1); /* Unknown byte */
-        fourcc_len = avio_r8(acpb);
-        if (fourcc_len != 4) {
-            av_log(s, AV_LOG_ERROR,
-                   "RealAudio: Unexpected FourCC length %"PRIu8", expected 4.\n",
-                   fourcc_len);
-            return AVERROR_INVALIDDATA;
-        }
-        fourcc_tag = avio_rb32(acpb);
+        is_fourcc_ok = get_fourcc(s, &fourcc_tag);
+        if (is_fourcc_ok < 0)
+            return is_fourcc_ok; /* Preserve the error code */
         if (fourcc_tag != RA3_FOURCC) {
              av_log(s, AV_LOG_ERROR,
                     "RealAudio: Unexpected FourCC data %"PRIu32", expected %"PRIu32".\n",
@@ -173,8 +187,10 @@ static int ra_read_header_v3(AVFormatContext *s, uint16_t header_size)
 
     /* Reading all the header data has gone ok; initialiaze codec info. */
     st = avformat_new_stream(s, NULL);
-    if (!st)
+    if (!st) {
+        av_dict_free(&s->metadata);
         return AVERROR(ENOMEM);
+    }
 
     st->codec->channel_layout = AV_CH_LAYOUT_MONO;
     st->codec->channels       = 1;
@@ -187,6 +203,85 @@ static int ra_read_header_v3(AVFormatContext *s, uint16_t header_size)
 
 static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size)
 {
+    AVIOContext *acpb = s->pb;
+    AVStream *st = NULL;
+
+    int content_description_size, is_fourcc_ok;
+    uint32_t ra4_signature, variable_data_size, variable_header_size;
+    uint32_t coded_frame_size, interleaver_id, fourcc_tag;
+    uint16_t version2, codec_flavor, subpacket_h, frame_size, subpacket_size;
+    uint16_t sample_rate, sample_size, channels;
+    uint8_t interleaver_id_len;
+
+    ra4_signature = avio_rl32(acpb);
+    if (ra4_signature != RA4_SIGNATURE) {
+        av_log(s, AV_LOG_ERROR,
+               "RealAudio: bad ra4 signature %"PRIx32", expected %"PRIx32".\n",
+               ra4_signature, RA4_SIGNATURE);
+        return AVERROR_INVALIDDATA;
+    }
+
+    /* Data size - 0x27 (the fixed-length part) */
+    variable_data_size = avio_rb32(acpb);
+
+    version2 = avio_rb16(acpb);
+    if (version2 != 4) {
+        av_log(s, AV_LOG_ERROR,
+               "RealAudio: Second version %"PRIx16", expected 4\n",
+               version2);
+        return AVERROR_INVALIDDATA;
+    }
+
+    /* Header size - 16 */
+    variable_header_size = avio_rb32(acpb);
+
+    codec_flavor = avio_rb16(acpb); /* TODO: use this? */
+    printf("Got codec flavor %"PRIx16"\n", codec_flavor);
+
+    coded_frame_size = avio_rb32(acpb);
+    avio_skip(acpb, 12); /* Unknown */
+    subpacket_h = avio_rb16(acpb);
+    frame_size = avio_rb16(acpb);
+    subpacket_size = avio_rb16(acpb);
+    avio_skip(acpb, 2); /* Unknown */
+    sample_rate = avio_rb16(acpb);
+    avio_skip(acpb, 2); /* Unknown */
+    sample_size = avio_rb16(acpb);
+    channels = avio_rb16(acpb);
+
+    interleaver_id_len = avio_r8(acpb);
+    if (interleaver_id_len != 4) {
+        av_log(s, AV_LOG_ERROR,
+               "RealAudio: Unexpected interleaver ID length %"PRIu8", expected 4.\n",
+               interleaver_id_len);
+        return AVERROR_INVALIDDATA;
+    }
+    interleaver_id = avio_rb32(acpb);
+
+    is_fourcc_ok = get_fourcc(s, &fourcc_tag);
+    if (is_fourcc_ok < 0)
+        return is_fourcc_ok; /* Preserve the error code */
+    avio_skip(acpb, 3); /* Unknown */
+
+    content_description_size = ra_read_content_description(s);
+    if (content_description_size < 0) {
+        av_log(s, AV_LOG_ERROR, "RealAudio: error reading header metadata.\n");
+        av_dict_free(&s->metadata);
+        return content_description_size; /* Preserve the error code */
+    }
+
+    st = avformat_new_stream(s, NULL);
+    if (!st) {
+        av_dict_free(&s->metadata);
+        return AVERROR(ENOMEM);
+    }
+
+    //st->codec->channel_layout = AV_CH_LAYOUT_MONO; /* TODO, FIXME */
+    st->codec->channels       = channels;
+    st->codec->codec_id       = AV_CODEC_ID_RA_288; /* TODO, FIXME */
+    st->codec->codec_type     = AVMEDIA_TYPE_AUDIO;
+    st->codec->sample_rate    = sample_rate;
+
     return 0;
 }
 
@@ -196,7 +291,7 @@ static int ra_read_header(AVFormatContext *s)
     uint32_t tag;
     uint16_t version, header_size;
 
-    /* Do a Little-Endian read here, unlike everywhere else. */
+    /* Do a Little-Endian read here, unlike almost everywhere else. */
     tag = avio_rl32(acpb);
     if (tag != RA_HEADER) {
         av_log(s, AV_LOG_ERROR,
