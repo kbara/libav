@@ -37,10 +37,7 @@
 
 /* Header for RealAudio 1.0 (.ra version 3
  * and RealAudio 2.0 file (.ra version 4). */
-//#define RA_HEADER MKTAG('.', 'r', 'a', 0xfd)
-//#define REAL_CONTENT_DESCRIPTION MKTAG('C', 'O', 'N', 'T')
 #define RA_HEADER ".ra\xfd"
-#define REAL_CONTENT_DESCRIPTION "CONT"
 
 /* The relevant VSELP format has 159-bit frames, stored in 20 bytes */
 #define RA144_PKT_SIZE 20
@@ -59,7 +56,7 @@ typedef struct {
 /* Return value >= 0: bytes read.
  * Return value < 0: error.
  */
-static int read_content_description_field(AVFormatContext *s, const char *desc)
+static int real_read_content_description_field(AVFormatContext *s, const char *desc)
 {
     AVIOContext *acpb = s->pb;
     uint16_t len;
@@ -78,69 +75,40 @@ static int read_content_description_field(AVFormatContext *s, const char *desc)
  * It is similar for RA, but CONT is not set.
  */
 
-static int real_read_content_description(AVFormatContext *s)
+static int ra_read_content_description(AVFormatContext *s)
 {
     AVIOContext *acpb = s->pb;
-    //uint32_t cdh_size, sought;
-    //uint16_t object_version; //, title_len, author_len, copyright_len, comment_len;
-    //uint8_t *title, *author, *copyright, *comment;
-    //char object_id[4];
     uint16_t data_size;
     int sought;
     int tmp;
-    /* The RM spec defines these 10 bytes; RA files don't have the same opinion.
-    //object_id = avio_rb32(acpb);
-    avio_read(acpb, object_id, 4);
-    //if (object_id != REAL_CONTENT_DESCRIPTION) { 
-    if ((!isRA) && memcmp(object_id, REAL_CONTENT_DESCRIPTION, 4)) {
-        printf("%hhx%hhx%hhx%hhx vs %c%c%c%c\n", object_id[0], object_id[1], object_id[2], object_id[3], REAL_CONTENT_DESCRIPTION[0], REAL_CONTENT_DESCRIPTION[1], REAL_CONTENT_DESCRIPTION[2], REAL_CONTENT_DESCRIPTION[3]);
-        av_dlog(s,
-                "Invalid Content Description Header: expected ..., got ...\n");
-        return AVERROR_INVALIDDATA;
-    }
-    cdh_size = avio_rb32(acpb);
-    printf("Got size %i\n", cdh_size);
-    object_version = avio_rb16(acpb);
-    printf("Got object_version %i\n", object_version);
-    if (object_version != 0) {
-        av_dlog(s,
-                "Bad version %s in a Content Description Header, should be 0.\n",
-                object_version);
-        return AVERROR_INVALIDDATA;
-    } */
+
     /* The wiki claims 10 unknown, then dword data size.
      * A real file suggests it's 13 unknown, then byte data size.
      */
     avio_skip(acpb, 13);
     data_size = avio_r8(acpb);
-    sought = 12; /* Header bytes read so far */
-    /*
-    title_len = avio_rb16(acpb);
-    author_len = avio_rb16(acpb);
-    _len = avio_rb16(acpb);
-    title_len = avio_rb16(acpb);
-    */
+    sought = 14; /* Header bytes read so far */
 
-    tmp = read_content_description_field(s, "title");
+    tmp = real_read_content_description_field(s, "title");
     if (tmp < 0)
         return tmp;
     else
         sought += tmp;
-    tmp = read_content_description_field(s, "author");
+    tmp = real_read_content_description_field(s, "author");
     if (tmp < 0)
         return tmp;
     else
         sought += tmp;
-    tmp = read_content_description_field(s, "copyright");
+    tmp = real_read_content_description_field(s, "copyright");
     if (tmp < 0)
         return tmp;
     else
         sought += tmp;
-    tmp = read_content_description_field(s, "comment");
+    /*tmp = real_read_content_description_field(s, "comment");
     if (tmp < 0)
         return tmp;
     else
-        sought += tmp;
+        sought += tmp;*/
 
     printf("sought: %i, data_size: %i\n", sought, data_size);
     if (sought != data_size + 12) {
@@ -168,23 +136,19 @@ static int ra_read_header(AVFormatContext *s)
     AVStream *st = NULL;
 
     char tag[4];
-    //uint32_t tag;
     uint16_t version, header_size;
     int tmp;
 
-    //tag = avio_rb32(acpb);
     avio_read(acpb, tag, 4);
 
-    //if (tag != RA_HEADER)
     if (memcmp(tag, RA_HEADER, 4))
         return AVERROR_INVALIDDATA;
     version = avio_rb16(acpb);
     if (version != 3) /* TODO: add v4 support */
         return AVERROR_INVALIDDATA;
     header_size = avio_rb16(acpb);
-    //avio_skip(acpb, header_size); /* TODO: read rest of header properly */
     /* TODO: make sure metadata round-trips, for example to AAC/mp4 */
-    tmp = real_read_content_description(s);
+    tmp = ra_read_content_description(s);
     printf("Got tmp %i\n", tmp);
 
     st = avformat_new_stream(s, NULL);
