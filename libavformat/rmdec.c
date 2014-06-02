@@ -81,28 +81,28 @@ static int ra_read_content_description_field(AVFormatContext *s, const char *des
 static int ra_read_content_description(AVFormatContext *s)
 {
     int sought = 0;
-    int tmp;
+    int bytes_read_or_error;
 
-    tmp = ra_read_content_description_field(s, "title");
-    if (tmp < 0)
-        return tmp;
+    bytes_read_or_error = ra_read_content_description_field(s, "title");
+    if (bytes_read_or_error < 0)
+        return bytes_read_or_error;
     else
-        sought += tmp;
-    tmp = ra_read_content_description_field(s, "author");
-    if (tmp < 0)
-        return tmp;
+        sought += bytes_read_or_error;
+    bytes_read_or_error = ra_read_content_description_field(s, "author");
+    if (bytes_read_or_error < 0)
+        return bytes_read_or_error;
     else
-        sought += tmp;
-    tmp = ra_read_content_description_field(s, "copyright");
-    if (tmp < 0)
-        return tmp;
+        sought += bytes_read_or_error;
+    bytes_read_or_error = ra_read_content_description_field(s, "copyright");
+    if (bytes_read_or_error < 0)
+        return bytes_read_or_error;
     else
-        sought += tmp;
-    tmp = ra_read_content_description_field(s, "comment");
-    if (tmp < 0)
-        return tmp;
+        sought += bytes_read_or_error;
+    bytes_read_or_error = ra_read_content_description_field(s, "comment");
+    if (bytes_read_or_error < 0)
+        return bytes_read_or_error;
     else
-        sought += tmp;
+        sought += bytes_read_or_error;
 
     return sought;
 }
@@ -183,7 +183,7 @@ static int ra_read_header(AVFormatContext *s)
         if (header_bytes_read != header_size) {
             av_log(s, AV_LOG_ERROR,
                 "RealAudio: read %i header bytes, expected %i.\n",
-                content_description_size + fourcc_bytes, header_size);
+                header_bytes_read, header_size);
             return AVERROR_INVALIDDATA;
         }
     }
@@ -206,18 +206,6 @@ static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     return av_get_packet(s->pb, pkt, RA144_PKT_SIZE);
 }
-
-static int ra_read_close(AVFormatContext *s)
-{
-    return 0;
-}
-
-static int64_t ra_read_dts(AVFormatContext *s, int stream_index,
-                           int64_t *ppos, int64_t pos_limit)
-{
-    return 0;
-}
-
 
 static int rm_probe(AVProbeData *p)
 {
@@ -284,8 +272,6 @@ AVInputFormat ff_ra_demuxer = {
     .read_probe     = ra_probe,
     .read_header    = ra_read_header,
     .read_packet    = ra_read_packet,
-    .read_close     = ra_read_close,
-    .read_timestamp = ra_read_dts,
 };
 
 AVInputFormat ff_rm_demuxer = {
