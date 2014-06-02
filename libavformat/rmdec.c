@@ -194,10 +194,10 @@ static int ra_read_header(AVFormatContext *s)
         return AVERROR(ENOMEM);
 
     st->codec->channel_layout = AV_CH_LAYOUT_MONO;
-    st->codec->channels = 1;
-    st->codec->codec_id = AV_CODEC_ID_RA_144;
-    st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
-    st->codec->sample_rate = 8000;
+    st->codec->channels       = 1;
+    st->codec->codec_id       = AV_CODEC_ID_RA_144;
+    st->codec->codec_type     = AVMEDIA_TYPE_AUDIO;
+    st->codec->sample_rate    = 8000;
 
     return 0;
 }
@@ -213,7 +213,7 @@ static int ra_read_close(AVFormatContext *s)
 }
 
 static int64_t ra_read_dts(AVFormatContext *s, int stream_index,
-                               int64_t *ppos, int64_t pos_limit)
+                           int64_t *ppos, int64_t pos_limit)
 {
     return 0;
 }
@@ -246,17 +246,15 @@ static int64_t rm_read_dts(AVFormatContext *s, int stream_index,
 }
 
 
-int
-ff_rm_parse_packet (AVFormatContext *s, AVIOContext *pb,
-                    AVStream *st, RMStream *ast, int len, AVPacket *pkt,
-                    int *seq, int flags, int64_t timestamp)
+int ff_rm_parse_packet(AVFormatContext *s, AVIOContext *pb,
+                       AVStream *st, RMStream *ast, int len, AVPacket *pkt,
+                       int *seq, int flags, int64_t timestamp)
 {
     return 0;
 }
 
-int
-ff_rm_retrieve_cache (AVFormatContext *s, AVIOContext *pb,
-                      AVStream *st, RMStream *ast, AVPacket *pkt)
+int ff_rm_retrieve_cache(AVFormatContext *s, AVIOContext *pb,
+                         AVStream *st, RMStream *ast, AVPacket *pkt)
 {
     return 0;
 }
@@ -266,16 +264,15 @@ RMStream *ff_rm_alloc_rmstream (void)
     return av_mallocz(sizeof(RMStream));
 }
 
-int
-ff_rm_read_mdpr_codecdata (AVFormatContext *s, AVIOContext *pb,
-                           AVStream *st, RMStream *rst, int codec_data_size)
+int ff_rm_read_mdpr_codecdata(AVFormatContext *s, AVIOContext *pb,
+                              AVStream *st, RMStream *rst, int codec_data_size)
 {
     return 0;
 }
 
 void ff_rm_free_rmstream (RMStream *rms)
 {
-    if(rms)
+    if (rms)
         av_freep(&rms);
 }
 
