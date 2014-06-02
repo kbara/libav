@@ -42,6 +42,9 @@
 /* The relevant VSELP format has 159-bit frames, stored in 20 bytes */
 #define RA144_PKT_SIZE 20
 
+/* RealAudio 1.0 (.ra version 3) only has one FourCC value */
+#define RA3_FOURCC "lpcJ"
+
 struct RMStream {
 };
 
@@ -66,8 +69,8 @@ static int real_read_content_description_field(AVFormatContext *s, const char *d
     if (!val)
         return AVERROR(ENOMEM);
     avio_read(acpb, val, len);
-    printf("Hm: %i, %s\n", len+2, val);
-    return len + 2;
+    printf("Hm: %i, %s\n", len+1, val);
+    return len + 1; /* +1 due to reading one byte representing length */
 }
 
 /* The content description header is documented, and the same in RA and RM:
@@ -77,17 +80,8 @@ static int real_read_content_description_field(AVFormatContext *s, const char *d
 
 static int ra_read_content_description(AVFormatContext *s)
 {
-    AVIOContext *acpb = s->pb;
-    uint16_t data_size;
-    int sought;
+    int sought = 0;
     int tmp;
-
-    /* The wiki claims 10 unknown, then dword data size.
-     * A real file suggests it's 13 unknown, then byte data size.
-     */
-    avio_skip(acpb, 13);
-    data_size = avio_r8(acpb);
-    sought = 14; /* Header bytes read so far */
 
     tmp = real_read_content_description_field(s, "title");
     if (tmp < 0)
@@ -104,20 +98,12 @@ static int ra_read_content_description(AVFormatContext *s)
         return tmp;
     else
         sought += tmp;
-    /*tmp = real_read_content_description_field(s, "comment");
+    tmp = real_read_content_description_field(s, "comment");
     if (tmp < 0)
         return tmp;
     else
-        sought += tmp;*/
+        sought += tmp;
 
-    printf("sought: %i, data_size: %i\n", sought, data_size);
-    if (sought != data_size + 12) {
-        printf("d'oh\n");
-        av_dlog(s,
-                "Content Description Header size declared %s, was %s.\n",
-                cdh_size, sought);
-        return AVERROR_INVALIDDATA;
-    }
     return sought;
 }
 
@@ -135,22 +121,70 @@ static int ra_read_header(AVFormatContext *s)
     AVIOContext *acpb = s->pb;
     AVStream *st = NULL;
 
-    char tag[4];
+    char tag[4], fourcc[4];
     uint16_t version, header_size;
-    int tmp;
+    int content_description_size, header_bytes_read;
+    uint8_t fourcc_len;
+    const int fourcc_bytes = 6;
 
     avio_read(acpb, tag, 4);
 
-    if (memcmp(tag, RA_HEADER, 4))
+    if (memcmp(tag, RA_HEADER, 4)) {
+        av_log(s, AV_LOG_ERROR,
+               "RealAudio: bad magic %c%c%c%c\n, expected %s",
+               tag[0], tag[1], tag[2], tag[3], RA_HEADER);
         return AVERROR_INVALIDDATA;
+    }
     version = avio_rb16(acpb);
-    if (version != 3) /* TODO: add v4 support */
+    if (version != 3) { /* TODO: add v4 support */
+        av_log(s, AV_LOG_ERROR, "RealAudio: Unsupported version %i\n", version);
         return AVERROR_INVALIDDATA;
-    header_size = avio_rb16(acpb);
-    /* TODO: make sure metadata round-trips, for example to AAC/mp4 */
-    tmp = ra_read_content_description(s);
-    printf("Got tmp %i\n", tmp);
+    }
+    header_size = avio_rb16(acpb); /* Excluding bytes until now */
 
+    /* The wiki claims 10 unknown, then dword data size.
+     * Real files suggest it's actually 12 unknown, then data size.
+    */
+    avio_skip(acpb, 12); /* unknown */
+    avio_skip(acpb, 2); /* Supposedly data size: currently unused by this code */
+    header_bytes_read = 14; /* Header bytes read since the header_size field */
+
+    /* TODO: make sure metadata round-trips, for example to AAC/mp4 */
+    content_description_size = ra_read_content_description(s);
+
+    if (content_description_size < 0) {
+        av_log(s, AV_LOG_ERROR, "RealAudio: error reading header metadata\n");
+        return AVERROR_INVALIDDATA;
+    }
+    header_bytes_read += content_description_size;
+
+    /* An unknown byte, then FourCC data are optionally present */
+    if (header_bytes_read != header_size) { /* Looks like there is Fourcc data */
+        avio_skip(acpb, 1); /* Unknown byte */
+        fourcc_len = avio_r8(acpb);
+        if (fourcc_len != 4) {
+            av_log(s, AV_LOG_ERROR,
+                   "RealAudio: Unexpected FourCC length %i, expected 4.\n",
+                   fourcc_len);
+            return AVERROR_INVALIDDATA;
+        }
+        avio_read(acpb, fourcc, 4);
+        if (memcmp(fourcc, RA3_FOURCC, 4)) {
+             av_log(s, AV_LOG_ERROR,
+                    "RealAudio: Unexpected FourCC data %s, expected %s.\n",
+                    fourcc, RA3_FOURCC);
+            return AVERROR_INVALIDDATA;
+        }
+        header_bytes_read += fourcc_bytes;
+        if (header_bytes_read != header_size) {
+            av_log(s, AV_LOG_ERROR,
+                "RealAudio: read %i header bytes, expected %i.\n",
+                content_description_size + fourcc_bytes, header_size);
+            return AVERROR_INVALIDDATA;
+        }
+    }
+
+    /* Reading all the header data has gone ok; initialiaze codec info. */
     st = avformat_new_stream(s, NULL);
     if (!st)
         return AVERROR(ENOMEM);
