@@ -51,11 +51,11 @@ struct RMStream {
 };
 
 /* Demux context for RealAudio */
-typedef struct {
+typedef struct RADemuxContext {
 } RADemuxContext;
 
 /* Demux context for RealMedia (audio+video) */
-typedef struct {
+typedef struct RMDemuxContext {
 } RMDemuxContext;
 
 /* Return value > 0: bytes read.
