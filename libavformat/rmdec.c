@@ -123,31 +123,15 @@ static int ra_probe(AVProbeData *p)
     return AVPROBE_SCORE_MAX;
 }
 
-static int ra_read_header(AVFormatContext *s)
+static int ra_read_header_v3(AVFormatContext *s, uint16_t header_size)
 {
     AVIOContext *acpb = s->pb;
     AVStream *st = NULL;
 
     int content_description_size;
     const int fourcc_bytes = 6;
-    uint32_t tag, fourcc_tag, header_bytes_read;
-    uint16_t version, header_size;
+    uint32_t fourcc_tag, header_bytes_read;
     uint8_t fourcc_len;
-
-    /* Do a Little-Endian read here, unlike everywhere else. */
-    tag = avio_rl32(acpb);
-    if (tag != RA_HEADER) {
-        av_log(s, AV_LOG_ERROR,
-               "RealAudio: bad magic %"PRIx32", expected %"PRIx32".\n",
-               tag, RA_HEADER);
-        return AVERROR_INVALIDDATA;
-    }
-    version = avio_rb16(acpb);
-    if (version != 3) { /* TODO: add v4 support */
-        av_log(s, AV_LOG_ERROR, "RealAudio: Unsupported version %"PRIx16"\n", version);
-        return AVERROR_INVALIDDATA;
-    }
-    header_size = avio_rb16(acpb); /* Excluding bytes until now */
 
     avio_skip(acpb, 10); /* unknown */
     avio_skip(acpb, 4); /* Data size: currently unused by this code */
@@ -200,6 +184,38 @@ static int ra_read_header(AVFormatContext *s)
 
     return 0;
 }
+
+static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size)
+{
+    return 0;
+}
+
+static int ra_read_header(AVFormatContext *s)
+{
+    AVIOContext *acpb = s->pb;
+    uint32_t tag;
+    uint16_t version, header_size;
+
+    /* Do a Little-Endian read here, unlike everywhere else. */
+    tag = avio_rl32(acpb);
+    if (tag != RA_HEADER) {
+        av_log(s, AV_LOG_ERROR,
+               "RealAudio: bad magic %"PRIx32", expected %"PRIx32".\n",
+               tag, RA_HEADER);
+        return AVERROR_INVALIDDATA;
+    }
+    version = avio_rb16(acpb);
+    header_size = avio_rb16(acpb); /* Excluding bytes until now */
+    if (version == 3)
+        return ra_read_header_v3(s, header_size);
+    else if (version == 4)
+        return ra_read_header_v4(s, header_size);
+    else {
+        av_log(s, AV_LOG_ERROR, "RealAudio: Unsupported version %"PRIx16"\n", version);
+        return AVERROR_INVALIDDATA;
+    }
+}
+
 
 static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
