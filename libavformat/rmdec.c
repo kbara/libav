@@ -56,10 +56,11 @@ typedef struct {
 typedef struct {
 } RMDemuxContext;
 
-/* Return value >= 0: bytes read.
+/* Return value > 0: bytes read.
  * Return value < 0: error.
+ * Return value == 0: can't happen.
  */
-static int real_read_content_description_field(AVFormatContext *s, const char *desc)
+static int ra_read_content_description_field(AVFormatContext *s, const char *desc)
 {
     AVIOContext *acpb = s->pb;
     uint16_t len;
@@ -74,32 +75,30 @@ static int real_read_content_description_field(AVFormatContext *s, const char *d
     return len + 1; /* +1 due to reading one byte representing length */
 }
 
-/* The content description header is documented, and the same in RA and RM:
- * https://common.helixcommunity.org/2003/HCS_SDK_r5/htmfiles/rmff.htm
- * It is similar for RA, but CONT is not set.
+/* A RealAudio 1.0 (.ra version 3) content description has 4 fields,
+ * and differs in several ways from an RMF CONT header.
  */
-
 static int ra_read_content_description(AVFormatContext *s)
 {
     int sought = 0;
     int tmp;
 
-    tmp = real_read_content_description_field(s, "title");
+    tmp = ra_read_content_description_field(s, "title");
     if (tmp < 0)
         return tmp;
     else
         sought += tmp;
-    tmp = real_read_content_description_field(s, "author");
+    tmp = ra_read_content_description_field(s, "author");
     if (tmp < 0)
         return tmp;
     else
         sought += tmp;
-    tmp = real_read_content_description_field(s, "copyright");
+    tmp = ra_read_content_description_field(s, "copyright");
     if (tmp < 0)
         return tmp;
     else
         sought += tmp;
-    tmp = real_read_content_description_field(s, "comment");
+    tmp = ra_read_content_description_field(s, "comment");
     if (tmp < 0)
         return tmp;
     else
@@ -111,10 +110,15 @@ static int ra_read_content_description(AVFormatContext *s)
 
 static int ra_probe(AVProbeData *p)
 {
-    /* RealAudio header; for RMF, use rm_probe */
-    /* TODO: also check the version */
-    //uint32_t buftag = MKTAG(p->buf[0], p->buf[1], p->buf[2], p->buf[3]);
-    return (!memcmp(p->buf, RA_HEADER, 4)) ? AVPROBE_SCORE_MAX : 0;
+    /* RealAudio header; for RMF, use rm_probe. */
+    uint8_t version;
+    if (memcmp(p->buf, RA_HEADER, 4))
+       return 0;
+    version = p->buf[5];
+    /* Only v3 is currently supported, but v3-v5 should be.*/
+    if ((version < 3) || (version > 5))
+        return 0;
+    return AVPROBE_SCORE_MAX;
 }
 
 static int ra_read_header(AVFormatContext *s)
@@ -150,9 +154,7 @@ static int ra_read_header(AVFormatContext *s)
     avio_skip(acpb, 2); /* Supposedly data size: currently unused by this code */
     header_bytes_read = 14; /* Header bytes read since the header_size field */
 
-    /* TODO: make sure metadata round-trips, for example to AAC/mp4 */
     content_description_size = ra_read_content_description(s);
-
     if (content_description_size < 0) {
         av_log(s, AV_LOG_ERROR, "RealAudio: error reading header metadata\n");
         av_dict_free(&s->metadata);
