@@ -29,6 +29,8 @@
  * real_ = both.
  */
 
+#include <inttypes.h>
+
 #include "libavutil/channel_layout.h"
 #include "libavutil/intreadwrite.h"
 
@@ -37,13 +39,13 @@
 
 /* Header for RealAudio 1.0 (.ra version 3
  * and RealAudio 2.0 file (.ra version 4). */
-#define RA_HEADER ".ra\xfd"
+#define RA_HEADER MKTAG('.', 'r', 'a', '\xfd')
 
 /* The relevant VSELP format has 159-bit frames, stored in 20 bytes */
 #define RA144_PKT_SIZE 20
 
 /* RealAudio 1.0 (.ra version 3) only has one FourCC value */
-#define RA3_FOURCC "lpcJ"
+#define RA3_FOURCC MKTAG('l', 'p', 'c', 'J')
 
 struct RMStream {
 };
@@ -112,7 +114,7 @@ static int ra_probe(AVProbeData *p)
 {
     /* RealAudio header; for RMF, use rm_probe. */
     uint8_t version;
-    if (memcmp(p->buf, RA_HEADER, 4))
+    if (MKTAG(p->buf[0], p->buf[1], p->buf[2], p->buf[3]) != RA_HEADER)
        return 0;
     version = p->buf[5];
     /* Only v3 is currently supported, but v3-v5 should be.*/
@@ -126,63 +128,60 @@ static int ra_read_header(AVFormatContext *s)
     AVIOContext *acpb = s->pb;
     AVStream *st = NULL;
 
-    char tag[4], fourcc[4];
-    uint16_t version, header_size;
     int content_description_size, header_bytes_read;
-    uint8_t fourcc_len;
     const int fourcc_bytes = 6;
+    uint32_t tag, fourcc_tag;
+    uint16_t version, header_size;
+    uint8_t fourcc_len;
 
-    avio_read(acpb, tag, 4);
-
-    if (memcmp(tag, RA_HEADER, 4)) {
+    /* Do a Little-Endian read here, unlike everywhere else. */
+    tag = avio_rl32(acpb);
+    if (tag != RA_HEADER) {
         av_log(s, AV_LOG_ERROR,
-               "RealAudio: bad magic %c%c%c%c\n, expected %s",
-               tag[0], tag[1], tag[2], tag[3], RA_HEADER);
+               "RealAudio: bad magic %"PRIx32", expected %"PRIx32".\n",
+               tag, RA_HEADER);
         return AVERROR_INVALIDDATA;
     }
     version = avio_rb16(acpb);
     if (version != 3) { /* TODO: add v4 support */
-        av_log(s, AV_LOG_ERROR, "RealAudio: Unsupported version %i\n", version);
+        av_log(s, AV_LOG_ERROR, "RealAudio: Unsupported version %"PRIx32"\n", version);
         return AVERROR_INVALIDDATA;
     }
     header_size = avio_rb16(acpb); /* Excluding bytes until now */
 
-    /* The wiki claims 10 unknown, then dword data size.
-     * Real files suggest it's actually 12 unknown, then data size.
-    */
-    avio_skip(acpb, 12); /* unknown */
-    avio_skip(acpb, 2); /* Supposedly data size: currently unused by this code */
+    avio_skip(acpb, 10); /* unknown */
+    avio_skip(acpb, 4); /* Data size: currently unused by this code */
     header_bytes_read = 14; /* Header bytes read since the header_size field */
 
     content_description_size = ra_read_content_description(s);
     if (content_description_size < 0) {
-        av_log(s, AV_LOG_ERROR, "RealAudio: error reading header metadata\n");
+        av_log(s, AV_LOG_ERROR, "RealAudio: error reading header metadata.\n");
         av_dict_free(&s->metadata);
-        return AVERROR_INVALIDDATA;
+        return content_description_size; /* Preserve the error code */
     }
     header_bytes_read += content_description_size;
 
-    /* An unknown byte, then FourCC data are optionally present */
-    if (header_bytes_read != header_size) { /* Looks like there is Fourcc data */
+    /* An unknown byte, followed by FourCC data, is optionally present */
+    if (header_bytes_read != header_size) { /* Looks like there is FourCC data */
         avio_skip(acpb, 1); /* Unknown byte */
         fourcc_len = avio_r8(acpb);
         if (fourcc_len != 4) {
             av_log(s, AV_LOG_ERROR,
-                   "RealAudio: Unexpected FourCC length %i, expected 4.\n",
+                   "RealAudio: Unexpected FourCC length %"PRIu8", expected 4.\n",
                    fourcc_len);
             return AVERROR_INVALIDDATA;
         }
-        avio_read(acpb, fourcc, 4);
-        if (memcmp(fourcc, RA3_FOURCC, 4)) {
+        fourcc_tag = avio_rb32(acpb);
+        if (fourcc_tag != RA3_FOURCC) {
              av_log(s, AV_LOG_ERROR,
-                    "RealAudio: Unexpected FourCC data %s, expected %s.\n",
-                    fourcc, RA3_FOURCC);
+                    "RealAudio: Unexpected FourCC data %"PRIu32", expected %"PRIu32".\n",
+                    fourcc_tag, RA3_FOURCC);
             return AVERROR_INVALIDDATA;
         }
         header_bytes_read += fourcc_bytes;
         if (header_bytes_read != header_size) {
             av_log(s, AV_LOG_ERROR,
-                "RealAudio: read %i header bytes, expected %i.\n",
+                "RealAudio: read %"PRIu32" header bytes, expected %"PRIu16".\n",
                 header_bytes_read, header_size);
             return AVERROR_INVALIDDATA;
         }
