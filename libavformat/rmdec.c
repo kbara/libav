@@ -69,7 +69,8 @@ static int real_read_content_description_field(AVFormatContext *s, const char *d
     if (!val)
         return AVERROR(ENOMEM);
     avio_read(acpb, val, len);
-    printf("Hm: %i, %s\n", len+1, val);
+    av_dict_set(&s->metadata, desc, val, 0);
+    av_free(val);
     return len + 1; /* +1 due to reading one byte representing length */
 }
 
@@ -154,6 +155,7 @@ static int ra_read_header(AVFormatContext *s)
 
     if (content_description_size < 0) {
         av_log(s, AV_LOG_ERROR, "RealAudio: error reading header metadata\n");
+        av_dict_free(&s->metadata);
         return AVERROR_INVALIDDATA;
     }
     header_bytes_read += content_description_size;
