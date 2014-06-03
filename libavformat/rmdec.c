@@ -223,6 +223,8 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size)
 
     /* Data size - 0x27 (the fixed-length part) */
     variable_data_size = avio_rb32(acpb);
+    printf("Data size (non-fixed): %x\n", variable_data_size);
+
 
     version2 = avio_rb16(acpb);
     if (version2 != 4) {
@@ -234,6 +236,8 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size)
 
     /* Header size - 16 */
     variable_header_size = avio_rb32(acpb);
+    printf("Header size (non-fixed): %x\n", variable_header_size);
+
 
     codec_flavor = avio_rb16(acpb); /* TODO: use this? */
     printf("Got codec flavor %"PRIx16"\n", codec_flavor);
@@ -249,6 +253,13 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size)
     sample_size = avio_rb16(acpb);
     channels = avio_rb16(acpb);
 
+    printf("Coded frame size: %x\n", coded_frame_size);
+    printf("Subpacket_h: %x\n", subpacket_h);
+    printf("Frame size: %x\n", frame_size);
+    printf("Subpacket size: %x\n", subpacket_size);
+    printf("Sample rate: %x\n", sample_rate);
+    printf("Sample size: %x\n", sample_size);
+
     interleaver_id_len = avio_r8(acpb);
     if (interleaver_id_len != 4) {
         av_log(s, AV_LOG_ERROR,
@@ -257,10 +268,16 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size)
         return AVERROR_INVALIDDATA;
     }
     interleaver_id = avio_rb32(acpb);
+    printf("Interleaver: %c%c%c%c\n", interleaver_id >> 24,
+           (interleaver_id >> 16) & 0xff, (interleaver_id >> 8) & 0xff,
+           interleaver_id & 0xff);
 
     is_fourcc_ok = get_fourcc(s, &fourcc_tag);
     if (is_fourcc_ok < 0)
         return is_fourcc_ok; /* Preserve the error code */
+    printf("Fourcc: %c%c%c%c\n", fourcc_tag >> 24,
+           (fourcc_tag >> 16) & 0xff, (fourcc_tag >> 8) & 0xff,
+           fourcc_tag & 0xff);
     avio_skip(acpb, 3); /* Unknown */
 
     content_description_size = ra_read_content_description(s);
