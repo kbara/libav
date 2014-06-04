@@ -1,7 +1,7 @@
 /*
  * RealAudio Demuxer, reimplemented for OPW, summer 2014.
  * Copyright (c) 2014 Katerina Barone-Adesi
- *
+ * Copyright (c) 2000, 2001 Fabrice Bellard
  * This file is part of Libav.
  *
  * Libav is free software; you can redistribute it and/or
@@ -22,6 +22,9 @@
 /* Format documentation:
  * http://wiki.multimedia.cx/index.php?title=RealMedia
  * https://common.helixcommunity.org/2003/HCS_SDK_r5/htmfiles/rmff.htm
+ *
+ * This is largely a from-scratch rewrite, but borrows RAv4 interleaving
+ * from Fabrice Bellard's code; it is not well-documented.
  *
  * Naming convention:
  * ra_ = RealAudio
@@ -50,11 +53,28 @@
 /* An internal signature in RealAudio 2.0 (.ra version 4) headers */
 #define RA4_SIGNATURE MKTAG('.', 'r', 'a', '4')
 
+/* Deinterleaving constants from Fabrice Bellard's code */
+#define DEINT_ID_GENR MKTAG('g', 'e', 'n', 'r') ///< interleaving for Cooker/ATRAC
+#define DEINT_ID_INT0 MKTAG('I', 'n', 't', '0') ///< no interleaving needed
+#define DEINT_ID_INT4 MKTAG('I', 'n', 't', '4') ///< interleaving for 28.8
+#define DEINT_ID_SIPR MKTAG('s', 'i', 'p', 'r') ///< interleaving for Sipro
+#define DEINT_ID_VBRF MKTAG('v', 'b', 'r', 'f') ///< VBR case for AAC
+#define DEINT_ID_VBRS MKTAG('v', 'b', 'r', 's') ///< VBR case for AAC
+
+typedef struct RA4Stream {
+    uint32_t coded_frame_size, interleaver_id, fourcc_tag;
+    uint16_t codec_flavor, subpacket_h, frame_size, subpacket_size;
+    uint16_t sample_rate, sample_size, channels;
+} RA4Stream;
+
 struct RMStream {
 };
 
 /* Demux context for RealAudio */
 typedef struct RADemuxContext {
+    int version;
+    AVStream *avst;
+    struct RA4Stream rast;
 } RADemuxContext;
 
 /* Demux context for RealMedia (audio+video) */
@@ -146,6 +166,7 @@ static int get_fourcc(AVFormatContext *s, uint32_t *fourcc)
 static int ra_read_header_v3(AVFormatContext *s, uint16_t header_size)
 {
     AVIOContext *acpb = s->pb;
+    RADemuxContext *ra = s->priv_data;
     AVStream *st = NULL;
 
     int content_description_size, is_fourcc_ok;
@@ -192,6 +213,7 @@ static int ra_read_header_v3(AVFormatContext *s, uint16_t header_size)
         return AVERROR(ENOMEM);
     }
 
+    ra->avst = st;
     st->codec->channel_layout = AV_CH_LAYOUT_MONO;
     st->codec->channels       = 1;
     st->codec->codec_id       = AV_CODEC_ID_RA_144;
@@ -205,6 +227,8 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size)
 {
     AVIOContext *acpb = s->pb;
     AVStream *st = NULL;
+    RADemuxContext *ra = s->priv_data;
+    RA4Stream *rast = &(ra->rast);
 
     int content_description_size, is_fourcc_ok;
     uint32_t ra4_signature, variable_data_size, variable_header_size;
@@ -293,11 +317,27 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size)
         return AVERROR(ENOMEM);
     }
 
+    ra->avst = st;
+
     //st->codec->channel_layout = AV_CH_LAYOUT_MONO; /* TODO, FIXME */
     st->codec->channels       = channels;
-    st->codec->codec_id       = AV_CODEC_ID_RA_288; /* TODO, FIXME */
+    st->codec->codec_tag      = fourcc_tag;
+    st->codec->codec_id       = ff_codec_get_id(ff_rm_codec_tags,
+                                                st->codec->codec_tag);
     st->codec->codec_type     = AVMEDIA_TYPE_AUDIO;
     st->codec->sample_rate    = sample_rate;
+    printf("Codec id %x\n", st->codec->codec_id);
+
+    rast->coded_frame_size = coded_frame_size;
+    rast->interleaver_id   = interleaver_id;
+    rast->fourcc_tag       = fourcc_tag;
+    rast->codec_flavor     = codec_flavor;
+    rast->subpacket_h      = subpacket_h;
+    rast->frame_size       = frame_size;
+    rast->subpacket_size   = subpacket_size;
+    rast->sample_rate      = sample_rate;
+    rast->sample_size      = sample_size;
+    rast->channels         = channels;
 
     return 0;
 }
@@ -305,6 +345,7 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size)
 static int ra_read_header(AVFormatContext *s)
 {
     AVIOContext *acpb = s->pb;
+    RADemuxContext *ra = s->priv_data;
     uint32_t tag;
     uint16_t version, header_size;
 
@@ -316,8 +357,11 @@ static int ra_read_header(AVFormatContext *s)
                tag, RA_HEADER);
         return AVERROR_INVALIDDATA;
     }
+
     version = avio_rb16(acpb);
+    ra->version = version;
     header_size = avio_rb16(acpb); /* Excluding bytes until now */
+
     if (version == 3)
         return ra_read_header_v3(s, header_size);
     else if (version == 4)
@@ -331,7 +375,33 @@ static int ra_read_header(AVFormatContext *s)
 
 static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
-    return av_get_packet(s->pb, pkt, RA144_PKT_SIZE);
+    RADemuxContext *ra = s->priv_data;
+    RA4Stream *rast = &(ra->rast);
+    int len;
+
+    if (ra->version == 3)
+        return av_get_packet(s->pb, pkt, RA144_PKT_SIZE);
+
+    /* Nope, it's version 4, and a bit more complicated */
+    //len = !ast->audio_framesize ? RAW_PACKET_SIZE :
+    //    ast->coded_framesize * ast->sub_packet_h / 2;
+    //
+    //             if(len<0 || s->pb->eof_reached)
+    //                return AVERROR(EIO);
+    // res = ff_rm_parse_packet (s, s->pb, st, st->priv_data, len, pkt,
+    //                                      &seq, flags, timestamp);
+
+
+    /* Why is this the length? Borrowed from the old implementation. */
+    //printf("rast->cfs: %i, rast->sh: %i\n", rast->coded_frame_size, rast->subpacket_h);
+    len = (rast->coded_frame_size * rast->subpacket_h) / 2;
+    printf("Len: %i\n", len);
+
+    if (rast->interleaver_id == DEINT_ID_INT0) {
+        return av_get_packet(s->pb, pkt, len);
+        //rm_ac3_swap_bytes(..., pkt);
+    }
+    return 0; /* FIXME */
 }
 
 static int rm_probe(AVProbeData *p)
