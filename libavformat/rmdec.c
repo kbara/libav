@@ -95,6 +95,15 @@ static int ra_probe(AVProbeData *p)
     return AVPROBE_SCORE_MAX;
 }
 
+/* TODO: fully implement this... logic from Fabrice Bellard's code*/
+static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVStream *st)
+{
+    if (codec_id == AV_CODEC_ID_AC3)
+        st->need_parsing = AVSTREAM_PARSE_FULL;
+
+    return 0;
+}
+
 
 /* Return value > 0: bytes read.
  * Return value < 0: error.
@@ -338,6 +347,9 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size)
     rast->sample_rate      = sample_rate;
     rast->sample_size      = sample_size;
     rast->channels         = channels;
+
+
+    ra4_codec_specific_setup(st->codec->codec_id, st);
 
     return 0;
 }
