@@ -272,19 +272,19 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size)
     printf("Header size (non-fixed): %x\n", variable_header_size);
 
 
-    codec_flavor = avio_rb16(acpb); /* TODO: use this? */
+    rast->codec_flavor = avio_rb16(acpb); /* TODO: use this? */
     printf("Got codec flavor %"PRIx16"\n", codec_flavor);
 
-    coded_frame_size = avio_rb32(acpb);
+    rast->coded_frame_size = avio_rb32(acpb);
     avio_skip(acpb, 12); /* Unknown */
-    subpacket_h = avio_rb16(acpb);
-    frame_size = avio_rb16(acpb);
-    subpacket_size = avio_rb16(acpb);
+    rast->subpacket_h = avio_rb16(acpb);
+    rast->frame_size = avio_rb16(acpb);
+    rast->subpacket_size = avio_rb16(acpb);
     avio_skip(acpb, 2); /* Unknown */
-    sample_rate = avio_rb16(acpb);
+    rast->sample_rate = avio_rb16(acpb);
     avio_skip(acpb, 2); /* Unknown */
-    sample_size = avio_rb16(acpb);
-    channels = avio_rb16(acpb);
+    rast->sample_size = avio_rb16(acpb);
+    rast->channels = avio_rb16(acpb);
 
     printf("Coded frame size: %x\n", coded_frame_size);
     printf("Subpacket_h: %x\n", subpacket_h);
@@ -300,12 +300,12 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size)
                interleaver_id_len);
         return AVERROR_INVALIDDATA;
     }
-    interleaver_id = avio_rb32(acpb);
+    rast->interleaver_id = avio_rb32(acpb);
     printf("Interleaver: %c%c%c%c\n", interleaver_id >> 24,
            (interleaver_id >> 16) & 0xff, (interleaver_id >> 8) & 0xff,
            interleaver_id & 0xff);
 
-    is_fourcc_ok = get_fourcc(s, &fourcc_tag);
+    is_fourcc_ok = get_fourcc(s, &(rast->fourcc_tag));
     if (is_fourcc_ok < 0)
         return is_fourcc_ok; /* Preserve the error code */
     printf("Fourcc: %c%c%c%c\n", fourcc_tag >> 24,
@@ -336,18 +336,6 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size)
     st->codec->codec_type     = AVMEDIA_TYPE_AUDIO;
     st->codec->sample_rate    = sample_rate;
     printf("Codec id %x\n", st->codec->codec_id);
-
-    rast->coded_frame_size = coded_frame_size;
-    rast->interleaver_id   = interleaver_id;
-    rast->fourcc_tag       = fourcc_tag;
-    rast->codec_flavor     = codec_flavor;
-    rast->subpacket_h      = subpacket_h;
-    rast->frame_size       = frame_size;
-    rast->subpacket_size   = subpacket_size;
-    rast->sample_rate      = sample_rate;
-    rast->sample_size      = sample_size;
-    rast->channels         = channels;
-
 
     ra4_codec_specific_setup(st->codec->codec_id, st);
 
