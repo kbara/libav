@@ -63,8 +63,7 @@
 
 typedef struct RA4Stream {
     uint32_t coded_frame_size, interleaver_id, fourcc_tag;
-    uint16_t codec_flavor, subpacket_h, frame_size, subpacket_size;
-    uint16_t sample_rate, sample_size, channels;
+    uint16_t codec_flavor, subpacket_h, frame_size, subpacket_size, sample_size;
 } RA4Stream;
 
 struct RMStream {
@@ -241,10 +240,14 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size)
 
     int content_description_size, is_fourcc_ok;
     uint32_t ra4_signature, variable_data_size, variable_header_size;
-    uint32_t coded_frame_size, interleaver_id, fourcc_tag;
-    uint16_t version2, codec_flavor, subpacket_h, frame_size, subpacket_size;
-    uint16_t sample_rate, sample_size, channels;
+    uint32_t interleaver_id;
+    uint16_t version2;
     uint8_t interleaver_id_len;
+
+    st = avformat_new_stream(s, NULL);
+    if (!st)
+        return AVERROR(ENOMEM);
+    ra->avst = st;
 
     ra4_signature = avio_rl32(acpb);
     if (ra4_signature != RA4_SIGNATURE) {
@@ -273,25 +276,25 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size)
 
 
     rast->codec_flavor = avio_rb16(acpb); /* TODO: use this? */
-    printf("Got codec flavor %"PRIx16"\n", codec_flavor);
+    printf("Got codec flavor %"PRIx16"\n", rast->codec_flavor);
 
     rast->coded_frame_size = avio_rb32(acpb);
     avio_skip(acpb, 12); /* Unknown */
     rast->subpacket_h = avio_rb16(acpb);
-    rast->frame_size = avio_rb16(acpb);
+    st->codec->block_align = rast->frame_size = avio_rb16(acpb);
     rast->subpacket_size = avio_rb16(acpb);
     avio_skip(acpb, 2); /* Unknown */
-    rast->sample_rate = avio_rb16(acpb);
+    st->codec->sample_rate = avio_rb16(acpb);
     avio_skip(acpb, 2); /* Unknown */
     rast->sample_size = avio_rb16(acpb);
-    rast->channels = avio_rb16(acpb);
+    st->codec->channels = avio_rb16(acpb);
 
-    printf("Coded frame size: %x\n", coded_frame_size);
-    printf("Subpacket_h: %x\n", subpacket_h);
-    printf("Frame size: %x\n", frame_size);
-    printf("Subpacket size: %x\n", subpacket_size);
-    printf("Sample rate: %x\n", sample_rate);
-    printf("Sample size: %x\n", sample_size);
+    printf("Coded frame size: %x\n", rast->coded_frame_size);
+    printf("Subpacket_h: %x\n", rast->subpacket_h);
+    printf("Frame size: %x\n", rast->frame_size);
+    printf("Subpacket size: %x\n", rast->subpacket_size);
+    printf("Sample rate: %x\n", st->codec->sample_rate);
+    printf("Sample size: %x\n", rast->sample_size);
 
     interleaver_id_len = avio_r8(acpb);
     if (interleaver_id_len != 4) {
@@ -308,9 +311,10 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size)
     is_fourcc_ok = get_fourcc(s, &(rast->fourcc_tag));
     if (is_fourcc_ok < 0)
         return is_fourcc_ok; /* Preserve the error code */
-    printf("Fourcc: %c%c%c%c\n", fourcc_tag >> 24,
+    st->codec->codec_tag = rast->fourcc_tag;
+    /*printf("Fourcc: %c%c%c%c\n", fourcc_tag >> 24,
            (fourcc_tag >> 16) & 0xff, (fourcc_tag >> 8) & 0xff,
-           fourcc_tag & 0xff);
+           fourcc_tag & 0xff); TODO */
     avio_skip(acpb, 3); /* Unknown */
 
     content_description_size = ra_read_content_description(s);
@@ -320,21 +324,10 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size)
         return content_description_size; /* Preserve the error code */
     }
 
-    st = avformat_new_stream(s, NULL);
-    if (!st) {
-        av_dict_free(&s->metadata);
-        return AVERROR(ENOMEM);
-    }
-
-    ra->avst = st;
-
-    //st->codec->channel_layout = AV_CH_LAYOUT_MONO; /* TODO, FIXME */
-    st->codec->channels       = channels;
-    st->codec->codec_tag      = fourcc_tag;
+    /* TODO: only RAv3 handling sets a channel layout - is that correct? */
     st->codec->codec_id       = ff_codec_get_id(ff_rm_codec_tags,
                                                 st->codec->codec_tag);
     st->codec->codec_type     = AVMEDIA_TYPE_AUDIO;
-    st->codec->sample_rate    = sample_rate;
     printf("Codec id %x\n", st->codec->codec_id);
 
     ra4_codec_specific_setup(st->codec->codec_id, st);
