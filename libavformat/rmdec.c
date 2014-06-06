@@ -97,8 +97,10 @@ static int ra_probe(AVProbeData *p)
 /* TODO: fully implement this... logic from Fabrice Bellard's code*/
 static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVStream *st)
 {
-    if (codec_id == AV_CODEC_ID_AC3)
-        st->need_parsing = AVSTREAM_PARSE_FULL;
+    //if (codec_id == AV_CODEC_ID_AC3) {
+    //    printf("ac3\n");
+    //    st->need_parsing = AVSTREAM_PARSE_FULL;
+    //}
 
     return 0;
 }
@@ -386,15 +388,14 @@ static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
 
 
     /* Why is this the length? Borrowed from the old implementation. */
-    //printf("rast->cfs: %i, rast->sh: %i\n", rast->coded_frame_size, rast->subpacket_h);
     len = (rast->coded_frame_size * rast->subpacket_h) / 2;
-    printf("Len: %i\n", len);
+    //printf("Len: %i\n", len);
 
-    if (rast->interleaver_id == DEINT_ID_INT0) {
+    //printf("deint: %x\n", rast->interleaver_id);
+    //if (rast->interleaver_id == DEINT_ID_INT0) {
         return av_get_packet(s->pb, pkt, len);
         //rm_ac3_swap_bytes(..., pkt);
-    }
-    return 0; /* FIXME */
+    //}
 }
 
 static int rm_probe(AVProbeData *p)
