@@ -62,6 +62,7 @@
 #define DEINT_ID_VBRS MKTAG('v', 'b', 'r', 's') ///< VBR case for AAC
 
 typedef struct RA4Stream {
+    AVPacket pkt;
     uint32_t coded_frame_size, interleaver_id, fourcc_tag;
     uint16_t codec_flavor, subpacket_h, frame_size, subpacket_size, sample_size;
 } RA4Stream;
@@ -305,7 +306,7 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size)
                interleaver_id_len);
         return AVERROR_INVALIDDATA;
     }
-    rast->interleaver_id = avio_rb32(acpb);
+    rast->interleaver_id = interleaver_id = avio_rl32(acpb);
     printf("Interleaver: %c%c%c%c\n", interleaver_id >> 24,
            (interleaver_id >> 16) & 0xff, (interleaver_id >> 8) & 0xff,
            interleaver_id & 0xff);
@@ -372,7 +373,7 @@ static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     RADemuxContext *ra = s->priv_data;
     RA4Stream *rast = &(ra->rast);
-    int len;
+    int len, cur_subpkt;
 
     if (ra->version == 3)
         return av_get_packet(s->pb, pkt, RA144_PKT_SIZE);
@@ -389,13 +390,30 @@ static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
 
     /* Why is this the length? Borrowed from the old implementation. */
     len = (rast->coded_frame_size * rast->subpacket_h) / 2;
-    //printf("Len: %i\n", len);
 
-    //printf("deint: %x\n", rast->interleaver_id);
-    //if (rast->interleaver_id == DEINT_ID_INT0) {
+    /* Simple case: no interleaving */
+    /* TODO: does ac3 need special handling? */
+    if (rast->interleaver_id == DEINT_ID_INT0)
         return av_get_packet(s->pb, pkt, len);
         //rm_ac3_swap_bytes(..., pkt);
-    //}
+
+    if (rast->interleaver_id == DEINT_ID_INT4) {
+        for (cur_subpkt = 0; cur_subpkt < rast->subpacket_h; cur_subpkt++)
+            avio_read(s->pb,
+                      rast->pkt.data + \
+                        cur_subpkt * 2 * rast->frame_size/* + \
+                        rast->sub_packet_cnt * rast->coded_frame_size*/,
+                      rast->coded_frame_size);
+        return 0;
+    }
+
+    printf("%x, %x\n", rast->interleaver_id, DEINT_ID_INT4);
+    printf("Handle more cases: interleaver %c%c%c%c\n",
+           rast->interleaver_id >> 24,
+           rast->interleaver_id >> 16 & 0xff,
+           rast->interleaver_id >> 8 & 0xff,
+           rast->interleaver_id & 0xff);
+    return 0;
 }
 
 static int rm_probe(AVProbeData *p)
