@@ -38,3 +38,5 @@ $(FATE_SIPR): CMP = oneoff
 
 FATE_SAMPLES_AVCONV-$(call DEMDEC, RM, SIPR) += $(FATE_SIPR)
 fate-sipr: $(FATE_SIPR)
+fate-realaudio: fate-sipr fate-ra-144 fate-ra-288 fate-ra-cook fate-ralf fate-rangecoder
+fate-realvideo: fate-rv30 fate-rv40
