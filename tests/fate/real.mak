@@ -1,21 +1,21 @@
-FATE_SAMPLES_AVCONV-$(call DEMDEC, RM, RA_144) += fate-ra-144
+FATE_SAMPLES_REALAUDIO-$(call DEMDEC, RM, RA_144) += fate-ra-144
 fate-ra-144: CMD = md5 -i $(TARGET_SAMPLES)/real/ra3_in_rm_file.rm -f s16le
 
-FATE_SAMPLES_AVCONV-$(call DEMDEC, RM, RA_288) += fate-ra-288
+FATE_SAMPLES_REALAUDIO-$(call DEMDEC, RM, RA_288) += fate-ra-288
 fate-ra-288: CMD = pcm -i $(TARGET_SAMPLES)/real/ra_288.rm
 fate-ra-288: CMP = oneoff
 fate-ra-288: REF = $(SAMPLES)/real/ra_288.pcm
 fate-ra-288: FUZZ = 2
 
-FATE_SAMPLES_AVCONV-$(call DEMDEC, RM, COOK) += fate-ra-cook
+FATE_SAMPLES_REALAUDIO-$(call DEMDEC, RM, COOK) += fate-ra-cook
 fate-ra-cook: CMD = pcm -i $(TARGET_SAMPLES)/real/ra_cook.rm
 fate-ra-cook: CMP = oneoff
 fate-ra-cook: REF = $(SAMPLES)/real/ra_cook.pcm
 
-FATE_SAMPLES_AVCONV-$(call DEMDEC, RM, RV30) += fate-rv30
+FATE_SAMPLES_REALVIDEO-$(call DEMDEC, RM, RV30) += fate-rv30
 fate-rv30: CMD = framecrc -flags +bitexact -idct simple -i $(TARGET_SAMPLES)/real/rv30.rm -an
 
-FATE_SAMPLES_AVCONV-$(call DEMDEC, RM, RV40) += fate-rv40
+FATE_SAMPLES_REALVIDEO-$(call DEMDEC, RM, RV40) += fate-rv40
 fate-rv40: CMD = framecrc -i $(TARGET_SAMPLES)/real/spygames-2MB.rmvb -t 10 -an -vsync 0
 
 FATE_SIPR += fate-sipr-5k0
@@ -36,7 +36,12 @@ fate-sipr-16k: REF = $(SAMPLES)/sipr/sipr_16k.pcm
 
 $(FATE_SIPR): CMP = oneoff
 
-FATE_SAMPLES_AVCONV-$(call DEMDEC, RM, SIPR) += $(FATE_SIPR)
+FATE_SAMPLES_REALAUDIO-$(call DEMDEC, RM, SIPR) += $(FATE_SIPR)
 fate-sipr: $(FATE_SIPR)
-fate-realaudio: fate-sipr fate-ra-144 fate-ra-288 fate-ra-cook fate-ralf fate-rangecoder
-fate-realvideo: fate-rv30 fate-rv40
+fate-realaudio: FATE_SAMPLES_REALAUDIO-yes
+fate-realvideo: FATE_SAMPLES_REALVIDEO-yes
+#fate-realaudio: fate-sipr fate-ra-144 fate-ra-288 fate-ra-cook fate-ralf fate-rangecoder
+#fate-realvideo: fate-rv30 fate-rv40
+FATE_SAMPLES_AVCONV-yes += FATE_SAMPLES_REALAUDIO-yes
+FATE_SAMPLES_AVCONV-yes += FATE_SAMPLES_REALVIDEO-yes
+
