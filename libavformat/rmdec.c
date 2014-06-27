@@ -62,7 +62,8 @@
 #define DEINT_ID_VBRS MKTAG('v', 'b', 'r', 's') ///< VBR case for AAC
 
 typedef struct RA4Stream {
-    AVPacket pkt;
+    //AVPacket pkt;
+    char pkt_contents[10000]; /* FIXME */
     uint32_t coded_frame_size, interleaver_id, fourcc_tag;
     uint16_t codec_flavor, subpacket_h, frame_size, subpacket_size, sample_size;
 } RA4Stream;
@@ -75,6 +76,7 @@ typedef struct RADemuxContext {
     int version;
     AVStream *avst;
     struct RA4Stream rast;
+    int pending_audio_packets;
 } RADemuxContext;
 
 /* Demux context for RealMedia (audio+video) */
@@ -368,12 +370,73 @@ static int ra_read_header(AVFormatContext *s)
     }
 }
 
+static int ra_retrieve_cache(RADemuxContext *ra, AVStream *st, RA4Stream *rast,
+                             AVPacket *pkt)
+{
+    /* Everything has been read. This replaces the old ff_rm_retrieve_cache */
+    // Potentially assert audio_pkt_cnt > 0
+    // TODO: handle VBRF/VBRS
+    /* TODO: initialize block_align correctly! */
+    if (ra->pending_audio_packets) {
+        av_new_packet(pkt, st->codec->block_align);
+        /* Why is this memcpy like this? The old code had a
+           "FIXME avoid this"... confusion lurks here. */
+        memcpy(pkt->data,
+               rast->pkt_contents + st->codec->block_align *
+                    (rast->subpacket_h * rast->frame_size /
+                    st->codec->block_align - ra->pending_audio_packets),
+                st->codec->block_align);
+        pkt->flags = 0; /* TODO: revisit this when using timestamps */
+        pkt->stream_index = st->index;
+        ra->pending_audio_packets--;
+    }
+
+    return 0;
+}
+
+static int ra_read_interleaved_packets(AVFormatContext *s,  AVPacket *pkt)
+{
+    RADemuxContext *ra = s->priv_data;
+    AVStream *st = s->streams[0]; /* TODO: revisit for video */
+    RA4Stream *rast = &(ra->rast);
+
+    /* There's data waiting around already; return that */
+    if (ra->pending_audio_packets) {
+        return ra_retrieve_cache(ra, st, rast, pkt);
+    }
+
+    /* Why? TODO` FIXME BLEH */
+    ra->pending_audio_packets = rast->subpacket_h * rast->frame_size /
+                                    st->codec->block_align;
+
+    for (int subpkt_cnt = 0; subpkt_cnt < rast->subpacket_h; subpkt_cnt++) {
+        if (rast->interleaver_id == DEINT_ID_INT4) {
+            for (int cur_subpkt = 0; cur_subpkt < rast->subpacket_h / 2; cur_subpkt++)
+                avio_read(s->pb,
+                          rast->pkt_contents +
+                            cur_subpkt * 2 * rast->frame_size +
+                            subpkt_cnt * rast->coded_frame_size,
+                        rast->coded_frame_size);
+            //....
+        } else { /* TODO: handle this elsewhere */
+            printf("%x, %x\n", rast->interleaver_id, DEINT_ID_INT4);
+            printf("Handle more cases: interleaver %c%c%c%c\n",
+                rast->interleaver_id >> 24,
+                rast->interleaver_id >> 16 & 0xff,
+                rast->interleaver_id >> 8 & 0xff,
+                rast->interleaver_id & 0xff);
+            exit(1);
+        }
+    }
+    return ra_retrieve_cache(ra, st, rast, pkt);
+}
+
 
 static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     RADemuxContext *ra = s->priv_data;
     RA4Stream *rast = &(ra->rast);
-    int len, cur_subpkt;
+    int len;
 
     if (ra->version == 3)
         return av_get_packet(s->pb, pkt, RA144_PKT_SIZE);
@@ -396,24 +459,7 @@ static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
     if (rast->interleaver_id == DEINT_ID_INT0)
         return av_get_packet(s->pb, pkt, len);
         //rm_ac3_swap_bytes(..., pkt);
-
-    if (rast->interleaver_id == DEINT_ID_INT4) {
-        for (cur_subpkt = 0; cur_subpkt < rast->subpacket_h; cur_subpkt++)
-            avio_read(s->pb,
-                      rast->pkt.data + \
-                        cur_subpkt * 2 * rast->frame_size/* + \
-                        rast->sub_packet_cnt * rast->coded_frame_size*/,
-                      rast->coded_frame_size);
-        return 0;
-    }
-
-    printf("%x, %x\n", rast->interleaver_id, DEINT_ID_INT4);
-    printf("Handle more cases: interleaver %c%c%c%c\n",
-           rast->interleaver_id >> 24,
-           rast->interleaver_id >> 16 & 0xff,
-           rast->interleaver_id >> 8 & 0xff,
-           rast->interleaver_id & 0xff);
-    return 0;
+    return ra_read_interleaved_packets(s, pkt);
 }
 
 static int rm_probe(AVProbeData *p)
