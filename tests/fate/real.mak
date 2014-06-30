@@ -42,6 +42,6 @@ fate-realaudio: $(FATE_SAMPLES_REALAUDIO-yes)
 fate-realvideo: $(FATE_SAMPLES_REALVIDEO-yes)
 #fate-realaudio: fate-sipr fate-ra-144 fate-ra-288 fate-ra-cook fate-ralf fate-rangecoder
 #fate-realvideo: fate-rv30 fate-rv40
-FATE_SAMPLES_AVCONV-yes += $(FATE_SAMPLES_REALAUDIO-yes)
-FATE_SAMPLES_AVCONV-yes += $(FATE_SAMPLES_REALVIDEO-yes)
+FATE_SAMPLES_AVCONV += $(FATE_SAMPLES_REALAUDIO-yes)
+FATE_SAMPLES_AVCONV += $(FATE_SAMPLES_REALVIDEO-yes)
 
