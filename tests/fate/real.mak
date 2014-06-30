@@ -38,10 +38,10 @@ $(FATE_SIPR): CMP = oneoff
 
 FATE_SAMPLES_REALAUDIO-$(call DEMDEC, RM, SIPR) += $(FATE_SIPR)
 fate-sipr: $(FATE_SIPR)
-fate-realaudio: FATE_SAMPLES_REALAUDIO-yes
-fate-realvideo: FATE_SAMPLES_REALVIDEO-yes
+fate-realaudio: $(FATE_SAMPLES_REALAUDIO-yes)
+fate-realvideo: $(FATE_SAMPLES_REALVIDEO-yes)
 #fate-realaudio: fate-sipr fate-ra-144 fate-ra-288 fate-ra-cook fate-ralf fate-rangecoder
 #fate-realvideo: fate-rv30 fate-rv40
-FATE_SAMPLES_AVCONV-yes += FATE_SAMPLES_REALAUDIO-yes
-FATE_SAMPLES_AVCONV-yes += FATE_SAMPLES_REALVIDEO-yes
+FATE_SAMPLES_AVCONV-yes += $(FATE_SAMPLES_REALAUDIO-yes)
+FATE_SAMPLES_AVCONV-yes += $(FATE_SAMPLES_REALVIDEO-yes)
 
