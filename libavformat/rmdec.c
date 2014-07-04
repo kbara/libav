@@ -98,16 +98,64 @@ static int ra_probe(AVProbeData *p)
 }
 
 /* TODO: fully implement this... logic from Fabrice Bellard's code*/
-static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVStream *st)
+static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s, AVStream *st)
 {
+    RADemuxContext *ra = s->priv_data;
+    RA4Stream *rast = &(ra->rast);
     //if (codec_id == AV_CODEC_ID_AC3) {
     //    printf("ac3\n");
     //    st->need_parsing = AVSTREAM_PARSE_FULL;
     //}
-
+    if (codec_id == AV_CODEC_ID_RA_288) {
+        /* The original set extradata_size to 0; why? */
+        /* The original set ast->audio_framesize = st->codec->block_align */
+        st->codec->block_align = rast->coded_frame_size;
+    }
     return 0;
 }
 
+/* This is taken almost verbatim from Fabrice Bellard's code */
+static int ra4_sanity_check_headers(uint32_t interleaver_id, RA4Stream *rast, AVStream *st)
+{
+    if (rast->interleaver_id == DEINT_ID_INT4 ||
+        rast->interleaver_id == DEINT_ID_GENR ||
+        rast->interleaver_id == DEINT_ID_SIPR) {
+        if (st->codec->block_align <= 0)
+            return AVERROR_INVALIDDATA;
+        if (rast->frame_size * rast->subpacket_h > (unsigned)INT_MAX)
+            return AVERROR_INVALIDDATA;
+        if (rast->frame_size * rast->subpacket_h < st->codec->block_align)
+            return AVERROR_INVALIDDATA;
+    }
+
+    switch(interleaver_id) {
+    case DEINT_ID_INT4:
+        if (rast->coded_frame_size > rast->frame_size)
+            return AVERROR_INVALIDDATA;
+        if (rast->subpacket_h <= 1)
+            return AVERROR_INVALIDDATA;
+        if (rast->coded_frame_size * rast->subpacket_h >
+                (2 + (rast->subpacket_h & 1)) * rast->frame_size)
+            return AVERROR_INVALIDDATA;
+        break;
+    case DEINT_ID_GENR:
+        if (rast->subpacket_size <= 0)
+            return AVERROR_INVALIDDATA;
+        if (rast->subpacket_size > rast->frame_size)
+            return AVERROR_INVALIDDATA;
+        break;
+    case DEINT_ID_SIPR:
+    case DEINT_ID_INT0:
+    case DEINT_ID_VBRS:
+    case DEINT_ID_VBRF:
+        break;
+    default:
+        av_log(NULL, 0 ,"Unknown interleaver %"PRIX32"\n",
+               rast->interleaver_id);
+        return AVERROR_INVALIDDATA;
+    }
+    return 0;
+}
 
 /* Return value > 0: bytes read.
  * Return value < 0: error.
@@ -335,9 +383,10 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size)
     st->codec->codec_type     = AVMEDIA_TYPE_AUDIO;
     printf("Codec id %x\n", st->codec->codec_id);
 
-    ra4_codec_specific_setup(st->codec->codec_id, st);
+    ra4_codec_specific_setup(st->codec->codec_id, s, st);
 
-    return 0;
+
+    return ra4_sanity_check_headers(rast->interleaver_id, rast, st);
 }
 
 static int ra_read_header(AVFormatContext *s)
