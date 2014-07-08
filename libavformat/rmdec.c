@@ -464,7 +464,6 @@ static int ra_read_interleaved_packets(AVFormatContext *s,  AVPacket *pkt)
     AVStream *st = s->streams[0]; /* TODO: revisit for video */
     RA4Stream *rast = &(ra->rast);
 
-    printf("***ra_read_interleaved_packets called***\n");
     /* There's data waiting around already; return that */
     if (ra->pending_audio_packets) {
         return ra_retrieve_cache(ra, st, rast, pkt);
