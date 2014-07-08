@@ -102,10 +102,10 @@ static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
 {
     RADemuxContext *ra = s->priv_data;
     RA4Stream *rast = &(ra->rast);
-    //if (codec_id == AV_CODEC_ID_AC3) {
-    //    printf("ac3\n");
-    //    st->need_parsing = AVSTREAM_PARSE_FULL;
-    //}
+    if (codec_id == AV_CODEC_ID_AC3) {
+        printf("ac3\n");
+        st->need_parsing = AVSTREAM_PARSE_FULL;
+    }
     if (codec_id == AV_CODEC_ID_RA_288) {
         /* The original set extradata_size to 0; why? */
         /* The original set ast->audio_framesize = st->codec->block_align */
@@ -419,6 +419,21 @@ static int ra_read_header(AVFormatContext *s)
     }
 }
 
+/* Exactly the same as in the old code */
+static void ra_ac3_swap_bytes(AVStream *st, AVPacket *pkt)
+{
+    uint8_t *ptr;
+    int j;
+
+    if (st->codec->codec_id == AV_CODEC_ID_AC3) {
+        ptr = pkt->data;
+        for (j = 0; j < pkt->size; j+= 2) {
+            FFSWAP(int, ptr[0], ptr[1]);
+            ptr += 2;
+        }
+    }
+}
+
 static int ra_retrieve_cache(RADemuxContext *ra, AVStream *st, RA4Stream *rast,
                              AVPacket *pkt)
 {
@@ -449,6 +464,7 @@ static int ra_read_interleaved_packets(AVFormatContext *s,  AVPacket *pkt)
     AVStream *st = s->streams[0]; /* TODO: revisit for video */
     RA4Stream *rast = &(ra->rast);
 
+    printf("***ra_read_interleaved_packets called***\n");
     /* There's data waiting around already; return that */
     if (ra->pending_audio_packets) {
         return ra_retrieve_cache(ra, st, rast, pkt);
@@ -485,7 +501,7 @@ static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     RADemuxContext *ra = s->priv_data;
     RA4Stream *rast = &(ra->rast);
-    int len;
+    int len, get_pkt;
 
     if (ra->version == 3)
         return av_get_packet(s->pb, pkt, RA144_PKT_SIZE);
@@ -505,9 +521,12 @@ static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
 
     /* Simple case: no interleaving */
     /* TODO: does ac3 need special handling? */
-    if (rast->interleaver_id == DEINT_ID_INT0)
-        return av_get_packet(s->pb, pkt, len);
-        //rm_ac3_swap_bytes(..., pkt);
+    if (rast->interleaver_id == DEINT_ID_INT0) {
+        get_pkt = av_get_packet(s->pb, pkt, len);
+        /* Swap the bytes iff it's ac3 - check done in rm_ac3_swap_bytes */
+        ra_ac3_swap_bytes(s->streams[0], pkt);
+        return get_pkt;
+    }
     return ra_read_interleaved_packets(s, pkt);
 }
 
