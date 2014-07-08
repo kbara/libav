@@ -97,15 +97,18 @@ static int ra_probe(AVProbeData *p)
     return AVPROBE_SCORE_MAX;
 }
 
-/* TODO: fully implement this... logic from Fabrice Bellard's code*/
+/* TODO: fully implement this... logic from the old code*/
 static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s, AVStream *st)
 {
     RADemuxContext *ra = s->priv_data;
     RA4Stream *rast = &(ra->rast);
+# if 0
+    /* The old code had this, but it appears to be unnecessary */
     if (codec_id == AV_CODEC_ID_AC3) {
         printf("ac3\n");
         st->need_parsing = AVSTREAM_PARSE_FULL;
     }
+#endif
     if (codec_id == AV_CODEC_ID_RA_288) {
         /* The original set extradata_size to 0; why? */
         /* The original set ast->audio_framesize = st->codec->block_align */
@@ -114,7 +117,7 @@ static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
     return 0;
 }
 
-/* This is taken almost verbatim from Fabrice Bellard's code */
+/* This is taken almost verbatim from the old code */
 static int ra4_sanity_check_headers(uint32_t interleaver_id, RA4Stream *rast, AVStream *st)
 {
     if (rast->interleaver_id == DEINT_ID_INT4 ||
