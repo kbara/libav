@@ -517,7 +517,10 @@ static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
 
 
     /* Why is this the length? Borrowed from the old implementation. */
-    len = (rast->coded_frame_size * rast->subpacket_h) / 2;
+    /* Dividing by two works for int4, but breaks int0 ac3... */
+    /* TODO FIXME WIP: what's a correct condition here? */
+
+    len = (rast->coded_frame_size * rast->subpacket_h); // / 2;
 
     /* Simple case: no interleaving */
     /* TODO: does ac3 need special handling? */
