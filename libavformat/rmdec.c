@@ -39,6 +39,7 @@
 
 #include "avformat.h"
 #include "rm.h"
+#include "rmsipr.h"
 
 /* Header for RealAudio 1.0 (.ra version 3
  * and RealAudio 2.0 file (.ra version 4). */
@@ -97,23 +98,77 @@ static int ra_probe(AVProbeData *p)
     return AVPROBE_SCORE_MAX;
 }
 
+static int ra_read_extradata(AVIOContext *pb, AVCodecContext *avctx, uint32_t size)
+{
+    if (size >= 1<<24) /* Why? */
+        return AVERROR_INVALIDDATA;
+    avctx->extradata = av_malloc(size + FF_INPUT_BUFFER_PADDING_SIZE);
+    if (!avctx->extradata)
+        return AVERROR(ENOMEM);
+    avctx->extradata_size = avio_read(pb, avctx->extradata, size);
+    memset(avctx->extradata + avctx->extradata_size, 0, FF_INPUT_BUFFER_PADDING_SIZE);
+    if (avctx->extradata_size != size)
+        return AVERROR(EIO); /* TODO: is this really the best return code? */
+    return 0;
+}
+
 /* TODO: fully implement this... logic from the old code*/
 static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s, AVStream *st)
 {
     RADemuxContext *ra = s->priv_data;
     RA4Stream *rast = &(ra->rast);
+    uint32_t codecdata_length;
+    int ret;
+
 # if 0
-    /* The old code had this, but it appears to be unnecessary */
+    /* The old code had this, but it appears to be unnecessary;
+       Keiler seems to agree */
     if (codec_id == AV_CODEC_ID_AC3) {
         printf("ac3\n");
         st->need_parsing = AVSTREAM_PARSE_FULL;
     }
+    /* Assume the same for COOK until proven otherwise */
 #endif
     if (codec_id == AV_CODEC_ID_RA_288) {
         /* The original set extradata_size to 0; why? */
         /* The original set ast->audio_framesize = st->codec->block_align */
         st->codec->block_align = rast->coded_frame_size;
+    } else if ((codec_id == AV_CODEC_ID_SIPR) || (codec_id == AV_CODEC_ID_ATRAC3)) {
+        avio_rb24(s->pb); /* What does this represent? */
+        /* Old code reads another 8 if version is 5 */
+        codecdata_length = avio_rb32(s->pb);
+        /* Overflow check rewritten to not be undefined */
+        /* TODO: audit the codebase for this mistake.
+           TODO: is there a utility function for this somewhere? */
+        if (UINT32_MAX - FF_INPUT_BUFFER_PADDING_SIZE < codecdata_length) {
+            av_log(s, AV_LOG_ERROR, "RealAudio: codec_length too large\n");
+            return AVERROR_INVALIDDATA;
+        }
+
+        rast->frame_size = st->codec->block_align;
+
+        if (codec_id == AV_CODEC_ID_SIPR) {
+            /* rast->codec_flavor is unsigned, so < 0 check unnecessary */
+            if (rast->codec_flavor > 3) {
+                av_log(s, AV_LOG_ERROR, "RealAudio: SIPR flavor > 3 is too high.\n");
+                return AVERROR_INVALIDDATA;
+            }
+            st->codec->block_align = ff_sipr_subpk_size[rast->codec_flavor];
+        } else { /* ATRAC3 */
+            if (rast->subpacket_h == 0) { /* It's unsigned, so <= 0 is silly */
+                av_log(s, AV_LOG_ERROR,
+                       "RealAudio: AVTRAC3 subpacket_h must be > 0\n");
+                return AVERROR_INVALIDDATA;
+            }
+            st->codec->block_align = rast->subpacket_h;
+        }
+        /* TODO: why is codecdata_length verbatim here and -1 in the AAC case? */
+        if ((ret = ra_read_extradata(s->pb, st->codec, codecdata_length)) < 0)
+            return ret;
     }
+    /* TODO FIXME: handle AAC here */
+
+
     return 0;
 }
 
@@ -125,8 +180,9 @@ static int ra4_sanity_check_headers(uint32_t interleaver_id, RA4Stream *rast, AV
         rast->interleaver_id == DEINT_ID_SIPR) {
         if (st->codec->block_align <= 0)
             return AVERROR_INVALIDDATA;
+        /* The following test is clearly bogus 
         if (rast->frame_size * rast->subpacket_h > (unsigned)INT_MAX)
-            return AVERROR_INVALIDDATA;
+            return AVERROR_INVALIDDATA; */
         if (rast->frame_size * rast->subpacket_h < st->codec->block_align)
             return AVERROR_INVALIDDATA;
     }
@@ -461,6 +517,9 @@ static int ra_retrieve_cache(RADemuxContext *ra, AVStream *st, RA4Stream *rast,
     return 0;
 }
 
+/* This was part of ff_rm_parse_packet */
+/* Warning: dealing with subpackets has been made local,
+   and there is explicit looping; the control flow is different */
 static int ra_read_interleaved_packets(AVFormatContext *s,  AVPacket *pkt)
 {
     RADemuxContext *ra = s->priv_data;
@@ -472,27 +531,34 @@ static int ra_read_interleaved_packets(AVFormatContext *s,  AVPacket *pkt)
         return ra_retrieve_cache(ra, st, rast, pkt);
     }
 
-    /* Why? TODO` FIXME BLEH */
+    /* Why? TODO FIXME BLEH */
     ra->pending_audio_packets = rast->subpacket_h * rast->frame_size /
                                     st->codec->block_align;
 
     for (int subpkt_cnt = 0; subpkt_cnt < rast->subpacket_h; subpkt_cnt++) {
         if (rast->interleaver_id == DEINT_ID_INT4) {
-            for (int cur_subpkt = 0; cur_subpkt < rast->subpacket_h / 2; cur_subpkt++)
+            for (int cur_subpkt = 0;
+                 cur_subpkt < rast->subpacket_h / 2;
+                 cur_subpkt++)
                 avio_read(s->pb,
                           rast->pkt_contents +
                             cur_subpkt * 2 * rast->frame_size +
                             subpkt_cnt * rast->coded_frame_size,
                         rast->coded_frame_size);
-            //....
-        } else { /* TODO: handle this elsewhere */
-            printf("%x, %x\n", rast->interleaver_id, DEINT_ID_INT4);
-            printf("Handle more cases: interleaver %c%c%c%c\n",
-                rast->interleaver_id >> 24,
-                rast->interleaver_id >> 16 & 0xff,
-                rast->interleaver_id >> 8 & 0xff,
-                rast->interleaver_id & 0xff);
-            exit(1);
+        } else if (rast->interleaver_id == DEINT_ID_GENR) {
+            printf("IMPLEMENT GENR!\n");
+            return -1; /* TODO FIXME */
+        } else if (rast->interleaver_id == DEINT_ID_SIPR) {
+            avio_read(s->pb,
+                      rast->pkt_contents + subpkt_cnt * rast->frame_size,
+                      rast->frame_size);
+            ff_rm_reorder_sipr_data(rast->pkt_contents,
+                                    rast->subpacket_h,
+                                    rast->frame_size);
+        } else {
+            av_log(s, AV_LOG_ERROR,
+                   "RealAudio: internal error, unexpected interleaver\n");
+            return AVERROR_INVALIDDATA;
         }
     }
     return ra_retrieve_cache(ra, st, rast, pkt);
@@ -524,15 +590,32 @@ static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
 
     len = (rast->coded_frame_size * rast->subpacket_h); // / 2;
 
+
+    if ((rast->interleaver_id == DEINT_ID_GENR) ||
+        (rast->interleaver_id == DEINT_ID_INT4) ||
+        (rast->interleaver_id == DEINT_ID_SIPR)) {
+        return ra_read_interleaved_packets(s, pkt);
+
     /* Simple case: no interleaving */
     /* TODO: does ac3 need special handling? */
-    if (rast->interleaver_id == DEINT_ID_INT0) {
+    } else if (rast->interleaver_id == DEINT_ID_INT0) {
         get_pkt = av_get_packet(s->pb, pkt, len);
         /* Swap the bytes iff it's ac3 - check done in rm_ac3_swap_bytes */
         ra_ac3_swap_bytes(s->streams[0], pkt);
         return get_pkt;
+    } else if ((rast->interleaver_id == DEINT_ID_GENR) ||
+        (rast->interleaver_id == DEINT_ID_INT4) ||
+        (rast->interleaver_id == DEINT_ID_SIPR)) {
+        return ra_read_interleaved_packets(s, pkt);
+    } else if ((rast->interleaver_id == DEINT_ID_VBRF) ||
+        (rast->interleaver_id == DEINT_ID_VBRS)) {
+        /* TODO FIXME implement this */
+        return AVERROR_INVALIDDATA;
+    } else {
+        av_log(s, AV_LOG_ERROR,
+            "RealAudio: internal error, unknown interleaver\n");
+        return AVERROR_INVALIDDATA;
     }
-    return ra_read_interleaved_packets(s, pkt);
 }
 
 static int rm_probe(AVProbeData *p)
