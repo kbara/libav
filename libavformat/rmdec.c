@@ -300,7 +300,6 @@ static int ra_read_header_v3(AVFormatContext *s, uint16_t header_size)
     content_description_size = ra_read_content_description(s);
     if (content_description_size < 0) {
         av_log(s, AV_LOG_ERROR, "RealAudio: error reading header metadata.\n");
-        av_dict_free(&s->metadata);
         return content_description_size; /* Preserve the error code */
     }
     header_bytes_read += content_description_size;
@@ -329,7 +328,6 @@ static int ra_read_header_v3(AVFormatContext *s, uint16_t header_size)
     /* Reading all the header data has gone ok; initialiaze codec info. */
     st = avformat_new_stream(s, NULL);
     if (!st) {
-        av_dict_free(&s->metadata);
         return AVERROR(ENOMEM);
     }
 
@@ -432,7 +430,6 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size)
     content_description_size = ra_read_content_description(s);
     if (content_description_size < 0) {
         av_log(s, AV_LOG_ERROR, "RealAudio: error reading header metadata.\n");
-        av_dict_free(&s->metadata);
         return content_description_size; /* Preserve the error code */
     }
 
