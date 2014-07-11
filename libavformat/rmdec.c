@@ -600,10 +600,6 @@ static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
         /* Swap the bytes iff it's ac3 - check done in rm_ac3_swap_bytes */
         ra_ac3_swap_bytes(s->streams[0], pkt);
         return get_pkt;
-    } else if ((rast->interleaver_id == DEINT_ID_GENR) ||
-        (rast->interleaver_id == DEINT_ID_INT4) ||
-        (rast->interleaver_id == DEINT_ID_SIPR)) {
-        return ra_read_interleaved_packets(s, pkt);
     } else if ((rast->interleaver_id == DEINT_ID_VBRF) ||
         (rast->interleaver_id == DEINT_ID_VBRS)) {
         /* TODO FIXME implement this */
