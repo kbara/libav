@@ -57,8 +57,8 @@ static int ape_tag_read_field(AVFormatContext *s)
         av_log(s, AV_LOG_WARNING, "Invalid APE tag key '%s'.\n", key);
         return -1;
     }
-    if (size >= UINT_MAX)
-        return -1;
+    if (size > (unsigned) INT32_MAX - FFMAX(1, FF_INPUT_BUFFER_PADDING_SIZE))
+        return AVERROR_INVALIDDATA;
     if (flags & APE_TAG_FLAG_IS_BINARY) {
         uint8_t filename[1024];
         enum AVCodecID id;
