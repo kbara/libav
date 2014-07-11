@@ -566,6 +566,7 @@ static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     RADemuxContext *ra = s->priv_data;
     RA4Stream *rast = &(ra->rast);
+    AVStream *st = s->streams[0]; /* TODO: revisit for video */
     int len, get_pkt;
 
     if (ra->version == 3)
@@ -582,10 +583,10 @@ static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
 
 
     /* Why is this the length? Borrowed from the old implementation. */
-    /* Dividing by two works for int4, but breaks int0 ac3... */
+    /* Dividing by two seems to work for everything except int0 ac3, so far */
     /* TODO FIXME WIP: what's a correct condition here? */
 
-    len = (rast->coded_frame_size * rast->subpacket_h); // / 2;
+    len = (rast->coded_frame_size * rast->subpacket_h) / 2;
 
 
     if ((rast->interleaver_id == DEINT_ID_GENR) ||
@@ -596,6 +597,8 @@ static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
     /* Simple case: no interleaving */
     /* TODO: does ac3 need special handling? */
     } else if (rast->interleaver_id == DEINT_ID_INT0) {
+        if (st->codec->codec_id == AV_CODEC_ID_AC3)
+            len *= 2;
         get_pkt = av_get_packet(s->pb, pkt, len);
         /* Swap the bytes iff it's ac3 - check done in rm_ac3_swap_bytes */
         ra_ac3_swap_bytes(s->streams[0], pkt);
