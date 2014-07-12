@@ -1,3 +1,14 @@
+# NOTE: the REALAUDIO tests need to use the RA demuxer once
+# it is available
+FATE_SAMPLES_REALAUDIO-$(call DEMDEC, RM, RA_144) += fate-ra3-144
+fate-ra3-144: CMD = framecrc -i $(TARGET_SAMPLES)/realaudio/ra3.ra
+
+FATE_SAMPLES_REALAUDIO-$(call DEMDEC, RM, RA_288) += fate-ra4-28_8
+fate-ra4-28_8: CMD = framecrc -i $(TARGET_SAMPLES)/realaudio/ra4-28_8.ra
+
+FATE_SAMPLES_REALAUDIO-$(call DEMDEC, RM, SIPR) += fate-ra4-sipr5k
+fate-ra4-sipr5k: CMD = framecrc -i $(TARGET_SAMPLES)/realaudio/ra4-sipr5k.ra
+
 FATE_SAMPLES_REALMEDIA_AUDIO-$(call DEMDEC, RM, RA_144) += fate-ra-144
 fate-ra-144: CMD = md5 -i $(TARGET_SAMPLES)/real/ra3_in_rm_file.rm -f s16le
 
@@ -38,9 +49,10 @@ $(FATE_SIPR): CMP = oneoff
 
 FATE_SAMPLES_REALMEDIA_AUDIO-$(call DEMDEC, RM, SIPR) += $(FATE_SIPR)
 fate-sipr: $(FATE_SIPR)
+fate-realaudio: $(FATE_SAMPLES_REALAUDIO-yes)
 fate-realmedia-audio: $(FATE_SAMPLES_REALMEDIA_AUDIO-yes)
 fate-realmedia-video: $(FATE_SAMPLES_REALMEDIA_VIDEO-yes)
 fate-realmedia: fate-realmedia-audio fate-realmedia-video
 # TODO: what about fate-ralf and fate-rangecoder?
-FATE_SAMPLES_AVCONV += $(FATE_SAMPLES_REALMEDIA_AUDIO-yes) $(FATE_SAMPLES_REALMEDIA_VIDEO-yes)
+FATE_SAMPLES_AVCONV += $(FATE_SAMPLES_REALMEDIA_AUDIO-yes) $(FATE_SAMPLES_REALMEDIA_VIDEO-yes) $(FATE_SAMPLES_REALAUDIO-yes)
 
