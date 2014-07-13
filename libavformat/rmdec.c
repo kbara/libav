@@ -522,33 +522,46 @@ static int ra_read_interleaved_packets(AVFormatContext *s,  AVPacket *pkt)
     RADemuxContext *ra = s->priv_data;
     AVStream *st = s->streams[0]; /* TODO: revisit for video */
     RA4Stream *rast = &(ra->rast);
+    int expected_packets, read_packets, read;
 
     /* There's data waiting around already; return that */
     if (ra->pending_audio_packets) {
         return ra_retrieve_cache(ra, st, rast, pkt);
     }
 
-    /* Why? TODO FIXME BLEH */
-    ra->pending_audio_packets = rast->subpacket_h * rast->frame_size /
-                                    st->codec->block_align;
+    expected_packets = rast->subpacket_h * rast->frame_size /
+        st->codec->block_align;
+    read_packets = 0;
 
     for (int subpkt_cnt = 0; subpkt_cnt < rast->subpacket_h; subpkt_cnt++) {
         if (rast->interleaver_id == DEINT_ID_INT4) {
             for (int cur_subpkt = 0;
                  cur_subpkt < rast->subpacket_h / 2;
-                 cur_subpkt++)
-                avio_read(s->pb,
-                          rast->pkt_contents +
-                            cur_subpkt * 2 * rast->frame_size +
-                            subpkt_cnt * rast->coded_frame_size,
-                        rast->coded_frame_size);
+                 cur_subpkt++) {
+                read = avio_read(s->pb,
+                                 rast->pkt_contents +
+                                    cur_subpkt * 2 * rast->frame_size +
+                                    subpkt_cnt * rast->coded_frame_size,
+                                 rast->coded_frame_size);
+                if (read > 0)
+                    read_packets++;
+                else {
+                    ra->pending_audio_packets = read_packets;
+                    return AVERROR_EOF;
+                }
+            }
         } else if (rast->interleaver_id == DEINT_ID_GENR) {
             printf("IMPLEMENT GENR!\n");
             return -1; /* TODO FIXME */
         } else if (rast->interleaver_id == DEINT_ID_SIPR) {
-            avio_read(s->pb,
+            read = avio_read(s->pb,
                       rast->pkt_contents + subpkt_cnt * rast->frame_size,
                       rast->frame_size);
+            if (read > 0)
+                read_packets++;
+            else
+                return AVERROR_EOF;
+
             ff_rm_reorder_sipr_data(rast->pkt_contents,
                                     rast->subpacket_h,
                                     rast->frame_size);
@@ -558,6 +571,7 @@ static int ra_read_interleaved_packets(AVFormatContext *s,  AVPacket *pkt)
             return AVERROR_INVALIDDATA;
         }
     }
+    ra->pending_audio_packets = FFMIN(expected_packets, read_packets);
     return ra_retrieve_cache(ra, st, rast, pkt);
 }
 
