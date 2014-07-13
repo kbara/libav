@@ -133,41 +133,8 @@ static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
         /* The original set extradata_size to 0; why? */
         /* The original set ast->audio_framesize = st->codec->block_align */
         st->codec->block_align = rast->coded_frame_size;
-    } else if ((codec_id == AV_CODEC_ID_SIPR) || (codec_id == AV_CODEC_ID_ATRAC3)) {
-        avio_rb24(s->pb); /* What does this represent? */
-        /* Old code reads another 8 if version is 5 */
-        codecdata_length = avio_rb32(s->pb);
-        /* Overflow check rewritten to not be undefined */
-        /* TODO: audit the codebase for this mistake.
-           TODO: is there a utility function for this somewhere? */
-        if (UINT32_MAX - FF_INPUT_BUFFER_PADDING_SIZE < codecdata_length) {
-            av_log(s, AV_LOG_ERROR, "RealAudio: codec_length too large\n");
-            return AVERROR_INVALIDDATA;
-        }
-
-        rast->frame_size = st->codec->block_align;
-
-        if (codec_id == AV_CODEC_ID_SIPR) {
-            /* rast->codec_flavor is unsigned, so < 0 check unnecessary */
-            if (rast->codec_flavor > 3) {
-                av_log(s, AV_LOG_ERROR, "RealAudio: SIPR flavor > 3 is too high.\n");
-                return AVERROR_INVALIDDATA;
-            }
-            st->codec->block_align = ff_sipr_subpk_size[rast->codec_flavor];
-        } else { /* ATRAC3 */
-            if (rast->subpacket_h == 0) { /* It's unsigned, so <= 0 is silly */
-                av_log(s, AV_LOG_ERROR,
-                       "RealAudio: AVTRAC3 subpacket_h must be > 0\n");
-                return AVERROR_INVALIDDATA;
-            }
-            st->codec->block_align = rast->subpacket_h;
-        }
-        /* TODO: why is codecdata_length verbatim here and -1 in the AAC case? */
-        if ((ret = ra_read_extradata(s->pb, st->codec, codecdata_length)) < 0)
-            return ret;
     }
-    /* TODO FIXME: handle AAC here */
-
+    /* TODO FIXME: handle other formats here */
 
     return 0;
 }
@@ -175,9 +142,7 @@ static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
 /* This is taken almost verbatim from the old code */
 static int ra4_sanity_check_headers(uint32_t interleaver_id, RA4Stream *rast, AVStream *st)
 {
-    if (rast->interleaver_id == DEINT_ID_INT4 ||
-        rast->interleaver_id == DEINT_ID_GENR ||
-        rast->interleaver_id == DEINT_ID_SIPR) {
+    if (rast->interleaver_id == DEINT_ID_INT4) {
         if (st->codec->block_align <= 0)
             return AVERROR_INVALIDDATA;
         /* The following test is clearly bogus 
@@ -197,7 +162,7 @@ static int ra4_sanity_check_headers(uint32_t interleaver_id, RA4Stream *rast, AV
                 (2 + (rast->subpacket_h & 1)) * rast->frame_size)
             return AVERROR_INVALIDDATA;
         break;
-    case DEINT_ID_GENR:
+    case DEINT_ID_GENR: /* FIXME: untested */
         if (rast->subpacket_size <= 0)
             return AVERROR_INVALIDDATA;
         if (rast->subpacket_size > rast->frame_size)
@@ -552,18 +517,6 @@ static int ra_read_interleaved_packets(AVFormatContext *s,  AVPacket *pkt)
         } else if (rast->interleaver_id == DEINT_ID_GENR) {
             printf("IMPLEMENT GENR!\n");
             return -1; /* TODO FIXME */
-        } else if (rast->interleaver_id == DEINT_ID_SIPR) {
-            read = avio_read(s->pb,
-                      rast->pkt_contents + subpkt_cnt * rast->frame_size,
-                      rast->frame_size);
-            if (read > 0)
-                read_packets++;
-            else
-                return AVERROR_EOF;
-
-            ff_rm_reorder_sipr_data(rast->pkt_contents,
-                                    rast->subpacket_h,
-                                    rast->frame_size);
         } else {
             av_log(s, AV_LOG_ERROR,
                    "RealAudio: internal error, unexpected interleaver\n");
@@ -602,11 +555,8 @@ static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
     len = (rast->coded_frame_size * rast->subpacket_h) / 2;
 
 
-    if ((rast->interleaver_id == DEINT_ID_GENR) ||
-        (rast->interleaver_id == DEINT_ID_INT4) ||
-        (rast->interleaver_id == DEINT_ID_SIPR)) {
+    if (rast->interleaver_id == DEINT_ID_INT4) {
         return ra_read_interleaved_packets(s, pkt);
-
     /* Simple case: no interleaving */
     /* TODO: does ac3 need special handling? */
     } else if (rast->interleaver_id == DEINT_ID_INT0) {
@@ -619,6 +569,7 @@ static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
     } else if ((rast->interleaver_id == DEINT_ID_VBRF) ||
         (rast->interleaver_id == DEINT_ID_VBRS)) {
         /* TODO FIXME implement this */
+        av_log(s, AV_LOG_ERROR, "RealAudio: VBR* unimplemented.\n");
         return AVERROR_INVALIDDATA;
     } else {
         av_log(s, AV_LOG_ERROR,
