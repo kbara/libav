@@ -441,7 +441,6 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size)
 
     ra4_codec_specific_setup(st->codec->codec_id, s, st);
 
-
     return ra4_sanity_check_headers(rast->interleaver_id, rast, st);
 }
 
