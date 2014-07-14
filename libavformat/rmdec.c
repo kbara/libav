@@ -98,6 +98,7 @@ static int ra_probe(AVProbeData *p)
     return AVPROBE_SCORE_MAX;
 }
 
+#if 0
 static int ra_read_extradata(AVIOContext *pb, AVCodecContext *avctx, uint32_t size)
 {
     if (size >= 1<<24) /* Why? */
@@ -111,6 +112,7 @@ static int ra_read_extradata(AVIOContext *pb, AVCodecContext *avctx, uint32_t si
         return AVERROR(EIO); /* TODO: is this really the best return code? */
     return 0;
 }
+#endif
 
 /* TODO: fully implement this... logic from the old code*/
 static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s, AVStream *st)
@@ -140,12 +142,13 @@ static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
 }
 
 /* This is taken almost verbatim from the old code */
+/* TODO: get it reviewed */
 static int ra4_sanity_check_headers(uint32_t interleaver_id, RA4Stream *rast, AVStream *st)
 {
     if (rast->interleaver_id == DEINT_ID_INT4) {
         if (st->codec->block_align <= 0)
             return AVERROR_INVALIDDATA;
-        /* The following test is clearly bogus 
+        /* The following test is clearly bogus
         if (rast->frame_size * rast->subpacket_h > (unsigned)INT_MAX)
             return AVERROR_INVALIDDATA; */
         if (rast->frame_size * rast->subpacket_h < st->codec->block_align)
@@ -460,7 +463,6 @@ static int ra_retrieve_cache(RADemuxContext *ra, AVStream *st, RA4Stream *rast,
     /* Everything has been read. This replaces the old ff_rm_retrieve_cache */
     // Potentially assert audio_pkt_cnt > 0
     // TODO: handle VBRF/VBRS
-    /* TODO: initialize block_align correctly! */
     if (ra->pending_audio_packets) {
         av_new_packet(pkt, st->codec->block_align);
         /* Why is this memcpy like this? The old code had a
@@ -539,26 +541,11 @@ static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
         return av_get_packet(s->pb, pkt, RA144_PKT_SIZE);
 
     /* Nope, it's version 4, and a bit more complicated */
-    //len = !ast->audio_framesize ? RAW_PACKET_SIZE :
-    //    ast->coded_framesize * ast->sub_packet_h / 2;
-    //
-    //             if(len<0 || s->pb->eof_reached)
-    //                return AVERROR(EIO);
-    // res = ff_rm_parse_packet (s, s->pb, st, st->priv_data, len, pkt,
-    //                                      &seq, flags, timestamp);
-
-
-    /* Why is this the length? Borrowed from the old implementation. */
-    /* Dividing by two seems to work for everything except int0 ac3, so far */
-    /* TODO FIXME WIP: what's a correct condition here? */
-
     len = (rast->coded_frame_size * rast->subpacket_h) / 2;
-
 
     if (rast->interleaver_id == DEINT_ID_INT4) {
         return ra_read_interleaved_packets(s, pkt);
     /* Simple case: no interleaving */
-    /* TODO: does ac3 need special handling? */
     } else if (rast->interleaver_id == DEINT_ID_INT0) {
         if (st->codec->codec_id == AV_CODEC_ID_AC3)
             len *= 2;
