@@ -63,7 +63,7 @@
 #define DEINT_ID_VBRS MKTAG('v', 'b', 'r', 's') ///< VBR case for AAC
 
 typedef struct RA4Stream {
-    AVBufferRef *pkt_contents;
+    uint8_t *pkt_contents;
     uint32_t coded_frame_size, interleaver_id, fourcc_tag;
     uint16_t codec_flavor, subpacket_h, frame_size, subpacket_size, sample_size;
 } RA4Stream;
@@ -444,7 +444,7 @@ static int ra_retrieve_cache(RADemuxContext *ra, AVStream *st, RA4Stream *rast,
                     st->codec->block_align - ra->pending_audio_packets),
                 st->codec->block_align);*/
         pkt->size = st->codec->block_align;
-        pkt->data = rast->pkt_contents->data + st->codec->block_align *
+        pkt->data = rast->pkt_contents + st->codec->block_align *
                         (rast->subpacket_h * rast->frame_size /
                          st->codec->block_align - ra->pending_audio_packets);
 
@@ -452,7 +452,7 @@ static int ra_retrieve_cache(RADemuxContext *ra, AVStream *st, RA4Stream *rast,
         pkt->stream_index = st->index;
         ra->pending_audio_packets--;
         if (!ra->pending_audio_packets) {
-            av_buffer_unref(&(rast->pkt_contents));
+            av_freep(&(rast->pkt_contents));
         }
     }
 
@@ -481,7 +481,7 @@ static int ra_read_interleaved_packets(AVFormatContext *s,  AVPacket *pkt)
     interleaved_buffer_size = expected_packets * rast->coded_frame_size;
 
     if (rast->interleaver_id == DEINT_ID_INT4) {
-        rast->pkt_contents = av_buffer_allocz(interleaved_buffer_size);
+        rast->pkt_contents = av_mallocz(interleaved_buffer_size);
         if (!rast->pkt_contents)
             return AVERROR(ENOMEM);
     }
@@ -492,7 +492,7 @@ static int ra_read_interleaved_packets(AVFormatContext *s,  AVPacket *pkt)
                  cur_subpkt < rast->subpacket_h / 2;
                  cur_subpkt++) {
                 read = avio_read(s->pb,
-                                 rast->pkt_contents->data +
+                                 rast->pkt_contents +
                                     cur_subpkt * 2 * rast->frame_size +
                                     subpkt_cnt * rast->coded_frame_size,
                                  rast->coded_frame_size);
