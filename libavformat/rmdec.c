@@ -98,42 +98,14 @@ static int ra_probe(AVProbeData *p)
     return AVPROBE_SCORE_MAX;
 }
 
-#if 0
-static int ra_read_extradata(AVIOContext *pb, AVCodecContext *avctx, uint32_t size)
-{
-    if (size >= 1<<24) /* Why? */
-        return AVERROR_INVALIDDATA;
-    avctx->extradata = av_malloc(size + FF_INPUT_BUFFER_PADDING_SIZE);
-    if (!avctx->extradata)
-        return AVERROR(ENOMEM);
-    avctx->extradata_size = avio_read(pb, avctx->extradata, size);
-    memset(avctx->extradata + avctx->extradata_size, 0, FF_INPUT_BUFFER_PADDING_SIZE);
-    if (avctx->extradata_size != size)
-        return AVERROR(EIO); /* TODO: is this really the best return code? */
-    return 0;
-}
-#endif
 
 /* TODO: fully implement this... logic from the old code*/
 static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s, AVStream *st)
 {
     RADemuxContext *ra = s->priv_data;
     RA4Stream *rast = &(ra->rast);
-    uint32_t codecdata_length;
-    int ret;
 
-# if 0
-    /* The old code had this, but it appears to be unnecessary;
-       Keiler seems to agree */
-    if (codec_id == AV_CODEC_ID_AC3) {
-        printf("ac3\n");
-        st->need_parsing = AVSTREAM_PARSE_FULL;
-    }
-    /* Assume the same for COOK until proven otherwise */
-#endif
     if (codec_id == AV_CODEC_ID_RA_288) {
-        /* The original set extradata_size to 0; why? */
-        /* The original set ast->audio_framesize = st->codec->block_align */
         st->codec->block_align = rast->coded_frame_size;
     }
     /* TODO FIXME: handle other formats here */
