@@ -63,8 +63,7 @@
 #define DEINT_ID_VBRS MKTAG('v', 'b', 'r', 's') ///< VBR case for AAC
 
 typedef struct RA4Stream {
-    //AVPacket pkt;
-    char pkt_contents[10000]; /* FIXME */
+    AVBufferRef *pkt_contents;
     uint32_t coded_frame_size, interleaver_id, fourcc_tag;
     uint16_t codec_flavor, subpacket_h, frame_size, subpacket_size, sample_size;
 } RA4Stream;
@@ -436,17 +435,25 @@ static int ra_retrieve_cache(RADemuxContext *ra, AVStream *st, RA4Stream *rast,
     // Potentially assert audio_pkt_cnt > 0
     // TODO: handle VBRF/VBRS
     if (ra->pending_audio_packets) {
-        av_new_packet(pkt, st->codec->block_align);
+        //av_new_packet(pkt, st->codec->block_align);
         /* Why is this memcpy like this? The old code had a
            "FIXME avoid this"... confusion lurks here. */
-        memcpy(pkt->data,
+        /*memcpy(pkt->data,
                rast->pkt_contents + st->codec->block_align *
                     (rast->subpacket_h * rast->frame_size /
                     st->codec->block_align - ra->pending_audio_packets),
-                st->codec->block_align);
+                st->codec->block_align);*/
+        pkt->size = st->codec->block_align;
+        pkt->data = rast->pkt_contents->data + st->codec->block_align *
+                        (rast->subpacket_h * rast->frame_size /
+                         st->codec->block_align - ra->pending_audio_packets);
+
         pkt->flags = 0; /* TODO: revisit this when using timestamps */
         pkt->stream_index = st->index;
         ra->pending_audio_packets--;
+        if (!ra->pending_audio_packets) {
+            av_buffer_unref(&(rast->pkt_contents));
+        }
     }
 
     return 0;
@@ -461,6 +468,7 @@ static int ra_read_interleaved_packets(AVFormatContext *s,  AVPacket *pkt)
     AVStream *st = s->streams[0]; /* TODO: revisit for video */
     RA4Stream *rast = &(ra->rast);
     int expected_packets, read_packets, read;
+    size_t interleaved_buffer_size;
 
     /* There's data waiting around already; return that */
     if (ra->pending_audio_packets) {
@@ -470,6 +478,13 @@ static int ra_read_interleaved_packets(AVFormatContext *s,  AVPacket *pkt)
     expected_packets = rast->subpacket_h * rast->frame_size /
         st->codec->block_align;
     read_packets = 0;
+    interleaved_buffer_size = expected_packets * rast->coded_frame_size;
+
+    if (rast->interleaver_id == DEINT_ID_INT4) {
+        rast->pkt_contents = av_buffer_allocz(interleaved_buffer_size);
+        if (!rast->pkt_contents)
+            return AVERROR(ENOMEM);
+    }
 
     for (int subpkt_cnt = 0; subpkt_cnt < rast->subpacket_h; subpkt_cnt++) {
         if (rast->interleaver_id == DEINT_ID_INT4) {
@@ -477,7 +492,7 @@ static int ra_read_interleaved_packets(AVFormatContext *s,  AVPacket *pkt)
                  cur_subpkt < rast->subpacket_h / 2;
                  cur_subpkt++) {
                 read = avio_read(s->pb,
-                                 rast->pkt_contents +
+                                 rast->pkt_contents->data +
                                     cur_subpkt * 2 * rast->frame_size +
                                     subpkt_cnt * rast->coded_frame_size,
                                  rast->coded_frame_size);
