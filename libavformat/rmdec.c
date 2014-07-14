@@ -451,9 +451,6 @@ static int ra_retrieve_cache(RADemuxContext *ra, AVStream *st, RA4Stream *rast,
         pkt->flags = 0; /* TODO: revisit this when using timestamps */
         pkt->stream_index = st->index;
         ra->pending_audio_packets--;
-        if (!ra->pending_audio_packets) {
-            av_buffer_unref(&(rast->pkt_contents));
-        }
     }
 
     return 0;
@@ -480,7 +477,7 @@ static int ra_read_interleaved_packets(AVFormatContext *s,  AVPacket *pkt)
     read_packets = 0;
     interleaved_buffer_size = expected_packets * rast->coded_frame_size;
 
-    if (rast->interleaver_id == DEINT_ID_INT4) {
+    if ((rast->interleaver_id == DEINT_ID_INT4) && (!(rast->pkt_contents))) {
         rast->pkt_contents = av_buffer_allocz(interleaved_buffer_size);
         if (!rast->pkt_contents)
             return AVERROR(ENOMEM);
@@ -552,6 +549,15 @@ static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
     }
 }
 
+static int ra_read_close(AVFormatContext *s)
+{
+    RADemuxContext *ra = s->priv_data;
+    RA4Stream *rast = &(ra->rast);
+
+    av_buffer_unref(&(rast->pkt_contents));
+    return 0;
+}
+
 static int rm_probe(AVProbeData *p)
 {
     return 0;
@@ -617,6 +623,7 @@ AVInputFormat ff_ra_demuxer = {
     .read_probe     = ra_probe,
     .read_header    = ra_read_header,
     .read_packet    = ra_read_packet,
+    .read_close     = ra_read_close,
 };
 
 AVInputFormat ff_rm_demuxer = {
