@@ -102,6 +102,14 @@ typedef struct RMMediaProperties {
     uint8_t *type_specific_data;
 } RMMediaProperties;
 
+/* RealMedia files have one or more DATA headers, which contain
+ * the actual data. Empirically, it seems to be one in most files,
+ * and > 1 in the multirate files which are available.
+ */
+typedef struct RMDataHeader {
+    uint32_t data_chunk_size, num_data_packets, next_data_chunk_offset;
+} RMDataHeader;
+
 /* Demux context for RealMedia (audio+video).
    This includes information from the RMF and PROP headers,
    and pointers to the per-stream Media Properties headers. */
@@ -116,6 +124,7 @@ typedef struct RMDemuxContext {
     uint16_t num_streams, flags;
     RADemuxContext rm_ra_dc;
     RMMediaProperties rmp[24]; /* FIXME TODO: make this dynamic. */
+    RMDataHeader rm_data_headers[24]; /* FIXME TODO: make this dynamic. */
 } RMDemuxContext;
 
 
@@ -194,12 +203,18 @@ static int ra4_sanity_check_headers(uint32_t interleaver_id, RA4Stream *rast, AV
  * Return value < 0: error.
  * Return value == 0: can't happen.
  */
-static int ra_read_content_description_field(AVFormatContext *s, const char *desc)
+static int real_read_content_description_field(AVFormatContext *s,
+                                             const char *desc,
+                                             int length_bytes)
 {
     AVIOContext *acpb = s->pb;
     uint16_t len;
     uint8_t *val;
-    len = avio_r8(acpb);
+
+    if (length_bytes == 1)
+        len = avio_r8(acpb);
+    else // 2
+        len = avio_rb16(acpb);
     val = av_mallocz(len + 1);
     if (!val)
         return AVERROR(ENOMEM);
@@ -209,36 +224,42 @@ static int ra_read_content_description_field(AVFormatContext *s, const char *des
     return len + 1; /* +1 due to reading one byte representing length */
 }
 
-/* A RealAudio 1.0 (.ra version 3) content description has 4 fields,
- * and differs in several ways from an RMF CONT header.
- */
-static int ra_read_content_description(AVFormatContext *s)
+
+static int real_read_content_description(AVFormatContext *s, int length_bytes)
 {
     int sought = 0;
     int bytes_read_or_error;
+    int lb = length_bytes;
 
-    bytes_read_or_error = ra_read_content_description_field(s, "title");
+    bytes_read_or_error = real_read_content_description_field(s, "title", lb);
     if (bytes_read_or_error < 0)
         return bytes_read_or_error;
     else
         sought += bytes_read_or_error;
-    bytes_read_or_error = ra_read_content_description_field(s, "author");
+    bytes_read_or_error = real_read_content_description_field(s, "author", lb);
     if (bytes_read_or_error < 0)
         return bytes_read_or_error;
     else
         sought += bytes_read_or_error;
-    bytes_read_or_error = ra_read_content_description_field(s, "copyright");
+    bytes_read_or_error = real_read_content_description_field(s,
+                                                              "copyright",
+                                                              lb);
     if (bytes_read_or_error < 0)
         return bytes_read_or_error;
     else
         sought += bytes_read_or_error;
-    bytes_read_or_error = ra_read_content_description_field(s, "comment");
+    bytes_read_or_error = real_read_content_description_field(s, "comment", lb);
     if (bytes_read_or_error < 0)
         return bytes_read_or_error;
     else
         sought += bytes_read_or_error;
 
     return sought;
+}
+
+static int ra_read_content_description(AVFormatContext *s)
+{
+    return real_read_content_description(s, 1);
 }
 
 static int get_fourcc(AVFormatContext *s, uint32_t *fourcc)
@@ -622,7 +643,7 @@ static int rm_read_media_properties_header(AVFormatContext *s,
     RMDemuxContext *rm = s->priv_data;
     uint32_t mdpr_tag, content_tag, before_embed, after_embed;
     uint16_t chunk_version;
-    int bytes_read, header_ok;
+    int bytes_read, header_ok, fix_offset;
 
     mdpr_tag = avio_rl32(acpb);
     if (mdpr_tag != RM_MDPR_HEADER) {
@@ -696,15 +717,75 @@ static int rm_read_media_properties_header(AVFormatContext *s,
         printf("Implement me\n");
         header_ok = -1; /* FIXME */
     }
+
     after_embed = avio_tell(acpb);
     if (after_embed != (rmmp->type_specific_size + before_embed)) {
-        av_log(s, AV_LOG_ERROR,
-               "RealMedia: ended up in the wrong place reading MDPR"
-               "type-specific data\n");
-        return AVERROR_INVALIDDATA;
+        fix_offset = after_embed - (rmmp->type_specific_size + before_embed);
+        av_log(s, AV_LOG_WARNING,
+               "RealMedia: ended up in the wrong place reading MDPR "
+               "type-specific data, attempting to recover.\n");
+        avio_seek(acpb, fix_offset, SEEK_CUR);
     }
 
     return header_ok;
+}
+
+/* TODO: share code with rm_read_data_header? */
+static int rm_read_cont_header(AVFormatContext *s)
+{
+    AVIOContext *acpb = s->pb;
+    uint32_t cont_tag;
+    uint16_t chunk_version;
+
+    cont_tag = avio_rl32(acpb);
+    if (cont_tag != RM_CONT_HEADER) {
+        av_log(s, AV_LOG_ERROR,
+               "RealMedia: got %"PRIx32", but expected a CONT section.\n",
+               cont_tag);
+        return AVERROR_INVALIDDATA;
+    }
+
+    avio_rb32(acpb); /* Chunk size */
+
+    chunk_version = avio_rb16(acpb);
+    if (chunk_version != 0) {
+        av_log(s, AV_LOG_ERROR,
+               "RealMedia: expected CONT chunk version 0, got %"PRIx16".\n",
+               chunk_version);
+        return AVERROR_INVALIDDATA;
+    }
+
+    return real_read_content_description(s, 2);
+}
+
+static int rm_read_data_header(AVFormatContext *s, RMDataHeader *rmdh)
+{
+    AVIOContext *acpb = s->pb;
+    uint32_t data_tag;
+    uint16_t chunk_version;
+
+    data_tag = avio_rl32(acpb);
+    if (data_tag != RM_DATA_HEADER) {
+        av_log(s, AV_LOG_ERROR,
+               "RealMedia: got %"PRIx32", but expected a DATA section.\n",
+               data_tag);
+        return AVERROR_INVALIDDATA;
+    }
+
+    rmdh->data_chunk_size = avio_rb32(acpb);
+
+    chunk_version = avio_rb16(acpb);
+    if (chunk_version != 0) {
+        av_log(s, AV_LOG_ERROR,
+               "RealMedia: expected DATA chunk version 0, got %"PRIx16".\n",
+               chunk_version);
+        return AVERROR_INVALIDDATA;
+    }
+
+    rmdh->num_data_packets       = avio_rb32(acpb);
+    rmdh->next_data_chunk_offset = avio_rb32(acpb);
+
+    return 0;
 }
 
 /* TODO: find the sample with rmf chunk size = 10 and a *word* file version */
@@ -712,8 +793,9 @@ static int rm_read_header(AVFormatContext *s)
 {
     AVIOContext *acpb = s->pb;
     RMDemuxContext *rm = s->priv_data;
-    uint32_t rm_tag, file_version, prop_tag;
+    uint32_t rm_tag, file_version, prop_tag, next_tag;
     uint16_t rm_chunk_version, prop_chunk_version;
+    int cont_ok, read_properties_ok;
 
     /* Read the RMF header */
     rm_tag = avio_rl32(acpb);
@@ -772,14 +854,52 @@ static int rm_read_header(AVFormatContext *s)
     rm->suggested_ms_buffer = avio_rb32(acpb);
     rm->first_indx_offset   = avio_rb32(acpb);
     rm->first_data_offset   = avio_rb32(acpb);
-    rm->num_streams         = avio_rl16(acpb);
-    rm->flags               = avio_rl16(acpb);
+    rm->num_streams         = avio_rb16(acpb);
+    rm->flags               = avio_rb16(acpb);
+    next_tag                = avio_rl32(acpb);
 
-    return rm_read_media_properties_header(s, &(rm->rmp[0]));
+    /* Reposition before the upcoming tag */
+    avio_seek(acpb, -4, SEEK_CUR);
+    if (next_tag == RM_CONT_HEADER) {
+        cont_ok = rm_read_cont_header(s);
+        if (!cont_ok)
+            return cont_ok;
+    }
+    //if (next_tag == RM_MDPR_HEADER) {
+    read_properties_ok = rm_read_media_properties_header(s, &(rm->rmp[0]));
+    if (!read_properties_ok)
+        return read_properties_ok; /* preserve the error */
+    //}
+
+    return rm_read_data_header(s, &(rm->rm_data_headers[0]));
 }
 
 static int rm_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
+    AVIOContext *acpb = s->pb;
+    uint16_t packet_version, packet_size, stream_number;
+    uint32_t timestamp_ms;
+    //uint8_t packet_group, flags;
+
+    packet_version = avio_rb16(acpb);
+    packet_size    = avio_rb16(acpb);
+    stream_number  = avio_rb16(acpb);
+    timestamp_ms   = avio_rb32(acpb);
+
+    if (packet_version == 0) {
+        /*packet_group =*/ avio_r8(acpb);
+        /*flags        =*/ avio_r8(acpb);
+        return av_get_packet(acpb, pkt, packet_size);
+    } else if (packet_version == 1) {
+        printf("Implement me.\n"); /* TODO FIXME */
+        return AVERROR_INVALIDDATA;
+    } else {
+        av_log(s, AV_LOG_ERROR,
+               "RealMedia: Send sample. Unknown packet_version %"PRIx16".\n",
+               packet_version);
+        return AVERROR_INVALIDDATA;
+    }
+
     return 0;
 }
 
