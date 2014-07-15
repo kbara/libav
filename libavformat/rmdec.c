@@ -114,6 +114,7 @@ typedef struct RMDemuxContext {
     uint32_t prop_file_duration, suggested_ms_buffer;
     uint32_t first_indx_offset, first_data_offset;
     uint16_t num_streams, flags;
+    RADemuxContext rm_ra_dc;
     RMMediaProperties rmp[24]; /* FIXME TODO: make this dynamic. */
 } RMDemuxContext;
 
@@ -417,21 +418,12 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size)
     return ra4_sanity_check_headers(rast->interleaver_id, rast, st);
 }
 
-static int ra_read_header(AVFormatContext *s)
+/* This is called by ra_read_header, as well as for embedded
+ * RealAudio streams within RealMedia files */
+static int ra_read_header_with(AVFormatContext *s, RADemuxContext *ra)
 {
     AVIOContext *acpb = s->pb;
-    RADemuxContext *ra = s->priv_data;
-    uint32_t tag;
     uint16_t version, header_size;
-
-    /* Do a Little-Endian read here, unlike almost everywhere else. */
-    tag = avio_rl32(acpb);
-    if (tag != RA_HEADER) {
-        av_log(s, AV_LOG_ERROR,
-               "RealAudio: bad magic %"PRIx32", expected %"PRIx32".\n",
-               tag, RA_HEADER);
-        return AVERROR_INVALIDDATA;
-    }
 
     version = avio_rb16(acpb);
     ra->version = version;
@@ -445,6 +437,23 @@ static int ra_read_header(AVFormatContext *s)
         av_log(s, AV_LOG_ERROR, "RealAudio: Unsupported version %"PRIx16"\n", version);
         return AVERROR_INVALIDDATA;
     }
+}
+
+static int ra_read_header(AVFormatContext *s)
+{
+    AVIOContext *acpb = s->pb;
+    RADemuxContext *ra = s->priv_data;
+    uint32_t tag;
+
+    tag = avio_rl32(acpb);
+    if (tag != RA_HEADER) {
+        av_log(s, AV_LOG_ERROR,
+               "RealAudio: bad magic %"PRIx32", expected %"PRIx32".\n",
+               tag, RA_HEADER);
+        return AVERROR_INVALIDDATA;
+    }
+
+    return ra_read_header_with(s, ra);
 }
 
 /* Exactly the same as in the old code */
@@ -610,9 +619,10 @@ static int rm_read_media_properties_header(AVFormatContext *s,
                                            RMMediaProperties *rmmp)
 {
     AVIOContext *acpb = s->pb;
-    uint32_t mdpr_tag;
+    RMDemuxContext *rm = s->priv_data;
+    uint32_t mdpr_tag, content_tag, before_embed, after_embed;
     uint16_t chunk_version;
-    int bytes_read;
+    int bytes_read, header_ok;
 
     mdpr_tag = avio_rl32(acpb);
     if (mdpr_tag != RM_MDPR_HEADER) {
@@ -658,6 +668,7 @@ static int rm_read_media_properties_header(AVFormatContext *s,
     }
 
     rmmp->type_specific_size = avio_rb32(acpb);
+    /*
     if (rmmp->type_specific_size > 0) {
         rmmp->type_specific_data = av_mallocz(rmmp->type_specific_size);
         if (!rmmp->type_specific_data) {
@@ -675,8 +686,25 @@ static int rm_read_media_properties_header(AVFormatContext *s,
         }
     } else
         rmmp->type_specific_data = NULL;
+    */
+    before_embed = avio_tell(acpb);
 
-    return 0;
+    content_tag = avio_rl32(acpb);
+    if (content_tag == RA_HEADER) {
+        header_ok = ra_read_header_with(s, &(rm->rm_ra_dc));
+    } else {
+        printf("Implement me\n");
+        header_ok = -1; /* FIXME */
+    }
+    after_embed = avio_tell(acpb);
+    if (after_embed != (rmmp->type_specific_size + before_embed)) {
+        av_log(s, AV_LOG_ERROR,
+               "RealMedia: ended up in the wrong place reading MDPR"
+               "type-specific data\n");
+        return AVERROR_INVALIDDATA;
+    }
+
+    return header_ok;
 }
 
 /* TODO: find the sample with rmf chunk size = 10 and a *word* file version */
