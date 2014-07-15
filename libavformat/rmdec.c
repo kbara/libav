@@ -24,12 +24,16 @@
  * https://common.helixcommunity.org/2003/HCS_SDK_r5/htmfiles/rmff.htm
  *
  * This is largely a from-scratch rewrite, but borrows RAv4 interleaving
- * from Fabrice Bellard's code; it is not well-documented.
+ * from the old implementation; it is not well-documented.
  *
  * Naming convention:
  * ra_ = RealAudio
  * rm_ = RealMedia (potentially with video)
  * real_ = both.
+ */
+
+/* Numbers are big-endian, while strings are most naturally seen as
+ * little-endian in these formats.
  */
 
 #include <inttypes.h>
@@ -44,6 +48,14 @@
 /* Header for RealAudio 1.0 (.ra version 3
  * and RealAudio 2.0 file (.ra version 4). */
 #define RA_HEADER MKTAG('.', 'r', 'a', '\xfd')
+/* Header for RealMedia files */
+#define RM_HEADER MKTAG('.', 'R', 'M', 'F')
+/* Headers for sections of RealMedia files */
+#define RM_PROP_HEADER MKTAG('P', 'R', 'O', 'P')
+#define RM_MDPR_HEADER MKTAG('M', 'D', 'P', 'R')
+#define RM_CONT_HEADER MKTAG('C', 'O', 'N', 'T')
+#define RM_DATA_HEADER MKTAG('D', 'A', 'T', 'A')
+#define RM_INDX_HEADER MKTAG('I', 'N', 'D', 'X')
 
 /* The relevant VSELP format has 159-bit frames, stored in 20 bytes */
 #define RA144_PKT_SIZE 20
@@ -54,7 +66,7 @@
 /* An internal signature in RealAudio 2.0 (.ra version 4) headers */
 #define RA4_SIGNATURE MKTAG('.', 'r', 'a', '4')
 
-/* Deinterleaving constants from Fabrice Bellard's code */
+/* Deinterleaving constants from the old rmdec implementation */
 #define DEINT_ID_GENR MKTAG('g', 'e', 'n', 'r') ///< interleaving for Cooker/ATRAC
 #define DEINT_ID_INT0 MKTAG('I', 'n', 't', '0') ///< no interleaving needed
 #define DEINT_ID_INT4 MKTAG('I', 'n', 't', '4') ///< interleaving for 28.8
@@ -79,8 +91,30 @@ typedef struct RADemuxContext {
     int pending_audio_packets;
 } RADemuxContext;
 
-/* Demux context for RealMedia (audio+video) */
+/* RealMedia files have one Media Property header per stream */
+typedef struct RMMediaProperties {
+    uint16_t stream_number;
+    uint32_t chunk_size, max_bitrate, avg_bitrate, largest_pkt, avg_pkt;
+    uint32_t stream_start_offset, preroll, duration, type_specific_size;
+    uint8_t desc_size, mime_size;
+    uint8_t stream_desc[256];
+    uint8_t mime_type[256];
+    uint8_t *type_specific_data;
+} RMMediaProperties;
+
+/* Demux context for RealMedia (audio+video).
+   This includes information from the RMF and PROP headers,
+   and pointers to the per-stream Media Properties headers. */
 typedef struct RMDemuxContext {
+    /* RMF header information */
+    uint32_t header_chunk_size, num_headers;
+    /* The rest is from the PROP header */
+    uint32_t prop_chunk_size, prop_max_bitrate, prop_avg_bitrate;
+    uint32_t prop_largest_pkt, prop_avg_pkt, prop_num_pkts;
+    uint32_t prop_file_duration, suggested_ms_buffer;
+    uint32_t first_indx_offset, first_data_offset;
+    uint16_t num_streams, flags;
+    RMMediaProperties rmp[24]; /* FIXME TODO: make this dynamic. */
 } RMDemuxContext;
 
 
@@ -553,14 +587,167 @@ static int ra_read_close(AVFormatContext *s)
     return 0;
 }
 
+/* The header should start with .RMF, and file and chunk version 0 */
 static int rm_probe(AVProbeData *p)
 {
+    if (MKTAG(p->buf[0], p->buf[1], p->buf[2], p->buf[3]) != RM_HEADER)
+        return 0;
+    /* The dword chunk size is only non-zero in byte 8 in all known samples */
+    if ((p->buf[4] != 0) || (p->buf[5] != 0) || (p->buf[6] != 0))
+        return 0;
+    /* The word chunk version is always zero */
+    if ((p->buf[8] != 0) || (p->buf[9]) != 0)
+        return 0;
+    /* The dword file version is always zero */
+    if ((p->buf[10] != 0) || (p->buf[11] != 0) ||
+        (p->buf[12] != 0) || (p->buf[13]) != 0)
+        return 0;
+    /* It seems to be a RealMedia file */
+    return AVPROBE_SCORE_MAX;
+}
+
+static int rm_read_media_properties_header(AVFormatContext *s,
+                                           RMMediaProperties *rmmp)
+{
+    AVIOContext *acpb = s->pb;
+    uint32_t mdpr_tag;
+    uint16_t chunk_version;
+    int bytes_read;
+
+    mdpr_tag = avio_rl32(acpb);
+    if (mdpr_tag != RM_MDPR_HEADER) {
+        av_log(s, AV_LOG_ERROR,
+               "RealMedia: got %"PRIx32", but expected an MDPR section.\n",
+               mdpr_tag);
+        return AVERROR_INVALIDDATA;
+    }
+
+    rmmp->chunk_size = avio_rb32(acpb);
+
+    chunk_version = avio_rb16(acpb);
+    if (chunk_version != 0) {
+        av_log(s, AV_LOG_ERROR,
+               "RealMedia: expected MDPR chunk version 0, got %"PRIx16".\n",
+               chunk_version);
+        return AVERROR_INVALIDDATA;
+    }
+
+    rmmp->stream_number       = avio_rb16(acpb);
+    rmmp->max_bitrate         = avio_rb32(acpb);
+    rmmp->avg_bitrate         = avio_rb32(acpb);
+    rmmp->largest_pkt         = avio_rb32(acpb);
+    rmmp->avg_pkt             = avio_rb32(acpb);
+    rmmp->stream_start_offset = avio_rb32(acpb);
+    rmmp->preroll             = avio_rb32(acpb);
+    rmmp->duration            = avio_rb32(acpb);
+
+    rmmp->desc_size = avio_r8(acpb);
+
+    bytes_read = avio_read(acpb, rmmp->stream_desc, rmmp->desc_size);
+    if (bytes_read < rmmp->desc_size) {
+        av_log(s, AV_LOG_ERROR,
+               "RealMedia: failed to read stream description.\n");
+        return bytes_read;
+    }
+
+    rmmp->mime_size = avio_r8(acpb);
+    bytes_read = avio_read(acpb, rmmp->mime_type, rmmp->mime_size);
+    if (bytes_read < rmmp->mime_size) {
+        av_log(s, AV_LOG_ERROR, "RealMedia: failed to read mime type.\n");
+        return bytes_read;
+    }
+
+    rmmp->type_specific_size = avio_rb32(acpb);
+    if (rmmp->type_specific_size > 0) {
+        rmmp->type_specific_data = av_mallocz(rmmp->type_specific_size);
+        if (!rmmp->type_specific_data) {
+            av_log(s, AV_LOG_ERROR,
+                   "RealMedia: failed to allocate type-specific memory.\n");
+            return AVERROR(ENOMEM);
+        }
+        bytes_read = avio_read(acpb,
+                               rmmp->type_specific_data,
+                               rmmp->type_specific_size);
+        if (bytes_read < rmmp->type_specific_size) {
+            av_log(s, AV_LOG_ERROR,
+                   "RealMedia: failed to read type-specific data.\n");
+            return bytes_read;
+        }
+    } else
+        rmmp->type_specific_data = NULL;
+
     return 0;
 }
 
+/* TODO: find the sample with rmf chunk size = 10 and a *word* file version */
 static int rm_read_header(AVFormatContext *s)
 {
-    return 0;
+    AVIOContext *acpb = s->pb;
+    RMDemuxContext *rm = s->priv_data;
+    uint32_t rm_tag, file_version, prop_tag;
+    uint16_t rm_chunk_version, prop_chunk_version;
+
+    /* Read the RMF header */
+    rm_tag = avio_rl32(acpb);
+    if (rm_tag != RM_HEADER) {
+        av_log(s, AV_LOG_ERROR,
+               "RealMedia: bad magic %"PRIx32", expected %"PRIx32".\n",
+               rm_tag, RM_HEADER);
+        return AVERROR_INVALIDDATA;
+    }
+
+    rm->header_chunk_size = avio_rb32(acpb);
+
+    rm_chunk_version = avio_rb16(acpb);
+    if (rm_chunk_version != 0) {
+        av_log(s, AV_LOG_ERROR,
+               "RealMedia: expected RMF chunk version 0, got %"PRIx16".\n",
+               rm_chunk_version);
+        return AVERROR_INVALIDDATA;
+    }
+
+    file_version = avio_rb32(acpb);
+    if (file_version != 0) {
+        av_log(s, AV_LOG_ERROR,
+               "RealMedia: expected file version 0, got %"PRIx32".\n",
+               file_version);
+        return AVERROR_INVALIDDATA;
+    }
+
+    rm->num_headers = avio_rb32(acpb);
+
+    /* Read the PROP header */
+    prop_tag = avio_rl32(acpb);
+    if (prop_tag != RM_PROP_HEADER) {
+        av_log(s, AV_LOG_ERROR,
+               "RealMedia: got %"PRIx32", but expected a PROP section.\n",
+               prop_tag);
+        return AVERROR_INVALIDDATA;
+    }
+
+    /* 'Typically' 0x32 */
+    rm->prop_chunk_size = avio_rb32(acpb);
+    prop_chunk_version = avio_rb16(acpb);
+    if (prop_chunk_version != 0) {
+        av_log(s, AV_LOG_ERROR,
+               "RealMedia: expected PROP chunk version 0, got %"PRIx16".\n",
+               prop_chunk_version);
+        return AVERROR_INVALIDDATA;
+    }
+
+    rm->prop_max_bitrate    = avio_rb32(acpb);
+    rm->prop_avg_bitrate    = avio_rb32(acpb);
+    rm->prop_largest_pkt    = avio_rb32(acpb);
+    rm->prop_avg_pkt        = avio_rb32(acpb);
+    rm->prop_num_pkts       = avio_rb32(acpb);
+    rm->prop_file_duration  = avio_rb32(acpb);
+    rm->suggested_ms_buffer = avio_rb32(acpb);
+    rm->first_indx_offset   = avio_rb32(acpb);
+    rm->first_data_offset   = avio_rb32(acpb);
+    rm->num_streams         = avio_rl16(acpb);
+    rm->flags               = avio_rl16(acpb);
+
+    return rm_read_media_properties_header(s, &(rm->rmp[0]));
 }
 
 static int rm_read_packet(AVFormatContext *s, AVPacket *pkt)
