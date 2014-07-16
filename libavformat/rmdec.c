@@ -720,7 +720,7 @@ static int rm_read_media_properties_header(AVFormatContext *s,
 
     after_embed = avio_tell(acpb);
     if (after_embed != (rmmp->type_specific_size + before_embed)) {
-        fix_offset = after_embed - (rmmp->type_specific_size + before_embed);
+        fix_offset = (rmmp->type_specific_size + before_embed) - after_embed;
         av_log(s, AV_LOG_WARNING,
                "RealMedia: ended up in the wrong place reading MDPR "
                "type-specific data, attempting to recover.\n");
@@ -867,7 +867,7 @@ static int rm_read_header(AVFormatContext *s)
     }
     //if (next_tag == RM_MDPR_HEADER) {
     read_properties_ok = rm_read_media_properties_header(s, &(rm->rmp[0]));
-    if (!read_properties_ok)
+    if (read_properties_ok)
         return read_properties_ok; /* preserve the error */
     //}
 
@@ -878,7 +878,7 @@ static int rm_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     AVIOContext *acpb = s->pb;
     uint16_t packet_version, packet_size, stream_number;
-    uint32_t timestamp_ms;
+    uint32_t timestamp_ms, header_bytes;
     //uint8_t packet_group, flags;
 
     packet_version = avio_rb16(acpb);
@@ -889,7 +889,8 @@ static int rm_read_packet(AVFormatContext *s, AVPacket *pkt)
     if (packet_version == 0) {
         /*packet_group =*/ avio_r8(acpb);
         /*flags        =*/ avio_r8(acpb);
-        return av_get_packet(acpb, pkt, packet_size);
+        header_bytes = 12; /* Read so far */
+        return av_get_packet(acpb, pkt, packet_size - header_bytes);
     } else if (packet_version == 1) {
         printf("Implement me.\n"); /* TODO FIXME */
         return AVERROR_INVALIDDATA;
