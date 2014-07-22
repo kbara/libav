@@ -89,6 +89,7 @@ typedef struct RADemuxContext {
     AVStream *avst;
     struct RA4Stream rast;
     int pending_audio_packets;
+    int audio_packets_read;
 } RADemuxContext;
 
 /* RealMedia files have one Media Property header per stream */
@@ -501,11 +502,15 @@ static int ra_retrieve_cache(RADemuxContext *ra, AVStream *st, RA4Stream *rast,
        rather than reference-counted buffers is reasonable. */
     if (ra->pending_audio_packets) {
         av_new_packet(pkt, st->codec->block_align);
-        memcpy(pkt->data,
+        /*memcpy(pkt->data,
                rast->pkt_contents + st->codec->block_align *
                     (rast->subpacket_h * rast->frame_size /
                     st->codec->block_align - ra->pending_audio_packets),
-                st->codec->block_align);
+                st->codec->block_align); */
+        memcpy(pkt->data,
+               rast->pkt_contents + st->codec->block_align *
+                (ra->audio_packets_read - ra->pending_audio_packets),
+               st->codec->block_align);
         /* TODO: are the next two lines necessary? */
         pkt->flags = 0; /* TODO: revisit this when using timestamps */
         pkt->stream_index = st->index;
@@ -530,6 +535,11 @@ static int ra_read_interleaved_packets(AVFormatContext *s,  AVPacket *pkt)
     if (ra->pending_audio_packets) {
         return ra_retrieve_cache(ra, st, rast, pkt);
     }
+
+    /* Clear the stored packet counts, so there's no chance of having stale ones
+       if an error occurs during this function. */
+    ra->pending_audio_packets = 0;
+    ra->audio_packets_read = 0;
 
     expected_packets = rast->subpacket_h * rast->frame_size /
         st->codec->block_align;
@@ -569,6 +579,7 @@ static int ra_read_interleaved_packets(AVFormatContext *s,  AVPacket *pkt)
         }
     }
     ra->pending_audio_packets = FFMIN(expected_packets, read_packets);
+    ra->audio_packets_read = read_packets;
     return ra_retrieve_cache(ra, st, rast, pkt);
 }
 
