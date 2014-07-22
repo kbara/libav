@@ -521,7 +521,7 @@ static int ra_retrieve_cache(RADemuxContext *ra, AVStream *st, RA4Stream *rast,
 static int ra_read_interleaved_packets(AVFormatContext *s,  AVPacket *pkt)
 {
     RADemuxContext *ra = s->priv_data;
-    AVStream *st = s->streams[0]; /* TODO: revisit for video */
+    AVStream *st = ra->avst;
     RA4Stream *rast = &(ra->rast);
     int expected_packets, read_packets, read;
     size_t interleaved_buffer_size;
@@ -577,7 +577,7 @@ static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     RADemuxContext *ra = s->priv_data;
     RA4Stream *rast = &(ra->rast);
-    AVStream *st = s->streams[0]; /* TODO: revisit for video */
+    AVStream *st = ra->avst;
     int len, get_pkt;
 
     if (ra->version == 3)
@@ -594,7 +594,7 @@ static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
             len *= 2;
         get_pkt = av_get_packet(s->pb, pkt, len);
         /* Swap the bytes iff it's ac3 - check done in rm_ac3_swap_bytes */
-        ra_ac3_swap_bytes(s->streams[0], pkt);
+        ra_ac3_swap_bytes(st, pkt);
         return get_pkt;
     } else if ((rast->interleaver_id == DEINT_ID_VBRF) ||
         (rast->interleaver_id == DEINT_ID_VBRS)) {
