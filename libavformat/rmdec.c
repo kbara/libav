@@ -123,10 +123,11 @@ typedef struct RMDemuxContext {
     uint32_t prop_file_duration, suggested_ms_buffer;
     uint32_t first_indx_offset, first_data_offset;
     uint16_t num_streams, flags;
-    RADemuxContext rm_ra_dc;
+    RADemuxContext rm_ra_dc[24]; /* FIXME TODO */
     RMMediaProperties rmp[24]; /* FIXME TODO: make this dynamic. */
     RMDataHeader rm_data_headers[24]; /* FIXME TODO: make this dynamic. */
 } RMDemuxContext;
+
 
 
 static int ra_probe(AVProbeData *p)
@@ -584,9 +585,8 @@ static int ra_read_interleaved_packets(AVFormatContext *s,  AVPacket *pkt)
 }
 
 
-static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
+static int ra_read_packet_with(AVFormatContext *s, AVPacket *pkt, RADemuxContext *ra)
 {
-    RADemuxContext *ra = s->priv_data;
     RA4Stream *rast = &(ra->rast);
     AVStream *st = ra->avst;
     int len, get_pkt;
@@ -617,6 +617,11 @@ static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
             "RealAudio: internal error, unknown interleaver\n");
         return AVERROR_INVALIDDATA;
     }
+}
+
+static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
+{
+    return ra_read_packet_with(s, pkt, s->priv_data);
 }
 
 static int ra_read_close(AVFormatContext *s)
@@ -652,6 +657,7 @@ static int rm_read_media_properties_header(AVFormatContext *s,
 {
     AVIOContext *acpb = s->pb;
     RMDemuxContext *rm = s->priv_data;
+    AVStream *st;
     uint32_t mdpr_tag, content_tag, before_embed, after_embed;
     uint16_t chunk_version;
     int bytes_read, header_ok, fix_offset;
@@ -674,6 +680,10 @@ static int rm_read_media_properties_header(AVFormatContext *s,
         return AVERROR_INVALIDDATA;
     }
 
+    st = avformat_new_stream(s, NULL);
+    if (!st)
+        return AVERROR(ENOMEM);
+
     rmmp->stream_number       = avio_rb16(acpb);
     rmmp->max_bitrate         = avio_rb32(acpb);
     rmmp->avg_bitrate         = avio_rb32(acpb);
@@ -684,6 +694,11 @@ static int rm_read_media_properties_header(AVFormatContext *s,
     rmmp->duration            = avio_rb32(acpb);
 
     rmmp->desc_size = avio_r8(acpb);
+
+    st->id = rmmp->stream_number;
+    st->start_time = rmmp->stream_start_offset;
+    st->duration = rmmp->duration;
+    st->codec->codec_type = AVMEDIA_TYPE_DATA;
 
     bytes_read = avio_read(acpb, rmmp->stream_desc, rmmp->desc_size);
     if (bytes_read < rmmp->desc_size) {
@@ -723,7 +738,8 @@ static int rm_read_media_properties_header(AVFormatContext *s,
 
     content_tag = avio_rl32(acpb);
     if (content_tag == RA_HEADER) {
-        header_ok = ra_read_header_with(s, &(rm->rm_ra_dc));
+        header_ok = ra_read_header_with(s,
+                                        &(rm->rm_ra_dc[rmmp->stream_number]));
     } else {
         printf("Implement me\n");
         header_ok = -1; /* FIXME */
@@ -887,7 +903,9 @@ static int rm_read_header(AVFormatContext *s)
 
 static int rm_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
+    RMDemuxContext *rm = s->priv_data;
     AVIOContext *acpb = s->pb;
+    //AVStream *st;
     uint16_t packet_version, packet_size, stream_number;
     uint32_t timestamp_ms, header_bytes;
     //uint8_t packet_group, flags;
@@ -897,11 +915,18 @@ static int rm_read_packet(AVFormatContext *s, AVPacket *pkt)
     stream_number  = avio_rb16(acpb);
     timestamp_ms   = avio_rb32(acpb);
 
+    printf("Stream number: %x\n", stream_number);
+
+    /* TODO: bounds-check the stream number! */
+    //st = s->streams[stream_number];
+
     if (packet_version == 0) {
         /*packet_group =*/ avio_r8(acpb);
         /*flags        =*/ avio_r8(acpb);
-        header_bytes = 12; /* Read so far */
-        return av_get_packet(acpb, pkt, packet_size - header_bytes);
+        //header_bytes = 12; /* Read so far */
+        //return av_get_packet(acpb, pkt, packet_size - header_bytes);
+        /* TODO: make this conditional on it being RA... */
+        return ra_read_packet_with(s, pkt, &(rm->rm_ra_dc[stream_number]));
     } else if (packet_version == 1) {
         printf("Implement me.\n"); /* TODO FIXME */
         return AVERROR_INVALIDDATA;
