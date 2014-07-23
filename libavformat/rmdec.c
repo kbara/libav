@@ -201,10 +201,6 @@ static int ra4_sanity_check_headers(uint32_t interleaver_id, RA4Stream *rast, AV
     return 0;
 }
 
-/* Return value > 0: bytes read.
- * Return value < 0: error.
- * Return value == 0: can't happen.
- */
 static int real_read_content_description_field(AVFormatContext *s,
                                              const char *desc,
                                              int length_bytes)
@@ -223,40 +219,31 @@ static int real_read_content_description_field(AVFormatContext *s,
     avio_read(acpb, val, len);
     av_dict_set(&s->metadata, desc, val, 0);
     av_free(val);
-    return len + 1; /* +1 due to reading one byte representing length */
+    return 0;
 }
 
 
 static int real_read_content_description(AVFormatContext *s, int length_bytes)
 {
-    int sought = 0;
     int bytes_read_or_error;
     int lb = length_bytes;
 
     bytes_read_or_error = real_read_content_description_field(s, "title", lb);
     if (bytes_read_or_error < 0)
         return bytes_read_or_error;
-    else
-        sought += bytes_read_or_error;
     bytes_read_or_error = real_read_content_description_field(s, "author", lb);
     if (bytes_read_or_error < 0)
         return bytes_read_or_error;
-    else
-        sought += bytes_read_or_error;
     bytes_read_or_error = real_read_content_description_field(s,
                                                               "copyright",
                                                               lb);
     if (bytes_read_or_error < 0)
         return bytes_read_or_error;
-    else
-        sought += bytes_read_or_error;
     bytes_read_or_error = real_read_content_description_field(s, "comment", lb);
     if (bytes_read_or_error < 0)
         return bytes_read_or_error;
-    else
-        sought += bytes_read_or_error;
 
-    return sought;
+    return 0;
 }
 
 static int ra_read_content_description(AVFormatContext *s)
@@ -280,11 +267,10 @@ static int get_fourcc(AVFormatContext *s, uint32_t *fourcc)
     return 0;
 }
 
-static int ra_read_header_v3(AVFormatContext *s, uint16_t header_size)
+static int ra_read_header_v3(AVFormatContext *s, uint16_t header_size,
+                             RADemuxContext *ra, AVStream *st)
 {
     AVIOContext *acpb = s->pb;
-    RADemuxContext *ra = s->priv_data;
-    AVStream *st = NULL;
 
     int content_description_size, is_fourcc_ok;
     const int fourcc_bytes = 6;
@@ -323,11 +309,6 @@ static int ra_read_header_v3(AVFormatContext *s, uint16_t header_size)
     }
 
     /* Reading all the header data has gone ok; initialiaze codec info. */
-    st = avformat_new_stream(s, NULL);
-    if (!st) {
-        return AVERROR(ENOMEM);
-    }
-
     ra->avst = st;
     st->codec->channel_layout = AV_CH_LAYOUT_MONO;
     st->codec->channels       = 1;
@@ -338,11 +319,10 @@ static int ra_read_header_v3(AVFormatContext *s, uint16_t header_size)
     return 0;
 }
 
-static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size)
+static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size,
+                             RADemuxContext *ra, AVStream *st)
 {
     AVIOContext *acpb = s->pb;
-    AVStream *st = NULL;
-    RADemuxContext *ra = s->priv_data;
     RA4Stream *rast = &(ra->rast);
 
     int content_description_size, is_fourcc_ok;
@@ -351,9 +331,6 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size)
     uint16_t version2;
     uint8_t interleaver_id_len;
 
-    st = avformat_new_stream(s, NULL);
-    if (!st)
-        return AVERROR(ENOMEM);
     ra->avst = st;
 
     ra4_signature = avio_rl32(acpb);
@@ -443,7 +420,8 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size)
 
 /* This is called by ra_read_header, as well as for embedded
  * RealAudio streams within RealMedia files */
-static int ra_read_header_with(AVFormatContext *s, RADemuxContext *ra)
+static int ra_read_header_with(AVFormatContext *s, RADemuxContext *ra,
+                               AVStream *st)
 {
     AVIOContext *acpb = s->pb;
     uint16_t version, header_size;
@@ -453,20 +431,22 @@ static int ra_read_header_with(AVFormatContext *s, RADemuxContext *ra)
     header_size = avio_rb16(acpb); /* Excluding bytes until now */
 
     if (version == 3)
-        return ra_read_header_v3(s, header_size);
+        return ra_read_header_v3(s, header_size, ra, st);
     else if (version == 4)
-        return ra_read_header_v4(s, header_size);
+        return ra_read_header_v4(s, header_size, ra, st);
     else {
         av_log(s, AV_LOG_ERROR, "RealAudio: Unsupported version %"PRIx16"\n", version);
         return AVERROR_INVALIDDATA;
     }
 }
 
+/* This handles pure RealAudio files */
 static int ra_read_header(AVFormatContext *s)
 {
     AVIOContext *acpb = s->pb;
     RADemuxContext *ra = s->priv_data;
     uint32_t tag;
+    AVStream *st;
 
     tag = avio_rl32(acpb);
     if (tag != RA_HEADER) {
@@ -476,7 +456,11 @@ static int ra_read_header(AVFormatContext *s)
         return AVERROR_INVALIDDATA;
     }
 
-    return ra_read_header_with(s, ra);
+    st = avformat_new_stream(s, NULL);
+    if (!st)
+        return AVERROR(ENOMEM);
+
+    return ra_read_header_with(s, ra, st);
 }
 
 /* Exactly the same as in the old code */
@@ -739,7 +723,8 @@ static int rm_read_media_properties_header(AVFormatContext *s,
     content_tag = avio_rl32(acpb);
     if (content_tag == RA_HEADER) {
         header_ok = ra_read_header_with(s,
-                                        &(rm->rm_ra_dc[rmmp->stream_number]));
+                                        &(rm->rm_ra_dc[rmmp->stream_number]),
+                                        s->streams[rmmp->stream_number]);
     } else {
         printf("Implement me\n");
         header_ok = -1; /* FIXME */
@@ -822,7 +807,7 @@ static int rm_read_header(AVFormatContext *s)
     RMDemuxContext *rm = s->priv_data;
     uint32_t rm_tag, file_version, prop_tag, next_tag;
     uint16_t rm_chunk_version, prop_chunk_version;
-    int cont_ok, read_properties_ok;
+    int header_ret;
 
     /* Read the RMF header */
     rm_tag = avio_rl32(acpb);
@@ -883,22 +868,40 @@ static int rm_read_header(AVFormatContext *s)
     rm->first_data_offset   = avio_rb32(acpb);
     rm->num_streams         = avio_rb16(acpb);
     rm->flags               = avio_rb16(acpb);
-    next_tag                = avio_rl32(acpb);
 
-    /* Reposition before the upcoming tag */
-    avio_seek(acpb, -4, SEEK_CUR);
-    if (next_tag == RM_CONT_HEADER) {
-        cont_ok = rm_read_cont_header(s);
-        if (!cont_ok)
-            return cont_ok;
+
+    /* Read the tags; return 0 on success, !0 early on failure */
+    for (;;) {
+        next_tag = avio_rl32(acpb);
+        printf("next tag: %x\n", next_tag);
+        /* FIXME: the tag is being preserved as an extra check */
+        avio_seek(acpb, -4, SEEK_CUR); /* REMOVE THIS */
+        switch(next_tag) {
+        case RM_CONT_HEADER:
+            printf("cont\n");
+            header_ret = rm_read_cont_header(s);
+            if (header_ret)
+                return header_ret;
+            break;
+        case RM_MDPR_HEADER:
+            printf("mdpr\n");
+            header_ret = rm_read_media_properties_header(s, &(rm->rmp[0]));
+            if (header_ret)
+                return header_ret;
+            break;
+        case RM_DATA_HEADER:
+            printf("data\n");
+            header_ret = rm_read_data_header(s, &(rm->rm_data_headers[0]));
+            if (header_ret)
+                return header_ret;
+            break;
+        default:
+            /* There's not another tag right away */
+            //avio_seek(acpb, -4, SEEK_CUR);
+            printf("Done with headers\n");
+            return 0;
+        }
     }
-    //if (next_tag == RM_MDPR_HEADER) {
-    read_properties_ok = rm_read_media_properties_header(s, &(rm->rmp[0]));
-    if (read_properties_ok)
-        return read_properties_ok; /* preserve the error */
-    //}
-
-    return rm_read_data_header(s, &(rm->rm_data_headers[0]));
 }
 
 static int rm_read_packet(AVFormatContext *s, AVPacket *pkt)
