@@ -117,12 +117,16 @@ typedef struct RMDataHeader {
 typedef struct RMDemuxContext {
     /* RMF header information */
     uint32_t header_chunk_size, num_headers;
-    /* The rest is from the PROP header */
+    /* Information from the PROP header */
     uint32_t prop_chunk_size, prop_max_bitrate, prop_avg_bitrate;
     uint32_t prop_largest_pkt, prop_avg_pkt, prop_num_pkts;
     uint32_t prop_file_duration, suggested_ms_buffer;
     uint32_t first_indx_offset, first_data_offset;
     uint16_t num_streams, flags;
+    /* Information related to the current packet */
+    uint16_t cur_pkt_size, cur_stream_number, cur_pkt_version;
+    int cur_pkt_start;
+    uint32_t cur_timestamp_ms;
     RADemuxContext rm_ra_dc[24]; /* FIXME TODO */
     RMMediaProperties rmp[24]; /* FIXME TODO: make this dynamic. */
     RMDataHeader rm_data_headers[24]; /* FIXME TODO: make this dynamic. */
@@ -272,21 +276,20 @@ static int ra_read_header_v3(AVFormatContext *s, uint16_t header_size,
 {
     AVIOContext *acpb = s->pb;
 
-    int content_description_size, is_fourcc_ok;
-    const int fourcc_bytes = 6;
+    int content_description_size, is_fourcc_ok, start_pos;
     uint32_t fourcc_tag, header_bytes_read;
 
+    start_pos = avio_tell(acpb);
     avio_skip(acpb, 10); /* unknown */
     avio_skip(acpb, 4); /* Data size: currently unused by this code */
-    header_bytes_read = 14; /* Header bytes read since the header_size field */
 
     content_description_size = ra_read_content_description(s);
     if (content_description_size < 0) {
         av_log(s, AV_LOG_ERROR, "RealAudio: error reading header metadata.\n");
         return content_description_size; /* Preserve the error code */
     }
-    header_bytes_read += content_description_size;
 
+    header_bytes_read = avio_tell(acpb) - start_pos;
     /* An unknown byte, followed by FourCC data, is optionally present */
     if (header_bytes_read != header_size) { /* Looks like there is FourCC data */
         avio_skip(acpb, 1); /* Unknown byte */
@@ -299,7 +302,7 @@ static int ra_read_header_v3(AVFormatContext *s, uint16_t header_size,
                     fourcc_tag, RA3_FOURCC);
             return AVERROR_INVALIDDATA;
         }
-        header_bytes_read += fourcc_bytes;
+        header_bytes_read = avio_tell(acpb) - start_pos;
         if (header_bytes_read != header_size) {
             av_log(s, AV_LOG_ERROR,
                 "RealAudio: read %"PRIu32" header bytes, expected %"PRIu16".\n",
@@ -508,9 +511,9 @@ static int ra_retrieve_cache(RADemuxContext *ra, AVStream *st, RA4Stream *rast,
 /* This was part of ff_rm_parse_packet */
 /* Warning: dealing with subpackets has been made local,
    and there is explicit looping; the control flow is different */
-static int ra_read_interleaved_packets(AVFormatContext *s,  AVPacket *pkt)
+static int ra_read_interleaved_packets(AVFormatContext *s, AVPacket *pkt,
+                                       RADemuxContext *ra)
 {
-    RADemuxContext *ra = s->priv_data;
     AVStream *st = ra->avst;
     RA4Stream *rast = &(ra->rast);
     int expected_packets, read_packets, read;
@@ -582,7 +585,7 @@ static int ra_read_packet_with(AVFormatContext *s, AVPacket *pkt, RADemuxContext
     len = (rast->coded_frame_size * rast->subpacket_h) / 2;
 
     if (rast->interleaver_id == DEINT_ID_INT4) {
-        return ra_read_interleaved_packets(s, pkt);
+        return ra_read_interleaved_packets(s, pkt, ra);
     /* Simple case: no interleaving */
     } else if (rast->interleaver_id == DEINT_ID_INT0) {
         if (st->codec->codec_id == AV_CODEC_ID_AC3)
@@ -869,6 +872,9 @@ static int rm_read_header(AVFormatContext *s)
     rm->num_streams         = avio_rb16(acpb);
     rm->flags               = avio_rb16(acpb);
 
+    /* Initialize these before reading packets */
+    rm->cur_pkt_start = 0;
+    rm->cur_pkt_size  = 0;
 
     /* Read the tags; return 0 on success, !0 early on failure */
     for (;;) {
@@ -908,39 +914,35 @@ static int rm_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     RMDemuxContext *rm = s->priv_data;
     AVIOContext *acpb = s->pb;
-    //AVStream *st;
-    uint16_t packet_version, packet_size, stream_number;
-    uint32_t timestamp_ms, header_bytes;
+    int cur_pos = avio_tell(acpb);
     //uint8_t packet_group, flags;
 
-    packet_version = avio_rb16(acpb);
-    packet_size    = avio_rb16(acpb);
-    stream_number  = avio_rb16(acpb);
-    timestamp_ms   = avio_rb32(acpb);
+    /* Is this in the middle of an RM-level data packet? */
+    if (rm->cur_pkt_start + rm->cur_pkt_size <= cur_pos) {
+        rm->cur_pkt_start = cur_pos;
+        rm->cur_pkt_version = avio_rb16(acpb);
+        rm->cur_pkt_size    = avio_rb16(acpb);
+        rm->cur_stream_number  = avio_rb16(acpb);
+        rm->cur_timestamp_ms   = avio_rb32(acpb);
 
-    printf("Stream number: %x\n", stream_number);
-
-    /* TODO: bounds-check the stream number! */
-    //st = s->streams[stream_number];
-
-    if (packet_version == 0) {
-        /*packet_group =*/ avio_r8(acpb);
-        /*flags        =*/ avio_r8(acpb);
-        //header_bytes = 12; /* Read so far */
-        //return av_get_packet(acpb, pkt, packet_size - header_bytes);
-        /* TODO: make this conditional on it being RA... */
-        return ra_read_packet_with(s, pkt, &(rm->rm_ra_dc[stream_number]));
-    } else if (packet_version == 1) {
-        printf("Implement me.\n"); /* TODO FIXME */
-        return AVERROR_INVALIDDATA;
-    } else {
-        av_log(s, AV_LOG_ERROR,
-               "RealMedia: Send sample. Unknown packet_version %"PRIx16".\n",
-               packet_version);
-        return AVERROR_INVALIDDATA;
+        printf("Stream number: %x\n", rm->cur_stream_number);
+        /* TODO: bounds-check the stream number */
+        if (rm->cur_pkt_version == 0) {
+            avio_r8(acpb); /* packet_group */
+            avio_r8(acpb); /* flags */
+        }  else if (rm->cur_pkt_version == 1) {
+            printf("Implement me.\n"); /* TODO FIXME */
+            return AVERROR_INVALIDDATA;
+        } else {
+            av_log(s, AV_LOG_ERROR,
+                   "RealMedia: Send sample. Unknown packet_version %"PRIx16".\n",
+                   rm->cur_pkt_version);
+            return AVERROR_INVALIDDATA;
+        }
     }
 
-    return 0;
+    /* TODO: make this conditional on it being RA... */
+    return ra_read_packet_with(s, pkt, &(rm->rm_ra_dc[rm->cur_stream_number]));
 }
 
 static int rm_read_close(AVFormatContext *s)
