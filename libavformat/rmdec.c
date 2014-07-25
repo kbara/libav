@@ -77,6 +77,7 @@
 /* pkt_size and len are signed ints because that's what functions
    such as avio_read take - it's questionable. */
 typedef struct Interleaver {
+    uint32_t tag;
     int (*get_packet)(AVFormatContext *s, int stream_num, AVPacket *pkt,
                       int pkt_size);
     int (*read_packet)(AVFormatContext *s, uint8_t *buf, int len);
