@@ -243,23 +243,21 @@ static int real_read_content_description_field(AVFormatContext *s,
 
 static int real_read_content_description(AVFormatContext *s, int length_bytes)
 {
-    int bytes_read_or_error;
+    int read_ret;
     int lb = length_bytes;
 
-    bytes_read_or_error = real_read_content_description_field(s, "title", lb);
-    if (bytes_read_or_error < 0)
-        return bytes_read_or_error;
-    bytes_read_or_error = real_read_content_description_field(s, "author", lb);
-    if (bytes_read_or_error < 0)
-        return bytes_read_or_error;
-    bytes_read_or_error = real_read_content_description_field(s,
-                                                              "copyright",
-                                                              lb);
-    if (bytes_read_or_error < 0)
-        return bytes_read_or_error;
-    bytes_read_or_error = real_read_content_description_field(s, "comment", lb);
-    if (bytes_read_or_error < 0)
-        return bytes_read_or_error;
+    read_ret = real_read_content_description_field(s, "title", lb);
+    if (read_ret < 0)
+        return read_ret;
+    read_ret = real_read_content_description_field(s, "author", lb);
+    if (read_ret < 0)
+        return read_ret;
+    read_ret = real_read_content_description_field(s, "copyright", lb);
+    if (read_ret < 0)
+        return read_ret;
+    read_ret = real_read_content_description_field(s, "comment", lb);
+    if (read_ret < 0)
+        return read_ret;
 
     return 0;
 }
