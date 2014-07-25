@@ -98,10 +98,10 @@ typedef struct RADemuxContext {
     int audio_packets_read;
 } RADemuxContext;
 
-typedef struct RAInRealMediaDemuxContext {
+typedef struct RAInRealMedia {
     RADemuxContext radc;
     Interleaver interleaver;
-} RAInRealMediaDemuxContext;
+} RAInRealMedia;
 
 /* TODO: decide how to handle overlap with RADemuxContext */
 typedef struct RMPacketCache {
@@ -119,6 +119,7 @@ typedef struct RMMediaProperties {
     uint8_t stream_desc[256];
     uint8_t mime_type[256];
     uint8_t *type_specific_data;
+    int is_realaudio; /* Not explicitly in the header, but useful */
 } RMMediaProperties;
 
 /* RealMedia files have one or more DATA headers, which contain
@@ -133,9 +134,9 @@ typedef struct RMDataHeader {
  * the relevant AVStream.
  */
 typedef struct RMStream {
-    int is_realaudio;
     RMMediaProperties rmmp;
     RMPacketCache rmpc;
+    RAInRealMedia ra_in_rm; /* Unused if not RA */
 } RMStream;
 
 /* Demux context for RealMedia (audio+video).
@@ -155,11 +156,7 @@ typedef struct RMDemuxContext {
     int cur_pkt_start;
     uint32_t cur_timestamp_ms;
     RMDataHeader cur_data_header;
-    //RMMediaProperties **rmp; /* Indexed by stream number */
-    //RMPacketCache **pkt_caches;    /* Indexed by stream number */
-    RMStream **rmstreams;
 } RMDemuxContext;
-
 
 
 static int ra_probe(AVProbeData *p)
@@ -755,13 +752,14 @@ static int rm_read_media_properties_header(AVFormatContext *s,
 
     content_tag = avio_rl32(acpb);
     if (content_tag == RA_HEADER) {
-        RAInRealMediaDemuxContext *rarmdc;
+        RMStream *rmst;
         st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
-        st->priv_data = av_mallocz(sizeof(RAInRealMediaDemuxContext));
+        st->priv_data = av_mallocz(sizeof(RMStream));
         if (!st->priv_data)
             return AVERROR(ENOMEM);
-        rarmdc = st->priv_data;
-        header_ret = ra_read_header_with(s, &(rarmdc->radc), st);
+        rmst = st->priv_data;
+        header_ret = ra_read_header_with(s, &(rmst->ra_in_rm.radc), st);
+        rmmp->is_realaudio = 1;
     } else {
         printf("Implement me\n");
         header_ret = -1; /* FIXME */
@@ -839,63 +837,29 @@ static int rm_read_data_header(AVFormatContext *s, RMDataHeader *rmdh)
 
 static int initialize_streams(AVFormatContext *s, int num_streams)
 {
-    int i;
+    int i, j, err = 0;
     AVStream *st;
 
     for (i = 0; i < num_streams; i++) {
         st = avformat_new_stream(s, NULL);
         if (!st)
-            return AVERROR(ENOMEM);
-    }
-    return 0;
-}
-
-
-static void free_rmstreams(RMDemuxContext *rm, int num_streams)
-{
-    int i;
-
-    for (i = 0; i < num_streams; i++)
-        av_free(rm->rmstreams[i]);
-
-    av_free(rm->rmstreams);
-}
-
-static int initialize_rmstreams(RMDemuxContext *rm)
-{
-    int i;
-
-    rm->rmstreams = av_mallocz(rm->num_streams * sizeof(RMStream *));
-    if (!rm->rmstreams)
-        return AVERROR(ENOMEM);
-    for (i = 0; i < rm->num_streams; i++)
-    {
-        rm->rmstreams[i] = av_mallocz(sizeof(RMStream));
-        if (!rm->rmstreams[i]) {
-            free_rmstreams(rm, i);
-            return AVERROR(ENOMEM);
+            err = 1;
+        else {
+            st->priv_data = av_mallocz(sizeof(RMStream));
+            if (!st->priv_data)
+                err = 1;
+        }
+        if (err) {
+            for (j = 0; j < i; j++) {
+                av_free(s->streams[j]->priv_data);
+                av_free(s->streams[j]);
+                return AVERROR(ENOMEM);
+            }
         }
     }
     return 0;
 }
 
-/* Dynamically initialize based on the number of streams.
- * Succeed entirely, or clean up and return failure.
- * This does not free AVStreams, by design.
- */
-static int initialize_demux_context(AVFormatContext *s, RMDemuxContext *rm)
-{
-    int init_ret;
-    init_ret = initialize_streams(s, rm->num_streams);
-    if (init_ret) /* Initializing streams failed */
-        return init_ret; /* Preserve why */
-
-    init_ret = initialize_rmstreams(rm);
-    if (init_ret)
-        return init_ret;
-
-    return 0;
-}
 
 /* TODO: find the sample with rmf chunk size = 10 and a *word* file version */
 static int rm_read_header(AVFormatContext *s)
@@ -970,7 +934,7 @@ static int rm_read_header(AVFormatContext *s)
     rm->cur_pkt_start = 0;
     rm->cur_pkt_size  = 0;
 
-    init_ret = initialize_demux_context(s, rm);
+    init_ret = initialize_streams(s, rm->num_streams);
     if (init_ret) /* Setting up failed */
         return init_ret; /* Preserve why */
 
@@ -999,8 +963,11 @@ static int rm_read_header(AVFormatContext *s)
             if (header_ret) /* Reading media properties failed */
                 return header_ret;
             else {
-                size_t n = sizeof(RMMediaProperties);
-                memcpy(&(rm->rmstreams[rmmp.stream_number]->rmmp), &rmmp, n);
+                AVStream *st = s->streams[rmmp.stream_number];
+                RMStream *rmst = st->priv_data;
+                RMMediaProperties *target_rmmp = &(rmst->rmmp);
+
+                memcpy(target_rmmp, &rmmp, sizeof(RMMediaProperties));
             }
             break;
         case RM_DATA_HEADER:
@@ -1058,8 +1025,13 @@ static int rm_read_packet(AVFormatContext *s, AVPacket *pkt)
     st = s->streams[rm->cur_stream_number];
 
     if (st->codec->codec_type == AVMEDIA_TYPE_AUDIO) {
-        /* TODO: make this conditional on it being RA... */
-        return ra_read_packet_with(s, pkt, st->priv_data);
+        RMStream *rmst = st->priv_data;
+        RMMediaProperties *rmmp = &(rmst->rmmp);
+        if (!rmmp->is_realaudio) {
+            printf("Handle non-RealAudio audio streams.\n");
+            return AVERROR_INVALIDDATA; /* TODO FIXME */
+        }
+        return ra_read_packet_with(s, pkt, &(rmst->ra_in_rm.radc));
     } else { /* FIXME TODO */
         printf("Implement non-audio stream support\n");
         return -1;
@@ -1068,8 +1040,6 @@ static int rm_read_packet(AVFormatContext *s, AVPacket *pkt)
 
 static int rm_read_close(AVFormatContext *s)
 {
-    RMDemuxContext *rm = s->priv_data;
-    free_rmstreams(rm, rm->num_streams);
     return 0;
 }
 
