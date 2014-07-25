@@ -106,6 +106,13 @@ typedef struct RAInRealMediaDemuxContext {
     Interleaver interleaver;
 } RAInRealMediaDemuxContext;
 
+/* TODO: decide how to handle overlap with RADemuxContext */
+typedef struct RMPacketCache {
+    int pending_packets;
+    int packets_read;
+    uint8_t *pkt_buffer;
+} RMPacketCache;
+
 /* RealMedia files have one Media Property header per stream */
 typedef struct RMMediaProperties {
     uint16_t stream_number;
@@ -143,7 +150,7 @@ typedef struct RMDemuxContext {
     uint32_t cur_timestamp_ms;
     RMDataHeader cur_data_header;
     RMMediaProperties **rmp; /* Indexed by stream number */
-    uint8_t **pkt_caches; /* Indexed by stream number */
+    RMPacketCache **pkt_caches;    /* Indexed by stream number */
 } RMDemuxContext;
 
 
@@ -850,7 +857,7 @@ static int initialize_media_properties(RMDemuxContext *rm)
 {
     int i;
 
-    rm->rmp = av_malloc(rm->num_streams * sizeof(RMMediaProperties *));
+    rm->rmp = av_mallocz(rm->num_streams * sizeof(RMMediaProperties *));
     if (!rm->rmp)
         return AVERROR(ENOMEM);
 
@@ -864,6 +871,58 @@ static int initialize_media_properties(RMDemuxContext *rm)
     return 0;
 }
 
+/* TODO: semi-merge with free_media_properties? */
+static void free_packet_caches(RMDemuxContext *rm, int num_streams)
+{
+    int i;
+
+    for (i = 0; i < num_streams; i++)
+        av_free(rm->pkt_caches[i]);
+
+    av_free(rm->pkt_caches);
+}
+
+static int initialize_packet_caches(RMDemuxContext *rm)
+{
+    int i;
+
+    rm->pkt_caches = av_mallocz(rm->num_streams * sizeof(RMPacketCache *));
+    for (i = 0; i < rm->num_streams; i++)
+    {
+        rm->pkt_caches[i] = av_mallocz(sizeof(RMPacketCache));
+        if (!rm->pkt_caches[i]) {
+            free_packet_caches(rm, i);
+            return AVERROR(ENOMEM);
+        }
+    }
+    return 0;
+}
+
+/* Dynamically initialize based on the number of streams.
+ * Succeed entirely, or clean up and return failure.
+ * This does not free streams, by design.
+ */
+static int initialize_demux_context(AVFormatContext *s, RMDemuxContext *rm)
+{
+    int init_ret;
+    init_ret = initialize_streams(s, rm->num_streams);
+    if (init_ret) /* Initializing streams failed */
+        return init_ret; /* Preserve why */
+
+    init_ret = initialize_media_properties(rm);
+    if (init_ret)
+        return init_ret;
+
+    init_ret = initialize_packet_caches(rm);
+    if (init_ret)
+    {
+        free_media_properties(rm, rm->num_streams);
+        return init_ret;
+    }
+
+    return 0;
+}
+
 /* TODO: find the sample with rmf chunk size = 10 and a *word* file version */
 static int rm_read_header(AVFormatContext *s)
 {
@@ -871,7 +930,7 @@ static int rm_read_header(AVFormatContext *s)
     RMDemuxContext *rm = s->priv_data;
     uint32_t rm_tag, file_version, prop_tag, next_tag;
     uint16_t rm_chunk_version, prop_chunk_version;
-    int header_ret, stream_init_ret, media_prop_init_ret;
+    int init_ret;
 
     /* Read the RMF header */
     rm_tag = avio_rl32(acpb);
@@ -937,16 +996,13 @@ static int rm_read_header(AVFormatContext *s)
     rm->cur_pkt_start = 0;
     rm->cur_pkt_size  = 0;
 
-    stream_init_ret = initialize_streams(s, rm->num_streams);
-    if (stream_init_ret) /* Initializing streams failed */
-        return stream_init_ret; /* Preserve why */
-
-    media_prop_init_ret = initialize_media_properties(rm);
-    if (media_prop_init_ret)
-        return media_prop_init_ret;
+    init_ret = initialize_demux_context(s, rm);
+    if (init_ret) /* Setting up failed */
+        return init_ret; /* Preserve why */
 
     /* Read the tags; return 0 on success, !0 early on failure */
     for (;;) {
+        int header_ret;
         next_tag = avio_rl32(acpb);
         printf("next tag: %x\n", next_tag);
         /* FIXME: the tag is being preserved as an extra check */
@@ -1031,6 +1087,7 @@ static int rm_read_close(AVFormatContext *s)
 {
     RMDemuxContext *rm = s->priv_data;
     free_media_properties(rm, rm->num_streams);
+    free_packet_caches(rm, rm->num_streams);
     return 0;
 }
 
