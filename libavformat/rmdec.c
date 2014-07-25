@@ -74,6 +74,14 @@
 #define DEINT_ID_VBRF MKTAG('v', 'b', 'r', 'f') ///< VBR case for AAC
 #define DEINT_ID_VBRS MKTAG('v', 'b', 'r', 's') ///< VBR case for AAC
 
+/* pkt_size and len are signed ints because that's what functions
+   such as avio_read take - it's questionable. */
+typedef struct Interleaver {
+    int (*get_packet)(AVFormatContext *s, int stream_num, AVPacket *pkt,
+                      int pkt_size);
+    int (*read_packet)(AVFormatContext *s, uint8_t *buf, int len);
+} Interleaver;
+
 typedef struct RA4Stream {
     uint8_t *pkt_contents;
     uint32_t coded_frame_size, interleaver_id, fourcc_tag;
@@ -91,6 +99,11 @@ typedef struct RADemuxContext {
     int pending_audio_packets;
     int audio_packets_read;
 } RADemuxContext;
+
+typedef struct RAInRealMediaDemuxContext {
+    RADemuxContext radc;
+    Interleaver interleaver;
+} RAInRealMediaDemuxContext;
 
 /* RealMedia files have one Media Property header per stream */
 typedef struct RMMediaProperties {
@@ -127,9 +140,9 @@ typedef struct RMDemuxContext {
     uint16_t cur_pkt_size, cur_stream_number, cur_pkt_version;
     int cur_pkt_start;
     uint32_t cur_timestamp_ms;
-    RADemuxContext rm_ra_dc[24]; /* FIXME TODO */
-    RMMediaProperties rmp[24]; /* FIXME TODO: make this dynamic. */
-    RMDataHeader rm_data_headers[24]; /* FIXME TODO: make this dynamic. */
+    RMDataHeader cur_data_header;
+    RMMediaProperties **rmp; /* Indexed by stream number */
+    uint8_t **pkt_caches; /* Indexed by stream number */
 } RMDemuxContext;
 
 
@@ -647,7 +660,7 @@ static int rm_read_media_properties_header(AVFormatContext *s,
     AVStream *st;
     uint32_t mdpr_tag, content_tag, before_embed, after_embed;
     uint16_t chunk_version;
-    int bytes_read, header_ok, fix_offset;
+    int bytes_read, header_ret, fix_offset;
 
     mdpr_tag = avio_rl32(acpb);
     if (mdpr_tag != RM_MDPR_HEADER) {
@@ -667,10 +680,6 @@ static int rm_read_media_properties_header(AVFormatContext *s,
         return AVERROR_INVALIDDATA;
     }
 
-    st = avformat_new_stream(s, NULL);
-    if (!st)
-        return AVERROR(ENOMEM);
-
     rmmp->stream_number       = avio_rb16(acpb);
     rmmp->max_bitrate         = avio_rb32(acpb);
     rmmp->avg_bitrate         = avio_rb32(acpb);
@@ -679,9 +688,17 @@ static int rm_read_media_properties_header(AVFormatContext *s,
     rmmp->stream_start_offset = avio_rb32(acpb);
     rmmp->preroll             = avio_rb32(acpb);
     rmmp->duration            = avio_rb32(acpb);
+    rmmp->desc_size           = avio_r8(acpb);
 
-    rmmp->desc_size = avio_r8(acpb);
+    /* RealMedia Stream numbers are zero-indexed */
+    if (rmmp->stream_number >= rm->num_streams) {
+        av_log(s, AV_LOG_ERROR,
+               "RealMedia: Invalid stream %"PRIu32": max is %"PRIu32".\n",
+               rmmp->stream_number, rm->num_streams - 1);
+        return AVERROR_INVALIDDATA;
+    }
 
+    st = s->streams[rmmp->stream_number];
     st->id = rmmp->stream_number;
     st->start_time = rmmp->stream_start_offset;
     st->duration = rmmp->duration;
@@ -725,12 +742,16 @@ static int rm_read_media_properties_header(AVFormatContext *s,
 
     content_tag = avio_rl32(acpb);
     if (content_tag == RA_HEADER) {
-        header_ok = ra_read_header_with(s,
-                                        &(rm->rm_ra_dc[rmmp->stream_number]),
-                                        s->streams[rmmp->stream_number]);
+        RAInRealMediaDemuxContext *rarmdc;
+        st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
+        st->priv_data = av_mallocz(sizeof(RAInRealMediaDemuxContext));
+        if (!st->priv_data)
+            return AVERROR(ENOMEM);
+        rarmdc = st->priv_data;
+        header_ret = ra_read_header_with(s, &(rarmdc->radc), st);
     } else {
         printf("Implement me\n");
-        header_ok = -1; /* FIXME */
+        header_ret = -1; /* FIXME */
     }
 
     after_embed = avio_tell(acpb);
@@ -742,7 +763,7 @@ static int rm_read_media_properties_header(AVFormatContext *s,
         avio_seek(acpb, fix_offset, SEEK_CUR);
     }
 
-    return header_ok;
+    return header_ret;
 }
 
 /* TODO: share code with rm_read_data_header? */
@@ -803,6 +824,47 @@ static int rm_read_data_header(AVFormatContext *s, RMDataHeader *rmdh)
     return 0;
 }
 
+static int initialize_streams(AVFormatContext *s, int num_streams)
+{
+    int i;
+    AVStream *st;
+
+    for (i = 0; i < num_streams; i++) {
+        st = avformat_new_stream(s, NULL);
+        if (!st)
+            return AVERROR(ENOMEM);
+    }
+    return 0;
+}
+
+static void free_media_properties(RMDemuxContext *rm, int num_streams)
+{
+    int i;
+
+    for (i = 0; i < num_streams; i++)
+        av_free(rm->rmp[i]);
+
+    av_free(rm->rmp);
+}
+
+static int initialize_media_properties(RMDemuxContext *rm)
+{
+    int i;
+
+    rm->rmp = av_malloc(rm->num_streams * sizeof(RMMediaProperties *));
+    if (!rm->rmp)
+        return AVERROR(ENOMEM);
+
+    for (i = 0; i < rm->num_streams; i++) {
+        rm->rmp[i] = av_mallocz(sizeof(RMMediaProperties));
+        if (!rm->rmp[i]) {
+            free_media_properties(rm, i);
+            return AVERROR(ENOMEM);
+        }
+    }
+    return 0;
+}
+
 /* TODO: find the sample with rmf chunk size = 10 and a *word* file version */
 static int rm_read_header(AVFormatContext *s)
 {
@@ -810,7 +872,7 @@ static int rm_read_header(AVFormatContext *s)
     RMDemuxContext *rm = s->priv_data;
     uint32_t rm_tag, file_version, prop_tag, next_tag;
     uint16_t rm_chunk_version, prop_chunk_version;
-    int header_ret;
+    int header_ret, stream_init_ret, media_prop_init_ret;
 
     /* Read the RMF header */
     rm_tag = avio_rl32(acpb);
@@ -876,6 +938,14 @@ static int rm_read_header(AVFormatContext *s)
     rm->cur_pkt_start = 0;
     rm->cur_pkt_size  = 0;
 
+    stream_init_ret = initialize_streams(s, rm->num_streams);
+    if (stream_init_ret) /* Initializing streams failed */
+        return stream_init_ret; /* Preserve why */
+
+    media_prop_init_ret = initialize_media_properties(rm);
+    if (media_prop_init_ret)
+        return media_prop_init_ret;
+
     /* Read the tags; return 0 on success, !0 early on failure */
     for (;;) {
         next_tag = avio_rl32(acpb);
@@ -891,13 +961,13 @@ static int rm_read_header(AVFormatContext *s)
             break;
         case RM_MDPR_HEADER:
             printf("mdpr\n");
-            header_ret = rm_read_media_properties_header(s, &(rm->rmp[0]));
+            header_ret = rm_read_media_properties_header(s, rm->rmp[0]);
             if (header_ret)
                 return header_ret;
             break;
         case RM_DATA_HEADER:
             printf("data\n");
-            header_ret = rm_read_data_header(s, &(rm->rm_data_headers[0]));
+            header_ret = rm_read_data_header(s, &(rm->cur_data_header));
             if (header_ret)
                 return header_ret;
             break;
@@ -913,20 +983,26 @@ static int rm_read_header(AVFormatContext *s)
 static int rm_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     RMDemuxContext *rm = s->priv_data;
-    AVIOContext *acpb = s->pb;
+    AVIOContext *acpb  = s->pb;
+    AVStream *st;
     int cur_pos = avio_tell(acpb);
     //uint8_t packet_group, flags;
 
     /* Is this in the middle of an RM-level data packet? */
     if (rm->cur_pkt_start + rm->cur_pkt_size <= cur_pos) {
-        rm->cur_pkt_start = cur_pos;
-        rm->cur_pkt_version = avio_rb16(acpb);
-        rm->cur_pkt_size    = avio_rb16(acpb);
+        rm->cur_pkt_start      = cur_pos;
+        rm->cur_pkt_version    = avio_rb16(acpb);
+        rm->cur_pkt_size       = avio_rb16(acpb);
         rm->cur_stream_number  = avio_rb16(acpb);
         rm->cur_timestamp_ms   = avio_rb32(acpb);
 
         printf("Stream number: %x\n", rm->cur_stream_number);
-        /* TODO: bounds-check the stream number */
+        if (rm->cur_stream_number >= rm->num_streams) {
+            av_log(s, AV_LOG_ERROR,
+                    "RealMedia: Invalid stream %"PRIu32": max is %"PRIu32".\n",
+                    rm->cur_stream_number, rm->num_streams - 1);
+            return AVERROR_INVALIDDATA;
+        }
         if (rm->cur_pkt_version == 0) {
             avio_r8(acpb); /* packet_group */
             avio_r8(acpb); /* flags */
@@ -941,12 +1017,21 @@ static int rm_read_packet(AVFormatContext *s, AVPacket *pkt)
         }
     }
 
-    /* TODO: make this conditional on it being RA... */
-    return ra_read_packet_with(s, pkt, &(rm->rm_ra_dc[rm->cur_stream_number]));
+    st = s->streams[rm->cur_stream_number];
+
+    if (st->codec->codec_type == AVMEDIA_TYPE_AUDIO) {
+        /* TODO: make this conditional on it being RA... */
+        return ra_read_packet_with(s, pkt, st->priv_data);
+    } else { /* FIXME TODO */
+        printf("Implement non-audio stream support\n");
+        return -1;
+    }
 }
 
 static int rm_read_close(AVFormatContext *s)
 {
+    RMDemuxContext *rm = s->priv_data;
+    free_media_properties(rm, rm->num_streams);
     return 0;
 }
 
