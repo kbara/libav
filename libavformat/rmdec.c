@@ -82,13 +82,18 @@ typedef struct Interleaver {
     int (*get_packet)(AVFormatContext *s, AVStream *st, AVPacket *pkt,
                       int pkt_size);
     int (*postread_packet)(RMStream *rmst, int bytes_read);
+    void *priv_data;
 } Interleaver;
+
+typedef struct Int4State {
+    int subpkt_fs, subpkt_cfs;
+} Int4State;
 
 typedef struct RA4Stream {
     uint8_t *pkt_contents;
     uint32_t coded_frame_size, interleaver_id, fourcc_tag;
     uint16_t codec_flavor, subpacket_h, frame_size, subpacket_size, sample_size;
-    int full_pkt_size, subpacket_pp;
+    int full_pkt_size, subpkt_size, subpacket_pp;
 } RA4Stream;
 
 /* Demux context for RealAudio */
@@ -134,7 +139,7 @@ typedef struct RMDataHeader {
  * the relevant AVStream.
  */
 typedef struct RMStream {
-    int full_pkt_size;
+    int full_pkt_size, subpkt_size;
     int subpacket_pp; /* Subpackets per full packet. */
     RMMediaProperties rmmp;
     RMPacketCache rmpc;
@@ -198,9 +203,11 @@ static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
         rast->subpacket_pp = rast->subpacket_h * rast->frame_size /
             st->codec->block_align;
         rast->full_pkt_size = rast->subpacket_pp * rast->coded_frame_size;
+        rast->subpkt_size   = rast->full_pkt_size / rast->subpacket_pp;
         break;
     case DEINT_ID_INT0:
         rast->full_pkt_size = (rast->coded_frame_size * rast->subpacket_h) / 2;
+        rast->subpkt_size   = rast->full_pkt_size;
         break;
     default:
             printf("Implement full_pkt_size for another interleaver.\n");
@@ -691,23 +698,6 @@ static int rm_probe(AVProbeData *p)
 }
 
 
-/* This should only be called after rm_read_*_packet! */
-static int rm_get_buffered_packet(RMStream *rmst, AVPacket *pkt, int pkt_size)
-{
-    RMPacketCache *rmpc = &(rmst->rmpc);
-    if (!rmpc->pending_packets) {
-        return -1; /* Internal error */
-    }
-
-    if (rmpc->pkt_buf + rmpc->buf_size < rmpc->next_pkt_start + pkt_size) {
-        return -2; /* Attempt to read too much */
-    }
-
-    av_new_packet(pkt, pkt_size);
-    memcpy(pkt->data, rmpc->next_pkt_start, pkt_size);
-    rmpc->pending_packets--;
-    return 0;
-}
 
 static int rm_read_data_chunk_header(AVFormatContext *s)
 {
@@ -857,14 +847,16 @@ static int rm_get_generic_packet(AVFormatContext *s, AVStream *st,
 {
     RMStream *rmst      = st->priv_data;
     RMPacketCache *rmpc = &(rmst->rmpc);
-    int ret;
 
     if (!rmpc->pending_packets) {
         return -1; /* No packet pending on this stream. */
     }
-    ret = rm_get_buffered_packet(rmst, pkt, pkt_size);
-    if (ret < 0)
-        return ret;
+    if (rmpc->pkt_buf + rmpc->buf_size < rmpc->next_pkt_start + pkt_size)
+        return -2; /* Attempt to read too much. */
+
+    av_new_packet(pkt, pkt_size);
+    memcpy(pkt->data, rmpc->next_pkt_start, pkt_size);
+    rmpc->pending_packets--;
     rmpc->next_pkt_start += pkt_size;
     return 0;
 }
@@ -873,27 +865,42 @@ static int rm_postread_int4_packet(RMStream *rmst, int bytes_read)
 {
     RMPacketCache *rmpc = &(rmst->rmpc);
 
-    rmpc->packets_read = rmst->subpacket_pp * bytes_read / rmst->full_pkt_size;
+    /* Full packets, not subpackets */
+    rmpc->packets_read    =  bytes_read / rmst->full_pkt_size;
     rmpc->pending_packets = rmpc->packets_read;
     return 0;
 }
 
-/* TODO FIXME: instead of explicitly deinterleaving the buffer,
- * return the subpacket at the correct offset.
- */
 static int rm_get_int4_packet(AVFormatContext *s, AVStream *st,
                               AVPacket *pkt, int pkt_size)
 {
-    RMStream *rmst      = st->priv_data;
-    RMPacketCache *rmpc = &(rmst->rmpc);
+    RMStream *rmst       = st->priv_data;
+    RMPacketCache *rmpc  = &(rmst->rmpc);
+    RA4Stream *rast      = &(rmst->radc.rast);
+    Int4State *int4state = rmst->interleaver.priv_data;
+    uint8_t *pkt_start;
 
-    //if (!rmpc->pending_packets) {
-    //    rm_read_int4_packet(s, st, rmpc->pkt_buf, 0);
-    //}
+    assert(rast->coded_frame_size == pkt_size);
+    pkt_start = rmpc->next_pkt_start +
+                    int4state->subpkt_fs * 2 * rast->frame_size +
+                    int4state->subpkt_cfs * rast->coded_frame_size;
 
-    av_new_packet(pkt, pkt_size);
-    memcpy(pkt->data, rmpc->next_pkt_start, pkt_size);
-    // update next_pkt_start..
+    av_new_packet(pkt, rmst->subpkt_size);
+    memcpy(pkt->data, pkt_start, rmst->subpkt_size);
+
+    int4state->subpkt_fs++;
+    if (int4state->subpkt_fs >= rast->subpacket_h / 2) {
+        int4state->subpkt_fs = 0;
+        int4state->subpkt_cfs++;
+        if (int4state->subpkt_cfs >= rast->subpacket_h)
+            int4state->subpkt_cfs = 0;
+    }
+    if ((int4state->subpkt_fs == 0) && (int4state->subpkt_cfs == 0)) {
+        rmpc->next_pkt_start += rmst->full_pkt_size;
+        rmpc->pending_packets--;
+        printf("Pending packets: %i\n", rmpc->pending_packets);
+    }
+
     return 0;
 }
 
@@ -1009,13 +1016,18 @@ static int rm_read_media_properties_header(AVFormatContext *s,
         }
         rmmp->is_realaudio = 1;
         rmst->full_pkt_size = rast->full_pkt_size;
+        rmst->subpkt_size   = rast->subpkt_size;
         rmst->subpacket_pp  = rast->subpacket_pp;
 
         switch(rast->interleaver_id) {
         case DEINT_ID_INT4:
+            inter->priv_data = av_mallocz(sizeof(Int4State));
+            if (!inter->priv_data)
+                return AVERROR(ENOMEM);
             inter->interleaver_tag = rast->interleaver_id;
             inter->get_packet = rm_get_int4_packet;
             inter->postread_packet = rm_postread_int4_packet;
+            break;
         default:
             inter->interleaver_tag = 0; /* generic */
             inter->get_packet = rm_get_generic_packet;
@@ -1260,7 +1272,7 @@ static int rm_read_cached_packet(AVFormatContext *s, AVPacket *pkt)
         RMPacketCache *rmpc = &(rmst->rmpc);
         if (rmpc->pending_packets) {
             Interleaver *inter      = &(rmst->interleaver);
-            return inter->get_packet(s, st, pkt, rmst->full_pkt_size);
+            return inter->get_packet(s, st, pkt, rmst->subpkt_size);
         }
     }
     return -1; /* No queued packets */
