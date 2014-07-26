@@ -80,7 +80,7 @@ typedef struct Interleaver {
     uint32_t interleaver_tag;
     int (*get_packet)(AVFormatContext *s, AVStream *st, AVPacket *pkt,
                       int pkt_size);
-    int (*read_packet)(AVFormatContext *s, uint8_t *buf, int len);
+    int (*postread_packet)(RMStream *rmst, int bytes_read);
 } Interleaver;
 
 typedef struct RA4Stream {
@@ -100,7 +100,7 @@ typedef struct RADemuxContext {
 
 typedef struct RAInRealMedia {
     RADemuxContext radc;
-    Interleaver interleaver;
+    Interleaver interleaver; /* DEPRECATED, this is going to move. */
 } RAInRealMedia;
 
 /* TODO: decide how to handle overlap with RADemuxContext */
@@ -136,9 +136,11 @@ typedef struct RMDataHeader {
  * the relevant AVStream.
  */
 typedef struct RMStream {
+    int full_pkt_size;
     RMMediaProperties rmmp;
     RMPacketCache rmpc;
-    RAInRealMedia ra_in_rm; /* Unused if not RA */
+    RAInRealMedia ra_in_rm; /* Unused if not RA, DEPRECATED */
+    Interleaver interleaver;
 } RMStream;
 
 /* Demux context for RealMedia (audio+video).
@@ -694,7 +696,6 @@ static int rm_get_buffered_packet(RMStream *rmst, AVPacket *pkt, int pkt_size)
     av_new_packet(pkt, pkt_size);
     memcpy(pkt->data, rmpc->next_pkt_start, pkt_size);
     rmpc->pending_packets--;
-    rmpc->next_pkt_start += pkt_size;
     return 0;
 }
 
@@ -736,11 +737,12 @@ static int rm_read_data_chunk_header(AVFormatContext *s)
  * one or more of them. The stream is determined by the data.
  * The buffer information is found in the stream's private data.
  */
-static int rm_read_buffer(AVFormatContext *s, int full_pkt_size)
+static int rm_cache_packet(AVFormatContext *s)
 {
     AVStream *st;
     RMStream *rmst;
     RMPacketCache *rmpc;
+    Interleaver *inter;
     RMDemuxContext *rm = s->priv_data;
     int read_so_far    = 0;
     uint8_t *read_to   = NULL;
@@ -768,15 +770,16 @@ static int rm_read_buffer(AVFormatContext *s, int full_pkt_size)
             return -1;
         }
 
-        if (FFMAX(full_pkt_size, chunk_size) %
-            FFMIN(full_pkt_size, chunk_size)) {
-            printf("Messy... handle this.\n");
-            return -1;
-        }
         st         = s->streams[rm->cur_stream_number];
         rmst       = st->priv_data;
         rmpc       = &(rmst->rmpc);
         chunk_size = rm->cur_pkt_size;
+
+        if (FFMAX(rmst->full_pkt_size, chunk_size) %
+            FFMIN(rmst->full_pkt_size, chunk_size)) {
+            printf("Messy... handle this.\n");
+            return -1;
+        }
 
         if (!read_to) {
             read_to = rmpc->pkt_buf;
@@ -785,7 +788,7 @@ static int rm_read_buffer(AVFormatContext *s, int full_pkt_size)
         }
 
         /* TODO: lcm? */
-        data_bytes_to_read = FFMAX(full_pkt_size, chunk_size);
+        data_bytes_to_read = FFMAX(rmst->full_pkt_size, chunk_size);
         if (data_bytes_to_read > rmpc->buf_size)
         {
             printf("There's not enough space to read that...\n");
@@ -801,7 +804,7 @@ static int rm_read_buffer(AVFormatContext *s, int full_pkt_size)
         bytes_read += read_ret;
         read_so_far += chunk_size;
         read_to += chunk_size;
-    } while (read_so_far < FFMAX(full_pkt_size, chunk_size));
+    } while (read_so_far < data_bytes_to_read);
 
     /*if (full_pkt_size > chunk_size) {
         rmpc->packets_read = 1;
@@ -810,23 +813,28 @@ static int rm_read_buffer(AVFormatContext *s, int full_pkt_size)
     }
     rmpc->pending_packets = rmpc->packets_read;*/
 
-    if (bytes_read != full_pkt_size) {
+    if (bytes_read != rmst->full_pkt_size) {
         av_log(s, AV_LOG_ERROR, "RealMedia: read the wrong amount.\n");
         return AVERROR(EIO);
     }
+
+    inter = &(rmst->interleaver);
+    inter->postread_packet(rmst, bytes_read);
     rmpc->next_pkt_start = rmpc->pkt_buf;
     return 0;
 }
 
-static int rm_read_generic_packet(AVFormatContext *s, AVStream *unused, int len)
+//static int rm_read_generic_packet(AVFormatContext *s, AVStream *st)
+static int rm_postread_generic_packet(RMStream *rmst, int bytes_read)
 {
-    int buf_read_ret;
+    //RMStream *rmst      = st->priv_data;
+    RMPacketCache *rmpc = &(rmst->rmpc);
 
-    buf_read_ret = rm_read_buffer(AVFormatContext *s, int full_pkt_size);
-    if (buf_read_ret < 0)
-        return buf_read_ret; /* Preserve failure */
-    rmpc->packets_read = 1;
-    rmpc->pending_packets = 1;
+    //buf_read_ret = rm_read_buffer(s, rmst->full_pkt_size);
+    //if (buf_read_ret < 0)
+    //    return buf_read_ret; /* Preserve failure */
+    rmpc->packets_read    = bytes_read / rmst->full_pkt_size;
+    rmpc->pending_packets = rmpc->packets_read;
     return 0;
 }
 
@@ -836,38 +844,50 @@ static int rm_get_generic_packet(AVFormatContext *s, AVStream *st,
 {
     RMStream *rmst      = st->priv_data;
     RMPacketCache *rmpc = &(rmst->rmpc);
-    if (!rmpc->pending_packets)
-        rm_read_generic_packet(s, rmpc->pkt_buf, pkt_size);
-    return rm_get_buffered_packet(rmst, pkt, pkt_size);
-}
+    int ret;
 
-static int rm_read_int4_packet(AVFormatContext *s, AVStream *st, int unused_len)
-{
-    RMStream *rmst      = st->priv_data;
-    //RMPacketCache *rmpc = &(rmst->rmpc);
-    RA4Stream *ra4st    = &(rmst->ra_in_rm.radc.rast);
-    int full_pkt_size, raw_read_ret;
-
-    full_pkt_size = real_find_int4_packet_size(ra4st, st->codec->block_align);
-    raw_read_ret  = rm_read_buffer(s, buf, full_pkt_size);
-    if (raw_read_ret)
-        return raw_read_ret; /* Preserve failure */
-    //rm_int4_deinterleave(&buf, ...);
+    if (!rmpc->pending_packets) {
+    //    rm_read_generic_packet(s, rmpc->pkt_buf, pkt_size);
+        return -1; /* No packet pending */
+    }
+    ret = rm_get_buffered_packet(rmst, pkt, pkt_size);
+    if (ret < 0)
+        return ret;
+    rmpc->next_pkt_start += pkt_size;
     return 0;
 }
 
+//static int rm_read_int4_packet(AVFormatContext *s, AVStream *st, int unused_len)
+static int rm_postread_int4_packet(RMStream *rmst, int bytes_read)
+{
+    //RMPacketCache *rmpc = &(rmst->rmpc);
+    //RA4Stream *ra4st    = &(rmst->ra_in_rm.radc.rast);
+    //int raw_read_ret;
+
+    //full_pkt_size = real_find_int4_packet_size(ra4st, st->codec->block_align);
+    //raw_read_ret  = rm_read_buffer(s, buf, rmst->full_pkt_size);
+    //if (raw_read_ret < 0)
+    //    return raw_read_ret; /* Preserve failure */
+    // set packet counts
+    return 0;
+}
+
+/* TODO FIXME: instead of explicitly deinterleaving the buffer,
+ * return the subpacket at the correct offset.
+ */
 static int rm_get_int4_packet(AVFormatContext *s, AVStream *st,
                               AVPacket *pkt, int pkt_size)
 {
     RMStream *rmst      = st->priv_data;
     RMPacketCache *rmpc = &(rmst->rmpc);
 
-    if (!rmpc->pending_packets) {
-        rm_read_int4_packet(s, st, rmpc->pkt_buf, 0);
-    }
+    //if (!rmpc->pending_packets) {
+    //    rm_read_int4_packet(s, st, rmpc->pkt_buf, 0);
+    //}
 
     av_new_packet(pkt, pkt_size);
     memcpy(pkt->data, rmpc->next_pkt_start, pkt_size);
+    // update next_pkt_start..
     return 0;
 }
 
@@ -989,7 +1009,7 @@ static int rm_read_media_properties_header(AVFormatContext *s,
         default:
             inter->interleaver_tag = 0; /* generic */
             inter->get_packet = rm_get_generic_packet;
-            inter->read_packet = rm_read_generic_packet;
+            inter->postread_packet = rm_postread_generic_packet;
         }
 
     } else {
@@ -1229,20 +1249,21 @@ static int rm_read_cached_packet(AVFormatContext *s, AVPacket *pkt)
         RMStream *rmst      = st->priv_data;
         RMPacketCache *rmpc = &(rmst->rmpc);
         if (rmpc->pending_packets) {
-            RaInRealMedia *ra_in_rm = &(rmst->ra_in_rm);
+            RAInRealMedia *ra_in_rm = &(rmst->ra_in_rm);
             Interleaver *inter      = &(ra_in_rm->interleaver);
-            return inter->get_packet(s, st, pkt, ra->pkt_size);
+            return inter->get_packet(s, st, pkt, rmst->full_pkt_size);
         }
     }
     return -1; /* No queued packets */
 }
 
-static int rm_read_packet(AVFormatContext *s; AVPacket *pkt) {
+static int rm_read_packet(AVFormatContext *s, AVPacket *pkt)
+{
     int cache_read;
 
     if ((cache_read = rm_read_cached_packet(s, pkt)) == -1) {
         /* There were no cached packets; cache at least one. */
-        rm_get_packet(...);
+        rm_cache_packet(s);
         return rm_read_cached_packet(s, pkt);
     }
     return cache_read;
