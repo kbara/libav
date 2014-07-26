@@ -87,6 +87,7 @@ typedef struct RA4Stream {
     uint8_t *pkt_contents;
     uint32_t coded_frame_size, interleaver_id, fourcc_tag;
     uint16_t codec_flavor, subpacket_h, frame_size, subpacket_size, sample_size;
+    int full_pkt_size;
 } RA4Stream;
 
 /* Demux context for RealAudio */
@@ -163,16 +164,7 @@ typedef struct RMDemuxContext {
 } RMDemuxContext;
 
 
-/* Common functions: TODO: move other real_* ones here. */
 
-/* Int4 is composed of several interleaved subpackets.
- * Calculate the size they all take together.
- */
-static int real_find_int4_packet_size(RA4Stream *rast, int align)
-{
-    int subpackets = rast->subpacket_h * rast->frame_size / align;
-    return subpackets * rast->coded_frame_size;
-}
 
 /* RealAudio Demuxer */
 static int ra_probe(AVProbeData *p)
@@ -189,7 +181,7 @@ static int ra_probe(AVProbeData *p)
 }
 
 
-/* TODO: fully implement this... logic from the old code*/
+/* TODO: fully implement this... */
 static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s, AVStream *st)
 {
     RADemuxContext *ra = s->priv_data;
@@ -200,6 +192,24 @@ static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
     }
     /* TODO FIXME: handle other formats here */
 
+    switch(rast->interleaver_id) {
+        int subpackets;
+    case DEINT_ID_INT4:
+        /* Int4 is composed of several interleaved subpackets.
+         * Calculate the size they all take together. */
+        subpackets = rast->subpacket_h * rast->frame_size /
+            st->codec->block_align;
+        rast->full_pkt_size = subpackets * rast->coded_frame_size;
+    case DEINT_ID_INT0:
+        rast->full_pkt_size = (rast->coded_frame_size * rast->subpacket_h) / 2;
+        break;
+    default:
+            printf("Implement full_pkt_size for another interleaver.\n");
+            return -1; /* FIXME TODO */
+    }
+
+    if (st->codec->codec_id == AV_CODEC_ID_AC3)
+        rast->full_pkt_size *= 2;
     return 0;
 }
 
@@ -314,6 +324,7 @@ static int ra_read_header_v3(AVFormatContext *s, uint16_t header_size,
                              RADemuxContext *ra, AVStream *st)
 {
     AVIOContext *acpb = s->pb;
+    RA4Stream   *rast = &(ra->rast);
 
     int content_description_size, is_fourcc_ok, start_pos;
     uint32_t fourcc_tag, header_bytes_read;
@@ -350,14 +361,16 @@ static int ra_read_header_v3(AVFormatContext *s, uint16_t header_size,
         }
     }
 
+
     /* Reading all the header data has gone ok; initialiaze codec info. */
-    ra->avst = st;
     st->codec->channel_layout = AV_CH_LAYOUT_MONO;
     st->codec->channels       = 1;
     st->codec->codec_id       = AV_CODEC_ID_RA_144;
     st->codec->codec_type     = AVMEDIA_TYPE_AUDIO;
     st->codec->sample_rate    = 8000;
 
+    ra->avst = st;
+    rast->full_pkt_size = RA144_PKT_SIZE;
     return 0;
 }
 
@@ -615,21 +628,18 @@ static int ra_read_packet_with(AVFormatContext *s, AVPacket *pkt, RADemuxContext
 {
     RA4Stream *rast = &(ra->rast);
     AVStream *st = ra->avst;
-    int len, get_pkt;
+    int get_pkt;
 
     if (ra->version == 3)
-        return av_get_packet(s->pb, pkt, RA144_PKT_SIZE);
+        return av_get_packet(s->pb, pkt, rast->full_pkt_size);
 
     /* Nope, it's version 4, and a bit more complicated */
-    len = (rast->coded_frame_size * rast->subpacket_h) / 2;
 
     if (rast->interleaver_id == DEINT_ID_INT4) {
         return ra_read_interleaved_packets(s, pkt, ra);
     /* Simple case: no interleaving */
     } else if (rast->interleaver_id == DEINT_ID_INT0) {
-        if (st->codec->codec_id == AV_CODEC_ID_AC3)
-            len *= 2;
-        get_pkt = av_get_packet(s->pb, pkt, len);
+        get_pkt = av_get_packet(s->pb, pkt, rast->full_pkt_size);
         /* Swap the bytes iff it's ac3 - check done in rm_ac3_swap_bytes */
         ra_ac3_swap_bytes(st, pkt);
         return get_pkt;
@@ -727,7 +737,7 @@ static int rm_read_data_chunk_header(AVFormatContext *s)
                "RealMedia: Invalid stream %"PRIu32": max is %"PRIu32".\n",
                rm->cur_stream_number, rm->num_streams - 1);
         /* TODO: zero the cur_* variables? */
-        return AVERROR_INVALIDDATA;
+        return AVERROR_PATCHWELCOME;
     }
 
     return 0;
@@ -993,7 +1003,7 @@ static int rm_read_media_properties_header(AVFormatContext *s,
         rmst     = st->priv_data;
         ra_in_rm = &(rmst->ra_in_rm);
         rast     = &(ra_in_rm->radc.rast);
-        inter    = &(ra_in_rm->interleaver);
+        inter    = &(rmst->interleaver);
 
         header_ret = ra_read_header_with(s, &(ra_in_rm->radc), st);
         if (header_ret) {
@@ -1002,6 +1012,7 @@ static int rm_read_media_properties_header(AVFormatContext *s,
             return header_ret;
         }
         rmmp->is_realaudio = 1;
+        rmst->full_pkt_size = rast->full_pkt_size;
 
         switch(rast->interleaver_id) {
         case DEINT_ID_INT4:
