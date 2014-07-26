@@ -88,7 +88,7 @@ typedef struct RA4Stream {
     uint8_t *pkt_contents;
     uint32_t coded_frame_size, interleaver_id, fourcc_tag;
     uint16_t codec_flavor, subpacket_h, frame_size, subpacket_size, sample_size;
-    int full_pkt_size;
+    int full_pkt_size, subpacket_pp;
 } RA4Stream;
 
 /* Demux context for RealAudio */
@@ -135,6 +135,7 @@ typedef struct RMDataHeader {
  */
 typedef struct RMStream {
     int full_pkt_size;
+    int subpacket_pp; /* Subpackets per full packet. */
     RMMediaProperties rmmp;
     RMPacketCache rmpc;
     RADemuxContext radc; /* Unused if not RA */
@@ -179,24 +180,25 @@ static int ra_probe(AVProbeData *p)
 
 
 /* TODO: fully implement this... */
-static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s, AVStream *st)
+static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
+                                    AVStream *st, RA4Stream *rast)
 {
-    RADemuxContext *ra = s->priv_data;
-    RA4Stream *rast = &(ra->rast);
+    rast->subpacket_pp = 1;
 
     if (codec_id == AV_CODEC_ID_RA_288) {
         st->codec->block_align = rast->coded_frame_size;
     }
     /* TODO FIXME: handle other formats here */
 
+    printf("rast->interleaver_id: %x\n", rast->interleaver_id);
     switch(rast->interleaver_id) {
-        int subpackets;
     case DEINT_ID_INT4:
         /* Int4 is composed of several interleaved subpackets.
          * Calculate the size they all take together. */
-        subpackets = rast->subpacket_h * rast->frame_size /
+        rast->subpacket_pp = rast->subpacket_h * rast->frame_size /
             st->codec->block_align;
-        rast->full_pkt_size = subpackets * rast->coded_frame_size;
+        rast->full_pkt_size = rast->subpacket_pp * rast->coded_frame_size;
+        break;
     case DEINT_ID_INT0:
         rast->full_pkt_size = (rast->coded_frame_size * rast->subpacket_h) / 2;
         break;
@@ -367,6 +369,7 @@ static int ra_read_header_v3(AVFormatContext *s, uint16_t header_size,
     st->codec->sample_rate    = 8000;
 
     ra->avst = st;
+    rast->subpacket_pp  = 1;
     rast->full_pkt_size = RA144_PKT_SIZE;
     return 0;
 }
@@ -465,7 +468,7 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size,
     st->codec->codec_type     = AVMEDIA_TYPE_AUDIO;
     printf("Codec id %x\n", st->codec->codec_id);
 
-    ra4_codec_specific_setup(st->codec->codec_id, s, st);
+    ra4_codec_specific_setup(st->codec->codec_id, s, st, rast);
 
     return ra4_sanity_check_headers(rast->interleaver_id, rast, st);
 }
@@ -827,13 +830,6 @@ static int rm_cache_packet(AVFormatContext *s)
         read_to += chunk_size;
     } while (read_so_far < data_bytes_to_read);
 
-    /*if (full_pkt_size > chunk_size) {
-        rmpc->packets_read = 1;
-    } else {
-        rmpc->packets_read = chunk_size / full_pkt_size;
-    }
-    rmpc->pending_packets = rmpc->packets_read;*/
-
     if (bytes_read != data_bytes_to_read) {
         av_log(s, AV_LOG_ERROR, "RealMedia: read the wrong amount.\n");
         return AVERROR(EIO);
@@ -848,12 +844,8 @@ static int rm_cache_packet(AVFormatContext *s)
 //static int rm_read_generic_packet(AVFormatContext *s, AVStream *st)
 static int rm_postread_generic_packet(RMStream *rmst, int bytes_read)
 {
-    //RMStream *rmst      = st->priv_data;
     RMPacketCache *rmpc = &(rmst->rmpc);
 
-    //buf_read_ret = rm_read_buffer(s, rmst->full_pkt_size);
-    //if (buf_read_ret < 0)
-    //    return buf_read_ret; /* Preserve failure */
     rmpc->packets_read    = bytes_read / rmst->full_pkt_size;
     rmpc->pending_packets = rmpc->packets_read;
     return 0;
@@ -868,8 +860,7 @@ static int rm_get_generic_packet(AVFormatContext *s, AVStream *st,
     int ret;
 
     if (!rmpc->pending_packets) {
-    //    rm_read_generic_packet(s, rmpc->pkt_buf, pkt_size);
-        return -1; /* No packet pending */
+        return -1; /* No packet pending on this stream. */
     }
     ret = rm_get_buffered_packet(rmst, pkt, pkt_size);
     if (ret < 0)
@@ -878,18 +869,12 @@ static int rm_get_generic_packet(AVFormatContext *s, AVStream *st,
     return 0;
 }
 
-//static int rm_read_int4_packet(AVFormatContext *s, AVStream *st, int unused_len)
 static int rm_postread_int4_packet(RMStream *rmst, int bytes_read)
 {
-    //RMPacketCache *rmpc = &(rmst->rmpc);
-    //RA4Stream *ra4st    = &(rmst->ra_in_rm.radc.rast);
-    //int raw_read_ret;
+    RMPacketCache *rmpc = &(rmst->rmpc);
 
-    //full_pkt_size = real_find_int4_packet_size(ra4st, st->codec->block_align);
-    //raw_read_ret  = rm_read_buffer(s, buf, rmst->full_pkt_size);
-    //if (raw_read_ret < 0)
-    //    return raw_read_ret; /* Preserve failure */
-    // set packet counts
+    rmpc->packets_read = rmst->subpacket_pp * bytes_read / rmst->full_pkt_size;
+    rmpc->pending_packets = rmpc->packets_read;
     return 0;
 }
 
@@ -1024,10 +1009,13 @@ static int rm_read_media_properties_header(AVFormatContext *s,
         }
         rmmp->is_realaudio = 1;
         rmst->full_pkt_size = rast->full_pkt_size;
+        rmst->subpacket_pp  = rast->subpacket_pp;
 
         switch(rast->interleaver_id) {
         case DEINT_ID_INT4:
-            break;
+            inter->interleaver_tag = rast->interleaver_id;
+            inter->get_packet = rm_get_int4_packet;
+            inter->postread_packet = rm_postread_int4_packet;
         default:
             inter->interleaver_tag = 0; /* generic */
             inter->get_packet = rm_get_generic_packet;
