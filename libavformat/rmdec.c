@@ -40,6 +40,7 @@
 
 #include "libavutil/channel_layout.h"
 #include "libavutil/intreadwrite.h"
+#include "libavutil/mathematics.h"
 
 #include "avformat.h"
 #include "rm.h"
@@ -739,6 +740,15 @@ static int rm_read_data_chunk_header(AVFormatContext *s)
     return 0;
 }
 
+static int initialize_pkt_buf(RMPacketCache *rmpc, int size)
+{
+    rmpc->pkt_buf = av_mallocz(size);
+    if (!rmpc->pkt_buf)
+        return AVERROR(ENOMEM);
+    rmpc->buf_size = size;
+    return 0;
+}
+
 /* This should always start at a RM data chunk header, and consume
  * one or more of them. The stream is determined by the data.
  * The buffer information is found in the stream's private data.
@@ -750,23 +760,25 @@ static int rm_cache_packet(AVFormatContext *s)
     RMPacketCache *rmpc;
     Interleaver *inter;
     RMDemuxContext *rm = s->priv_data;
-    int read_so_far    = 0;
-    uint8_t *read_to   = NULL;
-    int first_stream   = -1;
-    int bytes_read     = 0;
-    int data_bytes_to_read, chunk_size;
+    int read_so_far        = 0;
+    uint8_t *read_to       = NULL;
+    int first_stream       = -1;
+    int bytes_read         = 0;
+    int data_bytes_to_read = -1;
+    int chunk_size, pre_header_pos, header_bytes;
 
     do {
         int data_header_ret, read_ret; //, start_pos;
 
-        //start_pos = avio_tell(s->pb);
+        pre_header_pos = avio_tell(s->pb);
         data_header_ret = rm_read_data_chunk_header(s);
-        if (!data_header_ret)
+        if (data_header_ret)
         {
              av_log(s, AV_LOG_ERROR,
                     "RealMedia: error reading data chunk header.\n");
             return data_header_ret;
         }
+        header_bytes = avio_tell(s->pb) - pre_header_pos;
 
         if (first_stream == -1) {
             first_stream = rm->cur_stream_number;
@@ -779,11 +791,22 @@ static int rm_cache_packet(AVFormatContext *s)
         st         = s->streams[rm->cur_stream_number];
         rmst       = st->priv_data;
         rmpc       = &(rmst->rmpc);
-        chunk_size = rm->cur_pkt_size;
+        chunk_size = rm->cur_pkt_size - header_bytes;
 
-        if (FFMAX(rmst->full_pkt_size, chunk_size) %
-            FFMIN(rmst->full_pkt_size, chunk_size)) {
-            printf("Messy... handle this.\n");
+        /* FIXME: if chunk sizes aren't constant for a stream, this
+           needs to be rewritten. */
+        if (data_bytes_to_read == -1) /* Not set yet */
+            /* Least common multiple */
+            data_bytes_to_read = (rmst->full_pkt_size * chunk_size) /
+                                 av_gcd(rmst->full_pkt_size, chunk_size);
+
+        /* Initialize the packet buffer if necessary */
+        if (!rmpc->pkt_buf)
+            if (initialize_pkt_buf(rmpc, data_bytes_to_read))
+                return AVERROR(ENOMEM);
+        /* Revisit this if adding partial packet support. */
+        if (data_bytes_to_read > rmpc->buf_size) {
+            printf("Add realloc support.\n");
             return -1;
         }
 
@@ -791,14 +814,6 @@ static int rm_cache_packet(AVFormatContext *s)
             read_to = rmpc->pkt_buf;
             /* Make sure no stale data is present. */
             memset(read_to, '\0', rmpc->buf_size);
-        }
-
-        /* TODO: lcm? */
-        data_bytes_to_read = FFMAX(rmst->full_pkt_size, chunk_size);
-        if (data_bytes_to_read > rmpc->buf_size)
-        {
-            printf("There's not enough space to read that...\n");
-            return -1;
         }
 
         //return av_get_packet(s->pb, pkt, pkt_size)
@@ -819,7 +834,7 @@ static int rm_cache_packet(AVFormatContext *s)
     }
     rmpc->pending_packets = rmpc->packets_read;*/
 
-    if (bytes_read != rmst->full_pkt_size) {
+    if (bytes_read != data_bytes_to_read) {
         av_log(s, AV_LOG_ERROR, "RealMedia: read the wrong amount.\n");
         return AVERROR(EIO);
     }
