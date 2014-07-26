@@ -1135,14 +1135,63 @@ static int initialize_streams(AVFormatContext *s, int num_streams)
 }
 
 
+static int rm_read_prop_header(AVFormatContext *s)
+{
+    RMDemuxContext *rm = s->priv_data;
+    uint32_t prop_tag;
+    uint16_t prop_chunk_version;
+    int init_stream_ret;
+
+    /* Read the PROP header */
+    prop_tag = avio_rl32(s->pb);
+    if (prop_tag != RM_PROP_HEADER) {
+        av_log(s, AV_LOG_ERROR,
+               "RealMedia: got %"PRIx32", but expected a PROP section.\n",
+               prop_tag);
+        return AVERROR_INVALIDDATA;
+    }
+
+    /* 'Typically' 0x32 */
+    rm->prop_chunk_size = avio_rb32(s->pb);
+    prop_chunk_version = avio_rb16(s->pb);
+    if (prop_chunk_version != 0) {
+        av_log(s, AV_LOG_ERROR,
+               "RealMedia: expected PROP chunk version 0, got %"PRIx16".\n",
+               prop_chunk_version);
+        return AVERROR_INVALIDDATA;
+    }
+
+    rm->prop_max_bitrate    = avio_rb32(s->pb);
+    rm->prop_avg_bitrate    = avio_rb32(s->pb);
+    rm->prop_largest_pkt    = avio_rb32(s->pb);
+    rm->prop_avg_pkt        = avio_rb32(s->pb);
+    rm->prop_num_pkts       = avio_rb32(s->pb);
+    rm->prop_file_duration  = avio_rb32(s->pb);
+    rm->suggested_ms_buffer = avio_rb32(s->pb);
+    rm->first_indx_offset   = avio_rb32(s->pb);
+    rm->first_data_offset   = avio_rb32(s->pb);
+    rm->num_streams         = avio_rb16(s->pb);
+    rm->flags               = avio_rb16(s->pb);
+
+    /* Initialize these before reading packets */
+    rm->cur_pkt_start = 0;
+    rm->cur_pkt_size  = 0;
+
+    init_stream_ret = initialize_streams(s, rm->num_streams);
+    if (init_stream_ret) /* Setting up failed */
+        return init_stream_ret; /* Preserve why */
+
+    return 0;
+}
+
 /* TODO: find the sample with rmf chunk size = 10 and a *word* file version */
 static int rm_read_header(AVFormatContext *s)
 {
     AVIOContext *acpb = s->pb;
     RMDemuxContext *rm = s->priv_data;
-    uint32_t rm_tag, file_version, prop_tag;
-    uint16_t rm_chunk_version, prop_chunk_version;
-    int init_ret;
+    uint32_t rm_tag, file_version;
+    uint16_t rm_chunk_version;
+    int prop_count = 0;
 
     /* Read the RMF header */
     rm_tag = avio_rl32(acpb);
@@ -1173,45 +1222,6 @@ static int rm_read_header(AVFormatContext *s)
 
     rm->num_headers = avio_rb32(acpb);
 
-    /* Read the PROP header */
-    prop_tag = avio_rl32(acpb);
-    if (prop_tag != RM_PROP_HEADER) {
-        av_log(s, AV_LOG_ERROR,
-               "RealMedia: got %"PRIx32", but expected a PROP section.\n",
-               prop_tag);
-        return AVERROR_INVALIDDATA;
-    }
-
-    /* 'Typically' 0x32 */
-    rm->prop_chunk_size = avio_rb32(acpb);
-    prop_chunk_version = avio_rb16(acpb);
-    if (prop_chunk_version != 0) {
-        av_log(s, AV_LOG_ERROR,
-               "RealMedia: expected PROP chunk version 0, got %"PRIx16".\n",
-               prop_chunk_version);
-        return AVERROR_INVALIDDATA;
-    }
-
-    rm->prop_max_bitrate    = avio_rb32(acpb);
-    rm->prop_avg_bitrate    = avio_rb32(acpb);
-    rm->prop_largest_pkt    = avio_rb32(acpb);
-    rm->prop_avg_pkt        = avio_rb32(acpb);
-    rm->prop_num_pkts       = avio_rb32(acpb);
-    rm->prop_file_duration  = avio_rb32(acpb);
-    rm->suggested_ms_buffer = avio_rb32(acpb);
-    rm->first_indx_offset   = avio_rb32(acpb);
-    rm->first_data_offset   = avio_rb32(acpb);
-    rm->num_streams         = avio_rb16(acpb);
-    rm->flags               = avio_rb16(acpb);
-
-    /* Initialize these before reading packets */
-    rm->cur_pkt_start = 0;
-    rm->cur_pkt_size  = 0;
-
-    init_ret = initialize_streams(s, rm->num_streams);
-    if (init_ret) /* Setting up failed */
-        return init_ret; /* Preserve why */
-
     /* Read the tags; return 0 on success, !0 early on failure */
     for (;;) {
         int header_ret;
@@ -1223,6 +1233,17 @@ static int rm_read_header(AVFormatContext *s)
         /* FIXME: the tag is being preserved as an extra check */
         avio_seek(acpb, -4, SEEK_CUR); /* REMOVE THIS */
         switch(next_tag) {
+        case RM_PROP_HEADER:
+            printf("prop\n");
+            if (prop_count) {
+                av_log(s, AV_LOG_ERROR, "RealMedia: too many PROP headers.\n");
+                return AVERROR_INVALIDDATA;
+            }
+            header_ret = rm_read_prop_header(s);
+            if (header_ret)
+                return header_ret;
+            prop_count = 1;
+            break;
         case RM_CONT_HEADER:
             printf("cont\n");
             header_ret = rm_read_cont_header(s);
@@ -1231,6 +1252,11 @@ static int rm_read_header(AVFormatContext *s)
             break;
         case RM_MDPR_HEADER:
             printf("mdpr\n");
+            if (!prop_count) {
+                av_log(s, AV_LOG_ERROR, "RealMedia: invalid header order,"
+                             " need PROP before MDPR.\n");
+                return AVERROR_INVALIDDATA;
+            }
             /* The properties have to be read to find the stream number. */
             memset(&rmmp, '\0', sizeof(RMMediaProperties));
             header_ret = rm_read_media_properties_header(s, &rmmp);
