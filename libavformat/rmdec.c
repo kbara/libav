@@ -644,6 +644,8 @@ static int ra_read_close(AVFormatContext *s)
     return 0;
 }
 
+
+/* RealMedia demuxer */
 /* The header should start with .RMF, and file and chunk version 0 */
 static int rm_probe(AVProbeData *p)
 {
