@@ -159,6 +159,7 @@ typedef struct RMDemuxContext {
 } RMDemuxContext;
 
 
+/* RealAudio Demuxer */
 static int ra_probe(AVProbeData *p)
 {
     /* RealAudio header; for RMF, use rm_probe. */
@@ -166,7 +167,7 @@ static int ra_probe(AVProbeData *p)
     if (MKTAG(p->buf[0], p->buf[1], p->buf[2], p->buf[3]) != RA_HEADER)
        return 0;
     version = p->buf[5];
-    /* Only v3 is currently supported, but v3-v4 should be. Does RA v5 exist? */
+    /* Only probe version 3 or 4. All known v5 samples are embedded in RM */
     if ((version < 3) || (version > 4))
         return 0;
     return AVPROBE_SCORE_MAX;
@@ -661,6 +662,8 @@ static int rm_probe(AVProbeData *p)
     /* It seems to be a RealMedia file */
     return AVPROBE_SCORE_MAX;
 }
+
+
 
 static int rm_read_media_properties_header(AVFormatContext *s,
                                            RMMediaProperties *rmmp)
