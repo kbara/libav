@@ -99,10 +99,6 @@ typedef struct RADemuxContext {
     int audio_packets_read;
 } RADemuxContext;
 
-typedef struct RAInRealMedia {
-    RADemuxContext radc;
-    Interleaver interleaver; /* DEPRECATED, this is going to move. */
-} RAInRealMedia;
 
 /* TODO: decide how to handle overlap with RADemuxContext */
 typedef struct RMPacketCache {
@@ -140,7 +136,7 @@ typedef struct RMStream {
     int full_pkt_size;
     RMMediaProperties rmmp;
     RMPacketCache rmpc;
-    RAInRealMedia ra_in_rm; /* Unused if not RA, DEPRECATED */
+    RADemuxContext radc; /* Unused if not RA */
     Interleaver interleaver;
 } RMStream;
 
@@ -992,7 +988,7 @@ static int rm_read_media_properties_header(AVFormatContext *s,
     content_tag = avio_rl32(acpb);
     if (content_tag == RA_HEADER) {
         RMStream *rmst;
-        RAInRealMedia *ra_in_rm;
+        RADemuxContext *radc;
         RA4Stream *rast;
         Interleaver *inter;
 
@@ -1001,11 +997,11 @@ static int rm_read_media_properties_header(AVFormatContext *s,
         if (!st->priv_data)
             return AVERROR(ENOMEM);
         rmst     = st->priv_data;
-        ra_in_rm = &(rmst->ra_in_rm);
-        rast     = &(ra_in_rm->radc.rast);
+        radc     = &(rmst->radc);
+        rast     = &(radc->rast);
         inter    = &(rmst->interleaver);
 
-        header_ret = ra_read_header_with(s, &(ra_in_rm->radc), st);
+        header_ret = ra_read_header_with(s, radc, st);
         if (header_ret) {
             av_log(s, AV_LOG_ERROR,
                    "RealMedia: failed to read embedded RealAudio header.\n");
@@ -1260,8 +1256,7 @@ static int rm_read_cached_packet(AVFormatContext *s, AVPacket *pkt)
         RMStream *rmst      = st->priv_data;
         RMPacketCache *rmpc = &(rmst->rmpc);
         if (rmpc->pending_packets) {
-            RAInRealMedia *ra_in_rm = &(rmst->ra_in_rm);
-            Interleaver *inter      = &(ra_in_rm->interleaver);
+            Interleaver *inter      = &(rmst->interleaver);
             return inter->get_packet(s, st, pkt, rmst->full_pkt_size);
         }
     }
