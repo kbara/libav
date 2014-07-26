@@ -77,10 +77,11 @@
 /* pkt_size and len are signed ints because that's what functions
    such as avio_read take - it's questionable. */
 typedef struct Interleaver {
-    uint32_t tag;
-    int (*get_packet)(AVFormatContext *s, int stream_num, AVPacket *pkt,
+    uint32_t interleaver_tag;
+    uint32_t codec_tag;
+    int (*get_packet)(AVFormatContext *s, AVStream *st, AVPacket *pkt,
                       int pkt_size);
-    int (*read_packet)(AVFormatContext *s, uint8_t *buf, int len);
+    int (*read_packet)(AVFormatContext *s, AVStream *st, uint8_t *buf, int len);
 } Interleaver;
 
 typedef struct RA4Stream {
@@ -107,7 +108,9 @@ typedef struct RAInRealMedia {
 typedef struct RMPacketCache {
     int pending_packets;
     int packets_read;
-    uint8_t *pkt_buffer;
+    uint8_t *pkt_buf;
+    size_t buf_size;
+    uint8_t *next_pkt_start;
 } RMPacketCache;
 
 /* RealMedia files have one Media Property header per stream */
@@ -158,6 +161,17 @@ typedef struct RMDemuxContext {
     RMDataHeader cur_data_header;
 } RMDemuxContext;
 
+
+/* Common functions: TODO: move other real_* ones here. */
+
+/* Int4 is composed of several interleaved subpackets.
+ * Calculate the size they all take together.
+ */
+static int real_find_int4_packet_size(RA4Stream *rast, int align)
+{
+    int subpackets = rast->subpacket_h * rast->frame_size / align;
+    return subpackets * rast->coded_frame_size;
+}
 
 /* RealAudio Demuxer */
 static int ra_probe(AVProbeData *p)
@@ -665,7 +679,171 @@ static int rm_probe(AVProbeData *p)
     return AVPROBE_SCORE_MAX;
 }
 
+/* This should only be called after rm_read_*_packet! */
+static int rm_get_buffered_packet(RMStream *rmst, AVPacket *pkt, int pkt_size)
+{
+    RMPacketCache *rmpc = &(rmst->rmpc);
+    if (!rmpc->pending_packets) {
+        return -1; /* Internal error */
+    }
 
+    if (rmpc->pkt_buf + rmpc->buf_size < rmpc->next_pkt_start + pkt_size) {
+        return -2; /* Attempt to read too much */
+    }
+
+    av_new_packet(pkt, pkt_size);
+    memcpy(pkt->data, rmpc->next_pkt_start, pkt_size);
+    rmpc->pending_packets--;
+    rmpc->next_pkt_start += pkt_size;
+    return 0;
+}
+
+static int rm_read_data_chunk_header(AVFormatContext *s)
+{
+    RMDemuxContext *rm = s->priv_data;
+
+    rm->cur_pkt_start      = avio_tell(s->pb);
+    rm->cur_pkt_version    = avio_rb16(s->pb);
+    rm->cur_pkt_size       = avio_rb16(s->pb);
+    rm->cur_stream_number  = avio_rb16(s->pb);
+    rm->cur_timestamp_ms   = avio_rb32(s->pb);
+
+    if (rm->cur_pkt_version == 0) {
+        avio_r8(s->pb); /* packet_group */
+        avio_r8(s->pb); /* flags */
+    } else if (rm->cur_pkt_version == 1) {
+        printf("Implement me: pkt_version 1.\n"); /* TODO FIXME */
+        return AVERROR_INVALIDDATA;
+    } else {
+         av_log(s, AV_LOG_ERROR,
+                "RealMedia: Send sample. Unknown packet_version %"PRIx16".\n",
+                rm->cur_pkt_version);
+         return AVERROR_INVALIDDATA;
+    }
+
+    if (rm->cur_stream_number >= rm->num_streams) {
+        av_log(s, AV_LOG_ERROR,
+               "RealMedia: Invalid stream %"PRIu32": max is %"PRIu32".\n",
+               rm->cur_stream_number, rm->num_streams - 1);
+        /* TODO: zero the cur_* variables? */
+        return AVERROR_INVALIDDATA;
+    }
+
+    return 0;
+}
+
+/* This should always start at a RM data chunk header, and consume
+   one or more of them. The stream is determined by the data. */
+static int rm_read_generic_packet(AVFormatContext *s, uint8_t *buf,
+                                  int full_pkt_size)
+{
+    AVStream *st;
+    RMStream *rmst;
+    RMPacketCache *rmpc;
+    RMDemuxContext *rm = s->priv_data;
+    int read_so_far    = 0;
+    uint8_t *read_to   = NULL;
+    int first_stream   = -1;
+    int data_bytes_to_read, chunk_size;
+
+    do {
+        int data_header_ret; //, start_pos;
+
+        //start_pos = avio_tell(s->pb);
+        data_header_ret = rm_read_data_chunk_header(s);
+        if (!data_header_ret)
+        {
+             av_log(s, AV_LOG_ERROR,
+                    "RealMedia: error reading data chunk header.\n");
+            return data_header_ret;
+        }
+
+        if (first_stream == -1) {
+            first_stream = rm->cur_stream_number;
+        } else if (first_stream != rm->cur_stream_number) {
+            printf("Looks like this does need partial packet support...\n");
+            /* TODO: implement that, and seek back to start_pos */
+            return -1;
+        }
+
+        if (FFMAX(full_pkt_size, chunk_size) %
+            FFMIN(full_pkt_size, chunk_size)) {
+            printf("Messy... handle this.\n");
+            return -1;
+        }
+        st         = s->streams[rm->cur_stream_number];
+        rmst       = st->priv_data;
+        rmpc       = &(rmst->rmpc);
+        chunk_size = rm->cur_pkt_size;
+
+        if (!read_to)
+            read_to = rmpc->pkt_buf;
+
+        /* TODO: lcm? */
+        data_bytes_to_read = FFMAX(full_pkt_size, chunk_size);
+        if (data_bytes_to_read > rmpc->buf_size)
+        {
+            printf("There's not enough space to read that...\n");
+            return -1;
+        }
+
+        //return av_get_packet(s->pb, pkt, pkt_size)
+        avio_read(s->pb, read_to, chunk_size);
+        read_so_far += chunk_size;
+        read_to += chunk_size;
+    } while (read_so_far < FFMAX(full_pkt_size, chunk_size));
+
+    if (full_pkt_size > chunk_size) {
+        rmpc->packets_read = 1;
+    } else {
+        rmpc->packets_read = chunk_size / full_pkt_size;
+    }
+    rmpc->pending_packets += rmpc->packets_read;
+
+    return 0;
+}
+
+/* TODO: if partial packets need to be implemented, the read needs to change.*/
+static int rm_get_generic_packet(AVFormatContext *s, AVStream *st,
+                                 AVPacket *pkt, int pkt_size)
+{
+    RMStream *rmst      = st->priv_data;
+    RMPacketCache *rmpc = &(rmst->rmpc);
+    if (!rmpc->pending_packets)
+        rm_read_generic_packet(s, rmpc->pkt_buf, pkt_size);
+    return rm_get_buffered_packet(rmst, pkt, pkt_size);
+}
+
+static int rm_read_int4_packet(AVFormatContext *s, AVStream *st,
+                               uint8_t *buf, int unused_len)
+{
+    RMStream *rmst      = st->priv_data;
+    //RMPacketCache *rmpc = &(rmst->rmpc);
+    RA4Stream *ra4st    = &(rmst->ra_in_rm.radc.rast);
+    int full_pkt_size, raw_read_ret;
+
+    full_pkt_size = real_find_int4_packet_size(ra4st, st->codec->block_align);
+    raw_read_ret  = rm_read_generic_packet(s, buf, full_pkt_size);
+    if (raw_read_ret)
+        return raw_read_ret; /* Preserve failure */
+    //rm_int4_deinterleave(&buf, ...);
+    return 0;
+}
+
+static int rm_get_int4_packet(AVFormatContext *s, AVStream *st,
+                              AVPacket *pkt, int pkt_size)
+{
+    RMStream *rmst      = st->priv_data;
+    RMPacketCache *rmpc = &(rmst->rmpc);
+
+    if (!rmpc->pending_packets) {
+        rm_read_int4_packet(s, st, rmpc->pkt_buf, 0);
+    }
+
+    av_new_packet(pkt, pkt_size);
+    memcpy(pkt->data, rmpc->next_pkt_start, pkt_size);
+    return 0;
+}
 
 static int rm_read_media_properties_header(AVFormatContext *s,
                                            RMMediaProperties *rmmp)
