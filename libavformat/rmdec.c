@@ -951,10 +951,15 @@ static int rm_read_media_properties_header(AVFormatContext *s,
     }
 
     st = s->streams[rmmp->stream_number];
-    st->id = rmmp->stream_number;
-    st->start_time = rmmp->stream_start_offset;
-    st->duration = rmmp->duration;
+    st->priv_data = av_mallocz(sizeof(RMStream));
+    if (!st->priv_data)
+        return AVERROR(ENOMEM);
+
+    st->id                = rmmp->stream_number;
+    st->start_time        = rmmp->stream_start_offset;
+    st->duration          = rmmp->duration;
     st->codec->codec_type = AVMEDIA_TYPE_DATA;
+
 
     bytes_read = avio_read(acpb, rmmp->stream_desc, rmmp->desc_size);
     if (bytes_read < rmmp->desc_size) {
@@ -986,9 +991,7 @@ static int rm_read_media_properties_header(AVFormatContext *s,
         Interleaver *inter;
 
         st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
-        st->priv_data = av_mallocz(sizeof(RMStream));
-        if (!st->priv_data)
-            return AVERROR(ENOMEM);
+
         rmst     = st->priv_data;
         radc     = &(rmst->radc);
         rast     = &(radc->rast);
@@ -1011,7 +1014,7 @@ static int rm_read_media_properties_header(AVFormatContext *s,
             if (!inter->priv_data)
                 return AVERROR(ENOMEM);
             inter->interleaver_tag = rast->interleaver_id;
-            inter->get_packet = rm_get_int4_packet;
+            inter->get_packet      = rm_get_int4_packet;
             inter->postread_packet = rm_postread_int4_packet;
             break;
         default:
@@ -1021,7 +1024,20 @@ static int rm_read_media_properties_header(AVFormatContext *s,
         }
 
     } else { /* Nope, it's not an embedded RealAudio header. */
+        RMStream *rmst     = st->priv_data;
+        Interleaver *inter = &(rmst->interleaver);
         int bytes_read;
+
+        /* Some defaults, not necessarily correct: TODO FIXME.
+           In the meanwhile, the idea is to make the LCM of this
+           and a data packet size be sane. */
+        rmst->full_pkt_size = 1;
+        rmst->subpkt_size   = 1;
+        rmst->subpacket_pp  = 1;
+        inter->interleaver_tag = 0;
+        inter->get_packet      = rm_get_generic_packet;
+        inter->postread_packet = rm_postread_generic_packet;
+        /* End TODO FIXME */
 
         avio_seek(acpb, -4, SEEK_CUR);
         rmmp->type_specific_data = av_mallocz(rmmp->type_specific_size);
