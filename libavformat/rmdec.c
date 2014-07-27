@@ -971,25 +971,11 @@ static int rm_read_media_properties_header(AVFormatContext *s,
     }
 
     rmmp->type_specific_size = avio_rb32(acpb);
-    /*
-    if (rmmp->type_specific_size > 0) {
-        rmmp->type_specific_data = av_mallocz(rmmp->type_specific_size);
-        if (!rmmp->type_specific_data) {
-            av_log(s, AV_LOG_ERROR,
-                   "RealMedia: failed to allocate type-specific memory.\n");
-            return AVERROR(ENOMEM);
-        }
-        bytes_read = avio_read(acpb,
-                               rmmp->type_specific_data,
-                               rmmp->type_specific_size);
-        if (bytes_read < rmmp->type_specific_size) {
-            av_log(s, AV_LOG_ERROR,
-                   "RealMedia: failed to read type-specific data.\n");
-            return bytes_read;
-        }
-    } else
-        rmmp->type_specific_data = NULL;
-    */
+
+    /* Done! */
+    if (!rmmp->type_specific_size)
+        return 0;
+
     before_embed = avio_tell(acpb);
 
     content_tag = avio_rl32(acpb);
@@ -1034,9 +1020,24 @@ static int rm_read_media_properties_header(AVFormatContext *s,
             inter->postread_packet = rm_postread_generic_packet;
         }
 
-    } else {
-        printf("Implement me: non-RA stream.\n");
-        return -1; /* FIXME TODO */
+    } else { /* Nope, it's not an embedded RealAudio header. */
+        int bytes_read;
+
+        avio_seek(acpb, -4, SEEK_CUR);
+        rmmp->type_specific_data = av_mallocz(rmmp->type_specific_size);
+        if (!rmmp->type_specific_data) {
+            av_log(s, AV_LOG_ERROR,
+                   "RealMedia: failed to allocate type-specific memory.\n");
+            return AVERROR(ENOMEM);
+        }
+
+        bytes_read = avio_read(s->pb, rmmp->type_specific_data,
+                               rmmp->type_specific_size);
+        if (bytes_read < rmmp->type_specific_size) {
+            av_log(s, AV_LOG_ERROR,
+                   "RealMedia: failed to read type-specific data.\n");
+            return bytes_read;
+        }
     }
 
     after_embed = avio_tell(acpb);
