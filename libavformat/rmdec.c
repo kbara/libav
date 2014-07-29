@@ -708,8 +708,8 @@ static int rm_read_data_chunk_header(AVFormatContext *s)
         avio_r8(s->pb); /* packet_group */
         avio_r8(s->pb); /* flags */
     } else if (rm->cur_pkt_version == 1) {
-        printf("Implement me: pkt_version 1.\n"); /* TODO FIXME */
-        return AVERROR_INVALIDDATA;
+        avio_rb16(s->pb); /* ASM rule */
+        avio_rb8(s->pb); /* ASM flags */
     } else {
          av_log(s, AV_LOG_ERROR,
                 "RealMedia: Send sample. Unknown packet_version %"PRIx16".\n",
