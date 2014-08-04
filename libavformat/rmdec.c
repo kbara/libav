@@ -736,6 +736,24 @@ static int rm_read_data_chunk_header(AVFormatContext *s)
     return 0;
 }
 
+/* Lightly modified from the old code. */
+static int rm_read_extradata(AVIOContext *pb, AVCodecContext *avctx,
+                             uint32_t size)
+{
+    avctx->extradata = av_mallocz(size/* + FF_INPUT_BUFFER_PADDING_SIZE*/);
+    if (!avctx->extradata)
+        return AVERROR(ENOMEM);
+    avctx->extradata_size = avio_read(pb, avctx->extradata, size);
+    if (avctx->extradata_size != size) {
+        av_freep(&avctx->extradata);
+        if (avctx->extradata_size < 0)
+            return avctx->extradata_size;
+        else
+            return AVERROR(EIO);
+    }
+    return 0;
+}
+
 static int initialize_pkt_buf(RMPacketCache *rmpc, int size)
 {
     rmpc->pkt_buf = av_mallocz(size);
@@ -1051,7 +1069,7 @@ static int rm_read_media_properties_header(AVFormatContext *s,
 
     rmmp->type_specific_size = avio_rb32(s->pb);
 
-    /* Done! */
+    /* No type-specific data? Done! */
     if (!rmmp->type_specific_size)
         return 0;
 
@@ -1101,6 +1119,7 @@ static int rm_read_media_properties_header(AVFormatContext *s,
     } else if (RM_VIDEO_TAG == (content_tag2 = avio_rl32(s->pb))) {
         RMStream *rmst     = st->priv_data;
         Interleaver *inter = &(rmst->interleaver);
+        int extradata_ret;
 
         st->codec->codec_tag = avio_rl32(s->pb);
         st->codec->codec_id = ff_codec_get_id(ff_rm_codec_tags,
@@ -1122,8 +1141,11 @@ static int rm_read_media_properties_header(AVFormatContext *s,
         //inter->preread_packet  = rm_preread_video_packet;
         inter->postread_packet = rm_postread_video_packet;
 
-        /* Skip the rest of the undocumented extra data. */
-        avio_seek(s->pb, rmmp->type_specific_size + before_embed, SEEK_SET);
+        extradata_ret = rm_read_extradata(s->pb, st->codec,
+                                          rmmp->type_specific_size -
+                                          (avio_tell(s->pb) - before_embed));
+        if (extradata_ret < 0)
+            return extradata_ret;
     } else {
         printf("Deal with tag %x\n", content_tag);
         /* FIXME TODO: make these initializations more reasonable. */
