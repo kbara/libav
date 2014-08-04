@@ -58,6 +58,12 @@
 #define RM_DATA_HEADER MKTAG('D', 'A', 'T', 'A')
 #define RM_INDX_HEADER MKTAG('I', 'N', 'D', 'X')
 
+/* Subpacket type indicators: first 2 data bits */
+#define RM_PARTIAL_FRAME      0 /* 00 */
+#define RM_WHOLE_FRAME        1 /* 01 */
+#define RM_LAST_PARTIAL_FRAME 2 /* 10 */
+#define RM_MULTIPLE_FRAMES    3 /* 11 */
+
 /* The relevant VSELP format has 159-bit frames, stored in 20 bytes */
 #define RA144_PKT_SIZE 20
 
@@ -709,7 +715,7 @@ static int rm_read_data_chunk_header(AVFormatContext *s)
         avio_r8(s->pb); /* flags */
     } else if (rm->cur_pkt_version == 1) {
         avio_rb16(s->pb); /* ASM rule */
-        avio_rb8(s->pb); /* ASM flags */
+        avio_r8(s->pb); /* ASM flags */
     } else {
          av_log(s, AV_LOG_ERROR,
                 "RealMedia: Send sample. Unknown packet_version %"PRIx16".\n",
@@ -899,6 +905,19 @@ static int rm_get_int4_packet(AVFormatContext *s, AVStream *st,
     return 0;
 }
 
+static int rm_postread_video_packet(RMStream *rmst, int bytes_read)
+{
+    printf("Postread called\n");
+    return 0;
+}
+
+static int rm_get_video_packet(AVFormatContext *s, AVStream *st,
+                               AVPacket *pkt, int pkt_size)
+{
+    printf("rm_get_video_packet called!\n");
+    return 0;
+}
+
 static int rm_read_media_properties_header(AVFormatContext *s,
                                            RMMediaProperties *rmmp)
 {
@@ -1018,20 +1037,21 @@ static int rm_read_media_properties_header(AVFormatContext *s,
         }
 
     } else { /* Nope, it's not an embedded RealAudio header. */
+        /* TODO FIXME: for now, pretend it's video; later, check */
         RMStream *rmst     = st->priv_data;
         Interleaver *inter = &(rmst->interleaver);
         int bytes_read;
 
-        /* Some defaults, not necessarily correct: TODO FIXME.
-           In the meanwhile, the idea is to make the LCM of this
-           and a data packet size be sane. */
+        printf("Assuming video...\n");
+
+        /* FIXME TODO: make these initializations more reasonable. */
         rmst->full_pkt_size = 1;
         rmst->subpkt_size   = 1;
         rmst->subpacket_pp  = 1;
-        inter->interleaver_tag = 0;
-        inter->get_packet      = rm_get_generic_packet;
-        inter->postread_packet = rm_postread_generic_packet;
-        /* End TODO FIXME */
+        st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
+        inter->interleaver_tag = 5; /* TODO FIXME */
+        inter->get_packet      = rm_get_video_packet;
+        inter->postread_packet = rm_postread_video_packet;
 
         avio_seek(s->pb, -4, SEEK_CUR);
         rmmp->type_specific_data = av_mallocz(rmmp->type_specific_size);
