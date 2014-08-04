@@ -745,11 +745,50 @@ static int initialize_pkt_buf(RMPacketCache *rmpc, int size)
     return 0;
 }
 
+/* Figure out which bitstream layout is being used, frame information, etc.
+ * This partially replaces rm_assemble_video_frame.
+ * For now, cheerfully assume that there aren't extra DATA blocks in
+ * inconvenient places.
+ */
+static int rm_assemble_video(AVFormatContext *s, RMStream *rmst,
+                             RMPacketCache *rmpc, AVPacket *pkt)
+{
+    uint8_t first_bits, subpacket_type, pic_num;
+    uint32_t len, pos;
+
+    first_bits = avio_r8(s->pb);
+    subpacket_type = first_bits >> 6;
+    //printf("Got subpacket_type %i\n", (int) subpacket_type);
+    switch(subpacket_type) {
+    case RM_MULTIPLE_FRAMES:
+        /* TODO FIXME: are the subtleties of the old get_num needed? */
+        len     = avio_rb32(s->pb);
+        pos     = avio_rb32(s->pb); /* TODO: this is a timestamp. */
+        pic_num = avio_r8(s->pb);
+
+        /* Why is it +9 with the prelude below? */
+        if (av_new_packet(pkt, len + 9) < 0)
+            return AVERROR(ENOMEM);
+        pkt->data[0] = 0;
+        AV_WL32(pkt->data + 1, 1);
+        AV_WL32(pkt->data + 5, 0);
+        avio_read(s->pb, pkt->data + 9, len);
+        rmpc->pending_packets = 1;
+        break;
+    default:
+        printf("Implement case %i\n", (int) subpacket_type);
+    }
+
+    return 0;
+}
+
+
 /* This should always start at a RM data chunk header, and consume
  * one or more of them. The stream is determined by the data.
  * The buffer information is found in the stream's private data.
+ * The pkt argument is only used for video.
  */
-static int rm_cache_packet(AVFormatContext *s)
+static int rm_cache_packet(AVFormatContext *s, AVPacket *pkt)
 {
     AVStream *st;
     RMStream *rmst;
@@ -786,8 +825,19 @@ static int rm_cache_packet(AVFormatContext *s)
 
         st         = s->streams[rm->cur_stream_number];
         rmst       = st->priv_data;
-        inter = &(rmst->interleaver);
         rmpc       = &(rmst->rmpc);
+
+        /* Bail out of all this and handle this elsewhere if it's video */
+        if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO)
+        {
+            int vid_ok = rm_assemble_video(s, rmst, rmpc, pkt);
+            if (vid_ok < 0)
+                /* Couldn't get a full video packet; try to get something. */
+                return rm_cache_packet(s, pkt);
+            return vid_ok; /* Done! */
+        }
+
+        inter = &(rmst->interleaver);
         chunk_size = rm->cur_pkt_size - header_bytes;
 
         inter->preread_packet(s, rmst);
@@ -913,10 +963,6 @@ static int rm_get_int4_packet(AVFormatContext *s, AVStream *st,
     return 0;
 }
 
-static int rm_preread_video_packet(AVFormatContext *s, RMStream *rmst)
-{
-    return 0;
-}
 
 static int rm_postread_video_packet(RMStream *rmst, int bytes_read)
 {
@@ -927,7 +973,9 @@ static int rm_postread_video_packet(RMStream *rmst, int bytes_read)
 static int rm_get_video_packet(AVFormatContext *s, AVStream *st,
                                AVPacket *pkt, int pkt_size)
 {
-    printf("rm_get_video_packet called!\n");
+    RMStream *rm        = st->priv_data;
+    RMPacketCache *rmpc = &(rm->rmpc);
+    rmpc->pending_packets--;
     return 0;
 }
 
@@ -1071,7 +1119,7 @@ static int rm_read_media_properties_header(AVFormatContext *s,
         st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
         inter->interleaver_tag = st->codec->codec_id;
         inter->get_packet      = rm_get_video_packet;
-        inter->preread_packet  = rm_preread_video_packet;
+        //inter->preread_packet  = rm_preread_video_packet;
         inter->postread_packet = rm_postread_video_packet;
 
         /* Skip the rest of the undocumented extra data. */
@@ -1352,7 +1400,7 @@ static int rm_read_packet(AVFormatContext *s, AVPacket *pkt)
 
     if ((cache_read = rm_read_cached_packet(s, pkt)) == -1) {
         /* There were no cached packets; cache at least one. */
-        rm_cache_packet(s);
+        rm_cache_packet(s, pkt);
         return rm_read_cached_packet(s, pkt);
     }
     return cache_read;
