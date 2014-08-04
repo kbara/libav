@@ -933,6 +933,7 @@ static int rm_get_generic_packet(AVFormatContext *s, AVStream *st,
 
     av_new_packet(pkt, pkt_size);
     memcpy(pkt->data, rmpc->next_pkt_start, pkt_size);
+    pkt->stream_index = st->index;
     rmpc->pending_packets--;
     rmpc->next_pkt_start += pkt_size;
     return 0;
@@ -964,6 +965,7 @@ static int rm_get_int4_packet(AVFormatContext *s, AVStream *st,
 
     av_new_packet(pkt, rmst->subpkt_size);
     memcpy(pkt->data, pkt_start, rmst->subpkt_size);
+    pkt->stream_index = st->index;
 
     int4state->subpkt_fs++;
     if (int4state->subpkt_fs >= rast->subpacket_h / 2) {
@@ -994,6 +996,7 @@ static int rm_get_video_packet(AVFormatContext *s, AVStream *st,
     RMStream *rm        = st->priv_data;
     RMPacketCache *rmpc = &(rm->rmpc);
     rmpc->pending_packets--;
+    pkt->stream_index = st->index;
     return 0;
 }
 
