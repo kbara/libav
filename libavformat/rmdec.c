@@ -89,6 +89,7 @@ typedef struct Interleaver {
     uint32_t interleaver_tag;
     int (*get_packet)(AVFormatContext *s, AVStream *st, AVPacket *pkt,
                       int pkt_size);
+    int (*preread_packet)(AVFormatContext *s, RMStream *rmst);
     int (*postread_packet)(RMStream *rmst, int bytes_read);
     void *priv_data;
 } Interleaver;
@@ -173,7 +174,6 @@ typedef struct RMDemuxContext {
     uint32_t cur_timestamp_ms;
     RMDataHeader cur_data_header;
 } RMDemuxContext;
-
 
 
 
@@ -786,8 +786,11 @@ static int rm_cache_packet(AVFormatContext *s)
 
         st         = s->streams[rm->cur_stream_number];
         rmst       = st->priv_data;
+        inter = &(rmst->interleaver);
         rmpc       = &(rmst->rmpc);
         chunk_size = rm->cur_pkt_size - header_bytes;
+
+        inter->preread_packet(s, rmst);
 
         /* FIXME: if chunk sizes aren't constant for a stream, this
            needs to be rewritten. */
@@ -828,13 +831,16 @@ static int rm_cache_packet(AVFormatContext *s)
         return AVERROR(EIO);
     }
 
-    inter = &(rmst->interleaver);
     inter->postread_packet(rmst, bytes_read);
     rmpc->next_pkt_start = rmpc->pkt_buf;
     return 0;
 }
 
-//static int rm_read_generic_packet(AVFormatContext *s, AVStream *st)
+static int rm_preread_generic_packet(AVFormatContext *s, RMStream *rmst)
+{
+    return 0;
+}
+
 static int rm_postread_generic_packet(RMStream *rmst, int bytes_read)
 {
     RMPacketCache *rmpc = &(rmst->rmpc);
@@ -930,7 +936,7 @@ static int rm_read_media_properties_header(AVFormatContext *s,
 {
     RMDemuxContext *rm = s->priv_data;
     AVStream *st;
-    uint32_t mdpr_tag, content_tag, before_embed, after_embed;
+    uint32_t mdpr_tag, content_tag, content_tag2, before_embed, after_embed;
     uint16_t chunk_version;
     int bytes_read, header_ret, fix_offset;
 
@@ -1035,14 +1041,16 @@ static int rm_read_media_properties_header(AVFormatContext *s,
                 return AVERROR(ENOMEM);
             inter->interleaver_tag = rast->interleaver_id;
             inter->get_packet      = rm_get_int4_packet;
+            inter->preread_packet  = rm_preread_generic_packet;
             inter->postread_packet = rm_postread_int4_packet;
             break;
         default:
             inter->interleaver_tag = 0; /* generic */
-            inter->get_packet = rm_get_generic_packet;
+            inter->get_packet      = rm_get_generic_packet;
+            inter->preread_packet  = rm_preread_generic_packet;
             inter->postread_packet = rm_postread_generic_packet;
         }
-    } else if (content_tag == RM_VIDEO_TAG) {
+    } else if (RM_VIDEO_TAG == (content_tag2 = avio_rl32(s->pb))) {
         RMStream *rmst     = st->priv_data;
         Interleaver *inter = &(rmst->interleaver);
 
@@ -1053,8 +1061,8 @@ static int rm_read_media_properties_header(AVFormatContext *s,
             av_log(s, AV_LOG_ERROR, "RealMedia: failed to get codec id.\n");
             return AVERROR_INVALIDDATA;
         }
-        st->codec->width  = avio_rb32(s->pb);
-        st->codec->height = avio_rb32(s->pb);
+        st->codec->width  = avio_rb16(s->pb);
+        st->codec->height = avio_rb16(s->pb);
         avio_skip(s->pb, 2); /* Old code said: maybe bits per sample? */
         if (avio_rb32(s->pb) != 0)
             av_log(s, AV_LOG_WARNING, "RealMedia: expected zeros.\n");
