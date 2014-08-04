@@ -73,6 +73,8 @@
 /* An internal signature in RealAudio 2.0 (.ra version 4) headers */
 #define RA4_SIGNATURE MKTAG('.', 'r', 'a', '4')
 
+#define RM_VIDEO_TAG MKTAG('V', 'I', 'D', 'O')
+
 /* Deinterleaving constants from the old rmdec implementation */
 #define DEINT_ID_GENR MKTAG('g', 'e', 'n', 'r') ///< interleaving for Cooker/ATRAC
 #define DEINT_ID_INT0 MKTAG('I', 'n', 't', '0') ///< no interleaving needed
@@ -145,7 +147,7 @@ typedef struct RMDataHeader {
  * the relevant AVStream.
  */
 typedef struct RMStream {
-    int full_pkt_size, subpkt_size;
+    int full_pkt_size, subpkt_size, fps;
     int subpacket_pp; /* Subpackets per full packet. */
     RMMediaProperties rmmp;
     RMPacketCache rmpc;
@@ -905,6 +907,11 @@ static int rm_get_int4_packet(AVFormatContext *s, AVStream *st,
     return 0;
 }
 
+static int rm_preread_video_packet(AVFormatContext *s, RMStream *rmst)
+{
+    return 0;
+}
+
 static int rm_postread_video_packet(RMStream *rmst, int bytes_read)
 {
     printf("Postread called\n");
@@ -1035,39 +1042,38 @@ static int rm_read_media_properties_header(AVFormatContext *s,
             inter->get_packet = rm_get_generic_packet;
             inter->postread_packet = rm_postread_generic_packet;
         }
-
-    } else { /* Nope, it's not an embedded RealAudio header. */
-        /* TODO FIXME: for now, pretend it's video; later, check */
+    } else if (content_tag == RM_VIDEO_TAG) {
         RMStream *rmst     = st->priv_data;
         Interleaver *inter = &(rmst->interleaver);
-        int bytes_read;
 
-        printf("Assuming video...\n");
+        st->codec->codec_tag = avio_rl32(s->pb);
+        st->codec->codec_id = ff_codec_get_id(ff_rm_codec_tags,
+                                              st->codec->codec_tag);
+        if (st->codec->codec_id == AV_CODEC_ID_NONE) {
+            av_log(s, AV_LOG_ERROR, "RealMedia: failed to get codec id.\n");
+            return AVERROR_INVALIDDATA;
+        }
+        st->codec->width  = avio_rb32(s->pb);
+        st->codec->height = avio_rb32(s->pb);
+        avio_skip(s->pb, 2); /* Old code said: maybe bits per sample? */
+        if (avio_rb32(s->pb) != 0)
+            av_log(s, AV_LOG_WARNING, "RealMedia: expected zeros.\n");
+        rmst->fps = avio_rb32(s->pb); /* TODO: what's the point of av_reduce?*/
 
-        /* FIXME TODO: make these initializations more reasonable. */
-        rmst->full_pkt_size = 1;
-        rmst->subpkt_size   = 1;
-        rmst->subpacket_pp  = 1;
         st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
-        inter->interleaver_tag = 5; /* TODO FIXME */
+        inter->interleaver_tag = st->codec->codec_id;
         inter->get_packet      = rm_get_video_packet;
+        inter->preread_packet  = rm_preread_video_packet;
         inter->postread_packet = rm_postread_video_packet;
 
-        avio_seek(s->pb, -4, SEEK_CUR);
-        rmmp->type_specific_data = av_mallocz(rmmp->type_specific_size);
-        if (!rmmp->type_specific_data) {
-            av_log(s, AV_LOG_ERROR,
-                   "RealMedia: failed to allocate type-specific memory.\n");
-            return AVERROR(ENOMEM);
-        }
-
-        bytes_read = avio_read(s->pb, rmmp->type_specific_data,
-                               rmmp->type_specific_size);
-        if (bytes_read < rmmp->type_specific_size) {
-            av_log(s, AV_LOG_ERROR,
-                   "RealMedia: failed to read type-specific data.\n");
-            return bytes_read;
-        }
+        /* Skip the rest of the undocumented extra data. */
+        avio_seek(s->pb, rmmp->type_specific_size + before_embed, SEEK_SET);
+    } else {
+        printf("Deal with tag %x\n", content_tag);
+        /* FIXME TODO: make these initializations more reasonable. */
+        //rmst->full_pkt_size = 1;
+        //rmst->subpkt_size   = 1;
+        //rmst->subpacket_pp  = 1;
     }
 
     after_embed = avio_tell(s->pb);
