@@ -222,8 +222,10 @@ static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
             return -1; /* FIXME TODO */
     }
 
-    if (st->codec->codec_id == AV_CODEC_ID_AC3)
+    if (st->codec->codec_id == AV_CODEC_ID_AC3) {
         rast->full_pkt_size *= 2;
+        rast->subpkt_size   *= 2;
+    }
     return 0;
 }
 
