@@ -144,6 +144,12 @@ typedef struct RMDataHeader {
     uint32_t data_chunk_size, num_data_packets, next_data_chunk_offset;
 } RMDataHeader;
 
+typedef struct RMVidStream {
+    int curpic_num, cur_slice, pkt_pos, videobuf_pos;
+    int slices, videobuf_size;
+    AVPacket pkt;
+} RMVidStream;
+
 /* Information about a particular RM stream, beyond what is described in
  * the relevant AVStream.
  */
@@ -154,6 +160,7 @@ typedef struct RMStream {
     RMPacketCache rmpc;
     RADemuxContext radc; /* Unused if not RA */
     Interleaver interleaver;
+    RMVidStream vst;
 } RMStream;
 
 /* Demux context for RealMedia (audio+video).
@@ -734,8 +741,9 @@ static int rm_read_data_chunk_header(AVFormatContext *s)
         avio_r8(s->pb); /* ASM flags */
     } else {
          av_log(s, AV_LOG_ERROR,
-                "RealMedia: Send sample. Unknown packet_version %"PRIx16".\n",
-                rm->cur_pkt_version);
+                "RealMedia: Send sample. Unknown packet_version %"PRIx16" "
+                "at hex position %"PRIx64".\n",
+                rm->cur_pkt_version, avio_tell(s->pb));
          return AVERROR_INVALIDDATA;
     }
 
@@ -777,8 +785,76 @@ static int initialize_pkt_buf(RMPacketCache *rmpc, int size)
     return 0;
 }
 
+/* Undocumented; logic from the old code. */
+/* TODO: audit use of len vs len2 */
+static int handle_slice(AVFormatContext *s, RMVidStream *vst, AVPacket *pkt,
+                        int subpacket_type, int hdr)
+{
+    int seq, len, pos, pic_num;
+
+    seq = avio_r8(s->pb);
+    len = get_num(s->pb);
+    pos = get_num(s->pb);
+    pic_num = avio_r8(s->pb);
+
+    if ((seq & 0x7F) == 1 || vst->curpic_num != pic_num) {
+        vst->slices       = ((hdr & 0x3F) << 1) + 1;
+        vst->videobuf_size = len + 8 * vst->slices + 1;
+        /* TODO FIXME: what's happening here, and why? */
+        av_free_packet(&vst->pkt); //FIXME this should be output.
+        if(av_new_packet(&vst->pkt, vst->videobuf_size) < 0)
+            return AVERROR(ENOMEM);
+        vst->videobuf_pos = 8 * vst->slices + 1;
+        vst->cur_slice    = 0;
+        vst->curpic_num   = pic_num;
+        vst->pkt_pos      = avio_tell(s->pb);
+    }
+
+    if (subpacket_type == 2)
+        len = FFMIN(len, pos);
+
+    /* FIXME TODO: what does it take to trigger this? */
+    if (++vst->cur_slice > vst->slices) {
+        printf("++vst->cur_slice > vst->slices!\n");
+        return AVERROR_INVALIDDATA;
+    }
+
+    AV_WL32(vst->pkt.data - 7 + 8 * vst->cur_slice, 1);
+    AV_WL32(vst->pkt.data - 3 + 8 * vst->cur_slice,
+            vst->videobuf_pos - 8 * vst->slices - 1);
+    if (vst->videobuf_pos + len > vst->videobuf_size) {
+        printf("vst->videobuf_pos + len > vst->videobuf_size\n");
+        return AVERROR_INVALIDDATA;
+    }
+    if (avio_read(s->pb, vst->pkt.data + vst->videobuf_pos, len) != len)
+        return AVERROR(EIO);
+    vst->videobuf_pos  += len;
+
+    /* Is the second check actually correct? TODO >=? */
+    if (subpacket_type == 2 || vst->videobuf_pos == vst->videobuf_size) {
+        vst->pkt.data[0] = vst->cur_slice - 1;
+        *pkt             = vst->pkt;
+        vst->pkt.data    = NULL;
+        vst->pkt.size    = 0;
+        vst->pkt.buf     = NULL;
+
+        if (vst->slices != vst->cur_slice)
+            //FIXME find out how to set slices correct from the begin
+            memmove(pkt->data + 1 + 8 * vst->cur_slice,
+                    pkt->data + 1 + 8 * vst->slices,
+                    vst->videobuf_pos - 1 - 8 * vst->slices);
+        pkt->size   = vst->videobuf_pos + 8 * (vst->cur_slice - vst->slices);
+        pkt->pts    = AV_NOPTS_VALUE;
+        pkt->pos    = vst->pkt_pos;
+        vst->slices = 0;
+    }
+
+    return 0;
+}
+
 /* Figure out which bitstream layout is being used, frame information, etc.
- * This partially replaces rm_assemble_video_frame.
+ * This partially replaces rm_assemble_video_frame, and shamelessly borrows
+ * logic from it: frame composition seems undocumented correctly elsewhere.
  * For now, cheerfully assume that there aren't extra DATA blocks in
  * inconvenient places.
  */
@@ -786,18 +862,18 @@ static int rm_assemble_video(AVFormatContext *s, RMStream *rmst,
                              RMPacketCache *rmpc, AVPacket *pkt)
 {
     uint8_t first_bits, subpacket_type, pic_num;
-    uint32_t len, pos;
+    uint32_t len, pos, seq;
+    int ret;
 
     first_bits = avio_r8(s->pb);
     subpacket_type = first_bits >> 6;
-    //printf("Got subpacket_type %i\n", (int) subpacket_type);
     switch(subpacket_type) {
-    case RM_MULTIPLE_FRAMES:
-        /* TODO FIXME: are the subtleties of the old get_num needed? */
+    case RM_MULTIPLE_FRAMES: /* 11 */
         len     = get_num(s->pb);
         pos     = get_num(s->pb); /* TODO: this is a timestamp. */
         pic_num = avio_r8(s->pb);
-
+        /* Intentional fallthrough */
+    case RM_WHOLE_FRAME: /* 01 */
         /* Why is it +9 with the prelude below? */
         if (av_new_packet(pkt, len + 9) < 0)
             return AVERROR(ENOMEM);
@@ -806,12 +882,15 @@ static int rm_assemble_video(AVFormatContext *s, RMStream *rmst,
         AV_WL32(pkt->data + 5, 0);
         avio_read(s->pb, pkt->data + 9, len);
         rmpc->pending_packets = 1;
-        break;
-    default:
-        printf("Implement case %i\n", (int) subpacket_type);
+        return 0;
+    case RM_LAST_PARTIAL_FRAME: /* 10 */ /* Intentional fallthrough */
+    case RM_PARTIAL_FRAME:      /* 00 */
+        ret = handle_slice(s, &(rmst->vst), pkt, subpacket_type, first_bits);
+        if (ret >= 0)
+            rmpc->pending_packets = 1; /* TODO: maybe > 1? */
+        return ret;
     }
-
-    return 0;
+    return 0; /* Unreachable, but GCC insists. */
 }
 
 
@@ -1060,7 +1139,7 @@ static int rm_read_media_properties_header(AVFormatContext *s,
     }
 
     st = s->streams[rmmp->stream_number];
-    st->priv_data = av_mallocz(sizeof(RMStream));
+    st->priv_data = ff_rm_alloc_rmstream();
     if (!st->priv_data)
         return AVERROR(ENOMEM);
 
@@ -1249,7 +1328,7 @@ static int initialize_streams(AVFormatContext *s, int num_streams)
         if (!st)
             err = 1;
         else {
-            st->priv_data = av_mallocz(sizeof(RMStream));
+            st->priv_data = ff_rm_alloc_rmstream();
             if (!st->priv_data)
                 err = 1;
         }
@@ -1425,9 +1504,13 @@ static int rm_read_cached_packet(AVFormatContext *s, AVPacket *pkt)
         AVStream *st        = st = s->streams[i];
         RMStream *rmst      = st->priv_data;
         RMPacketCache *rmpc = &(rmst->rmpc);
+        int ret;
+
         if (rmpc->pending_packets) {
             Interleaver *inter      = &(rmst->interleaver);
-            return inter->get_packet(s, st, pkt, rmst->subpkt_size);
+            ret = inter->get_packet(s, st, pkt, rmst->subpkt_size);
+            printf("Packet size: 0x%x, pos: 0x%"PRIx64"\n", pkt->size, avio_tell(s->pb));
+            return ret;
         }
     }
     return -1; /* No queued packets */
@@ -1472,7 +1555,10 @@ int ff_rm_retrieve_cache(AVFormatContext *s, AVIOContext *pb,
 
 RMStream *ff_rm_alloc_rmstream (void)
 {
-    return av_mallocz(sizeof(RMStream));
+    RMStream *rmst = av_mallocz(sizeof(RMStream));
+    if (rmst)
+        rmst->vst.curpic_num = -1;
+    return rmst;
 }
 
 int ff_rm_read_mdpr_codecdata(AVFormatContext *s, AVIOContext *pb,
