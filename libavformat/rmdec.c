@@ -700,7 +700,19 @@ static int rm_probe(AVProbeData *p)
     return AVPROBE_SCORE_MAX;
 }
 
+static int get_num(AVIOContext *pb)
+{
+    int n, n1;
 
+    n = avio_rb16(pb);
+    n &= 0x7FFF;
+    if (n >= 0x4000) {
+        return n - 0x4000;
+    } else {
+        n1 = avio_rb16(pb);
+        return (n << 16) | n1;
+    }
+}
 
 static int rm_read_data_chunk_header(AVFormatContext *s)
 {
@@ -780,8 +792,8 @@ static int rm_assemble_video(AVFormatContext *s, RMStream *rmst,
     switch(subpacket_type) {
     case RM_MULTIPLE_FRAMES:
         /* TODO FIXME: are the subtleties of the old get_num needed? */
-        len     = avio_rb32(s->pb);
-        pos     = avio_rb32(s->pb); /* TODO: this is a timestamp. */
+        len     = get_num(s->pb);
+        pos     = get_num(s->pb); /* TODO: this is a timestamp. */
         pic_num = avio_r8(s->pb);
 
         /* Why is it +9 with the prelude below? */
