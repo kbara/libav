@@ -852,6 +852,47 @@ static int handle_slice(AVFormatContext *s, RMVidStream *vst, AVPacket *pkt,
     return 0;
 }
 
+/* Heavily refactored from the old code. */
+static int sync(AVFormatContext *s, int64_t *timestamp, int *flags,
+                int *stream_index, int64_t *pos)
+{
+    RMDemuxContext *rm = s->priv_data;
+    uint32_t state, len;
+    uint16_t stream_num;
+
+tryagain:
+    if (s->pb->eof_reached) {
+        av_log(s, AV_LOG_WARNING, "RealMedia: unexpected EOF.\n");
+        return AVERROR(EOF);
+    }
+
+    //if (rm->remaining_len > 0)
+    //{
+    //    printf("Bring over the remaining_len case.\n");
+    //    return 0; /* FIXME TODO */
+    //}
+
+    state = avio_rb32(s->pb);
+    if ((state > 0xFFFF) || (state <= 12))
+        printf("This needs to take more logic from sync.\n");
+
+    len        = state - 12;
+    stream_num = avio_rb16(s->pb);
+    avio_rb32(s->pb); /* TODO: timestamp */
+    avio_r8(s->pb); /* TODO: flags */
+
+    if (stream_num >= rm->num_streams) /* Out of bounds */
+    {
+        printf("Out of bound stream number... really?!\n");
+        avio_skip(s->pb, len);
+        //rm->remaining_len = 0;
+        goto tryagain;
+    }
+    *stream_index = stream_num;
+
+    return 0;
+}
+
 /* Figure out which bitstream layout is being used, frame information, etc.
  * This partially replaces rm_assemble_video_frame, and shamelessly borrows
  * logic from it: frame composition seems undocumented correctly elsewhere.
@@ -941,7 +982,11 @@ static int rm_cache_packet(AVFormatContext *s, AVPacket *pkt)
         /* Bail out of all this and handle this elsewhere if it's video */
         if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO)
         {
-            int vid_ok = rm_assemble_video(s, rmst, rmpc, pkt);
+            int vid_ok, sync_ok;
+            uint64_t tmp_timestamp, tmp_pos; /* TODO FIXME */
+            int tmp_flags, tmp_stream_index; /* TODO FIXME */
+            sync_ok = sync(s, &tmp_timestamp, &tmp_flags, &tmp_stream_index, &tmp_pos);
+            vid_ok = rm_assemble_video(s, rmst, rmpc, pkt);
             if (vid_ok < 0)
                 /* Couldn't get a full video packet; try to get something. */
                 return rm_cache_packet(s, pkt);
