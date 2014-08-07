@@ -775,7 +775,7 @@ static int rm_read_indices(AVFormatContext *s)
         int ret;
 
         /* This shouldn't happen, but there's enough info to recover. */
-        if (avio_tell(s->pb) != next_header_start)
+        if ((avio_tell(s->pb) != next_header_start) && (next_header_start != 0))
         {
             printf("i: %i\n", i);
             av_log(s, AV_LOG_WARNING,
