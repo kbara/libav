@@ -1063,7 +1063,8 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
  * inconvenient places.
  */
 static int rm_assemble_video(AVFormatContext *s, RMStream *rmst,
-                             RMPacketCache *rmpc, AVPacket *pkt, int dch_len)
+                             RMPacketCache *rmpc, AVPacket *pkt, int dch_len,
+                             uint32_t timestamp)
 {
     uint8_t first_bits, subpacket_type, pic_num;
     uint32_t len, pos, seq;
@@ -1092,6 +1093,7 @@ static int rm_assemble_video(AVFormatContext *s, RMStream *rmst,
         AV_WL32(pkt->data + 1, 1);
         AV_WL32(pkt->data + 5, 0);
         avio_read(s->pb, pkt->data + 9, len);
+        pkt->pts = timestamp;
         rmpc->pending_packets = 1;
         return 0;
     /* Partial frames, not whole ones. */
@@ -1101,7 +1103,7 @@ static int rm_assemble_video(AVFormatContext *s, RMStream *rmst,
         if (ret >= 0)
             rmpc->pending_packets = 1;
         if (ret > 0)
-            return rm_assemble_video(s, rmst, rmpc, pkt, ret);
+            return rm_assemble_video(s, rmst, rmpc, pkt, ret, timestamp);
         return ret;
     }
     return 0; /* Unreachable, but GCC insists. */
@@ -1157,10 +1159,12 @@ static int rm_cache_packet(AVFormatContext *s, AVPacket *pkt)
         if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO)
         {
             int vid_ok;
+            uint32_t ts;
             //uint64_t tmp_timestamp, tmp_pos; /* TODO FIXME */
             //int tmp_flags, tmp_stream_index; /* TODO FIXME */
             //sync_ok = sync(s, &tmp_timestamp, &tmp_flags, &tmp_stream_index, &tmp_pos);
-            vid_ok = rm_assemble_video(s, rmst, rmpc, pkt, chunk_size);
+            ts = rm->cur_timestamp_ms;
+            vid_ok = rm_assemble_video(s, rmst, rmpc, pkt, chunk_size, ts);
             if (vid_ok < 0)
                 /* It went horribly wrong; see if something else can be retrieved. */
                 return rm_cache_packet(s, pkt);
