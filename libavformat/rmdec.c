@@ -64,7 +64,7 @@
 #define RM_LAST_PARTIAL_FRAME 2 /* 10 */
 #define RM_MULTIPLE_FRAMES    3 /* 11 */
 
-#define RM_SLICES_REMAINING 0x1000 /* Arbitrary positive number */
+//#define RM_SLICES_REMAINING 0x1000 /* Arbitrary positive number */
 
 /* The relevant VSELP format has 159-bit frames, stored in 20 bytes */
 #define RA144_PKT_SIZE 20
@@ -797,6 +797,7 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
     int slices, videobuf_size, videobuf_pos, /*curpic_num,*/ pkt_pos;
     int slice_header_bytes = 0;
     int64_t pre_slice_header_pos;
+    int ends_with_multiframe = 0;
 
     pre_slice_header_pos = avio_tell(s->pb);
     seq                  = avio_r8(s->pb);
@@ -825,6 +826,7 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
     for (cur_slice = 1; cur_slice <= slices; cur_slice++) {
         int dch_ret, slice_header;
         int64_t pre_header_pos;
+        int garbage_bytes = 0;
 
         pre_slice_header_pos = avio_tell(s->pb);
         slice_header         = avio_r8(s->pb);
@@ -846,8 +848,21 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
         printf("cur_slice: %i at 0x%"PRIx64"\n", cur_slice, avio_tell(s->pb));
         cur_len -= slice_header_bytes;
 
-        if (subpacket_type == RM_LAST_PARTIAL_FRAME)
-            cur_len = FFMIN(cur_len, pos); /* TODO: why? */
+        /* RM_LAST_PARTIAL_FRAME slices can be followed by
+           multiple frames in the same data chunk. */
+        if ((subpacket_type == RM_LAST_PARTIAL_FRAME)) {
+            if (cur_len > pos) {
+                ends_with_multiframe = cur_len - pos;
+                cur_len = pos;
+            }
+        } else if (cur_len > pos) {
+            /* Some last slices are RM_PARTIAL_FRAME, not RM_LAST_PARTIAL_FRAME
+             * and are part of a too-large data chunk. Why?
+             * This is an ugly hack to at least keep data chunk headers
+             * at the beginning of the next read. */
+            garbage_bytes = cur_len - pos;
+            cur_len = pos;
+        }
 
         AV_WL32(pkt->data - 7 + 8 * cur_slice, 1);
         AV_WL32(pkt->data - 3 + 8 * cur_slice,
@@ -861,6 +876,9 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
         if (avio_read(s->pb, pkt->data + videobuf_pos, cur_len) != cur_len)
             return AVERROR(EIO);
         videobuf_pos += cur_len;
+
+        if (garbage_bytes)
+            avio_seek(s->pb, garbage_bytes, SEEK_CUR);
 
         /* Don't read the data header after the last slice. */
         if (cur_slice != slices) {
@@ -884,18 +902,22 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
     //    vst->pkt.size    = 0;
     //    vst->pkt.buf     = NULL;
 
+    /* This is dead code, based on the way slices
+       were initially set incorrectly... TODO: audit it
+       and the WL32 code above to make sure the offsets are correct.
     if (slices != cur_slice) {
         printf("Investigate why slices != cur_slice at the end.\n");
         //FIXME find out how to set slices correct from the begin
             memmove(pkt->data + 1 + 8 * cur_slice,
                     pkt->data + 1 + 8 * slices,
                     videobuf_pos - 1 - 8 * slices);
-    }
+    }*/
     pkt->size   = videobuf_pos + 8 * (cur_slice - slices);
     pkt->pts    = AV_NOPTS_VALUE;
     pkt->pos    = pkt_pos;
     //}
-    return 0;
+    /* 0 if false, bytes left if true. */
+    return ends_with_multiframe;
 }
 ///* Heavily refactored from the old code. */
 //static int sync(AVFormatContext *s, int64_t *timestamp, int *flags,
@@ -959,6 +981,8 @@ static int rm_assemble_video(AVFormatContext *s, RMStream *rmst,
     switch(subpacket_type) {
     /* Whole frame(s). */
     case RM_MULTIPLE_FRAMES: /* 11 */
+        /* TODO FIXME: do these need to be in seperate packets? */
+        /* TODO FIXME: put these in a buffer, not directly in a packet.*/
         len     = get_num(s->pb);
         if (len != dch_len)
             printf("Handle len: %i, dch_len: %i\n", len, dch_len);
@@ -979,8 +1003,10 @@ static int rm_assemble_video(AVFormatContext *s, RMStream *rmst,
     case RM_LAST_PARTIAL_FRAME: /* 10 */ /* Intentional fallthrough */
     case RM_PARTIAL_FRAME:      /* 00 */
         ret = handle_slices(s, pkt, subpacket_type, first_bits, dch_len);
-        if (ret == 0)
-            rmpc->pending_packets = 1; /* TODO: maybe > 1? */
+        if (ret >= 0)
+            rmpc->pending_packets = 1;
+        if (ret > 0)
+            return rm_assemble_video(s, rmst, rmpc, pkt, ret);
         return ret;
     }
     return 0; /* Unreachable, but GCC insists. */
@@ -1043,9 +1069,9 @@ static int rm_cache_packet(AVFormatContext *s, AVPacket *pkt)
             if (vid_ok < 0)
                 /* It went horribly wrong; see if something else can be retrieved. */
                 return rm_cache_packet(s, pkt);
-            if (vid_ok != RM_SLICES_REMAINING)
-                return vid_ok; /* Done! */
-            // otherwise, fall through and handle the slices.
+            //if (vid_ok != RM_SLICES_REMAINING)
+            //    return vid_ok; /* Done! */
+            return vid_ok;
         }
 
         inter = &(rmst->interleaver);
