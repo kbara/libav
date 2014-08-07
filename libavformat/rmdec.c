@@ -1070,8 +1070,8 @@ static int rm_assemble_video(AVFormatContext *s, RMStream *rmst,
     int ret;
 
     printf("In AV, position: %"PRIx64"\n", avio_tell(s->pb));
-    len = dch_len; /* Length of the current data chunk. */
-    first_bits = avio_r8(s->pb);
+    len            = dch_len; /* Length of the current data chunk. */
+    first_bits     = avio_r8(s->pb);
     subpacket_type = first_bits >> 6;
     switch(subpacket_type) {
     /* Whole frame(s). */
