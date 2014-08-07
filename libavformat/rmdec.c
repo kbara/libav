@@ -880,7 +880,7 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
                         int hdr, int dch_len)
 {
     RMDemuxContext *rm = s->priv_data;
-    int seq, full_frame_len, pos, pic_num, cur_slice, cur_len;
+    int seq, full_frame_len, pos, pic_num, cur_slice, cur_len, compat_slices;
     int slices, videobuf_size, videobuf_pos, /*curpic_num,*/ pkt_pos;
     int slice_header_bytes = 0;
     int64_t pre_slice_header_pos;
@@ -896,18 +896,26 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
 
     //if ((seq & 0x7F) == 1 || curpic_num != pic_num) {
     slices        = ((hdr & 0x3F) << 1);
-    if (seq & 0x80) /* The first bit of seq is the last slice count field. */
+    /* The old code calculated the number of slices wrong. */
+    compat_slices = slices + 1;
+    if (seq & 0x80) {/* The first bit of seq is the last slice count field. */
         slices += 1;
-    videobuf_size = full_frame_len + 8 * slices + 1;
+    }
+    videobuf_size = full_frame_len + 8 * compat_slices + 1;
     if(av_new_packet(pkt, videobuf_size) < 0)
         return AVERROR(ENOMEM);
-    videobuf_pos = 8 * slices + 1;
+    videobuf_pos = 8 * compat_slices + 1; 
+    /* Zero out explicitly-set header bytes; this simplifies
+       backwards compatibility with an old slice-count bug. */
+    for (int i = 0; i < videobuf_pos; i++)
+        pkt->data[i] = '\0';
     //cur_slice    = 0;
     //curpic_num   = pic_num;
     pkt_pos      = avio_tell(s->pb);
     cur_len      = dch_len;
     /* Reread the slice header rather than special-casing the first run. */
     avio_seek(s->pb, -1 * slice_header_bytes, SEEK_CUR);
+    pkt->data[0] = slices - 1;
 
     /* Slice numbers start at 1. */
     for (cur_slice = 1; cur_slice <= slices; cur_slice++) {
@@ -942,7 +950,7 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
                 ends_with_multiframe = cur_len - pos;
                 cur_len = pos;
             }
-        } else if (cur_len > pos) {
+        } else if ((cur_slice == slices) && (cur_len > pos)) {
             /* Some last slices are RM_PARTIAL_FRAME, not RM_LAST_PARTIAL_FRAME
              * and are part of a too-large data chunk. Why?
              * This is an ugly hack to at least keep data chunk headers
@@ -953,7 +961,7 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
 
         AV_WL32(pkt->data - 7 + 8 * cur_slice, 1);
         AV_WL32(pkt->data - 3 + 8 * cur_slice,
-                videobuf_pos - 8 * slices - 1);
+                videobuf_pos - 8 * compat_slices - 1);
         if (videobuf_pos + cur_len > videobuf_size) {
             printf("videobuf_pos + cur_len > videobuf_size\n");
             av_free_packet(pkt);
