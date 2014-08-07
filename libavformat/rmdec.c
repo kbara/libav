@@ -787,76 +787,105 @@ static int initialize_pkt_buf(RMPacketCache *rmpc, int size)
     return 0;
 }
 
-/* Undocumented; logic from the old code. */
-/* TODO: audit use of len vs len2 */
-static int handle_slice(AVFormatContext *s, RMVidStream *vst, AVPacket *pkt,
-                        int subpacket_type, int hdr)
+/* Undocumented; logic adapted from the old code. */
+/* This assumes slices are contiguous; revisit if false. */
+static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
+                        int hdr, int dch_len)
 {
-    int seq, len, pos, pic_num;
+    RMDemuxContext *rm = s->priv_data;
+    int seq, full_frame_len, pos, pic_num, cur_slice, cur_len;
+    int slices, videobuf_size, videobuf_pos, /*curpic_num,*/ pkt_pos;
+    int slice_header_bytes = 0;
+    int64_t pre_slice_header_pos;
 
-    seq = avio_r8(s->pb);
-    len = get_num(s->pb);
-    pos = get_num(s->pb);
-    pic_num = avio_r8(s->pb);
+    pre_slice_header_pos = avio_tell(s->pb);
+    seq                  = avio_r8(s->pb);
+    full_frame_len       = get_num(s->pb);
+    pos                  = get_num(s->pb);
+    pic_num              = avio_r8(s->pb);
+    /* The +1 is because 'hdr' was read by the caller. */
+    slice_header_bytes   = avio_tell(s->pb) - pre_slice_header_pos + 1;
 
-    if ((seq & 0x7F) == 1 || vst->curpic_num != pic_num) {
-        vst->slices       = ((hdr & 0x3F) << 1) + 1;
-        vst->videobuf_size = len + 8 * vst->slices + 1;
-        /* TODO FIXME: what's happening here, and why? */
-        av_free_packet(&vst->pkt); //FIXME this should be output.
-        if(av_new_packet(&vst->pkt, vst->videobuf_size) < 0)
-            return AVERROR(ENOMEM);
-        vst->videobuf_pos = 8 * vst->slices + 1;
-        vst->cur_slice    = 0;
-        vst->curpic_num   = pic_num;
-        vst->pkt_pos      = avio_tell(s->pb);
+    //if ((seq & 0x7F) == 1 || curpic_num != pic_num) {
+    slices        = ((hdr & 0x3F) << 1) + 1;
+    videobuf_size = full_frame_len + 8 * slices + 1;
+    if(av_new_packet(pkt, videobuf_size) < 0)
+        return AVERROR(ENOMEM);
+    videobuf_pos = 8 * slices + 1;
+    //cur_slice    = 0;
+    //curpic_num   = pic_num;
+    pkt_pos      = avio_tell(s->pb);
+    cur_len      = dch_len;
+    /* Reread the slice header rather than special-casing the first run. */
+    avio_seek(s->pb, -1 * slice_header_bytes, SEEK_CUR);
+
+    /* Slice numbers start at 1. */
+    for (cur_slice = 1; cur_slice < slices; cur_slice++) {
+        int dch_ret, slice_header;
+        int64_t pre_header_pos;
+
+        pre_slice_header_pos = avio_tell(s->pb);
+        slice_header         = avio_r8(s->pb);
+        seq                  = avio_r8(s->pb);
+        full_frame_len       = get_num(s->pb);
+        pos                  = get_num(s->pb);
+        pic_num              = avio_r8(s->pb);
+        slice_header_bytes   = avio_tell(s->pb) - pre_slice_header_pos;
+
+        printf("cur_slice: %i at 0x%"PRIx64"\n", cur_slice, avio_tell(s->pb));
+        cur_len -= slice_header_bytes;
+
+        if (subpacket_type == RM_LAST_PARTIAL_FRAME)
+            cur_len = FFMIN(cur_len, pos); /* TODO: why? */
+
+        AV_WL32(pkt->data - 7 + 8 * cur_slice, 1);
+        AV_WL32(pkt->data - 3 + 8 * cur_slice,
+                videobuf_pos - 8 * slices - 1);
+        if (videobuf_pos + cur_len > videobuf_size) {
+            printf("videobuf_pos + cur_len > videobuf_size\n");
+            av_free_packet(pkt);
+            return AVERROR_INVALIDDATA;
+        }
+        printf("cur_len: %i\n", cur_len);
+        if (avio_read(s->pb, pkt->data + videobuf_pos, cur_len) != cur_len)
+            return AVERROR(EIO);
+        videobuf_pos += cur_len;
+
+        /* Don't read the data header after the last slice. */
+        if (cur_slice != slices - 1) {
+            pre_header_pos = avio_tell(s->pb);
+            printf("Pre-dch pos: 0x%"PRIx64"\n", pre_header_pos);
+            dch_ret = rm_read_data_chunk_header(s);
+            if (dch_ret)
+            {   av_log(s, AV_LOG_ERROR,
+                       "RealMedia: error reading data chunk header in slices.\n");
+                return dch_ret;
+            }
+            cur_len = rm->cur_pkt_size - (avio_tell(s->pb) - pre_header_pos);
+        }
     }
 
-    if (subpacket_type == RM_LAST_PARTIAL_FRAME)
-        len = FFMIN(len, pos);
+    /* All the slices have been read */
+    //if (subpacket_type == 2 || videobuf_pos == videobuf_size) {
+    //    vst->pkt.data[0] = vst->cur_slice - 1;
+    //    *pkt             = vst->pkt;
+    //    vst->pkt.data    = NULL;
+    //    vst->pkt.size    = 0;
+    //    vst->pkt.buf     = NULL;
 
-    /* FIXME TODO: what does it take to trigger this? */
-    if (++vst->cur_slice > vst->slices) {
-        printf("++vst->cur_slice > vst->slices!\n");
-        return AVERROR_INVALIDDATA;
+    if (slices != cur_slice) {
+        printf("Investigate why slices != cur_slice at the end.\n");
+        //FIXME find out how to set slices correct from the begin
+            memmove(pkt->data + 1 + 8 * cur_slice,
+                    pkt->data + 1 + 8 * slices,
+                    videobuf_pos - 1 - 8 * slices);
     }
-
-    AV_WL32(vst->pkt.data - 7 + 8 * vst->cur_slice, 1);
-    AV_WL32(vst->pkt.data - 3 + 8 * vst->cur_slice,
-            vst->videobuf_pos - 8 * vst->slices - 1);
-    if (vst->videobuf_pos + len > vst->videobuf_size) {
-        printf("vst->videobuf_pos + len > vst->videobuf_size\n");
-        return AVERROR_INVALIDDATA;
-    }
-    if (avio_read(s->pb, vst->pkt.data + vst->videobuf_pos, len) != len)
-        return AVERROR(EIO);
-    vst->videobuf_pos  += len;
-
-    /* Is the second check actually correct? TODO >=? */
-    if (subpacket_type == 2 || vst->videobuf_pos == vst->videobuf_size) {
-        vst->pkt.data[0] = vst->cur_slice - 1;
-        *pkt             = vst->pkt;
-        vst->pkt.data    = NULL;
-        vst->pkt.size    = 0;
-        vst->pkt.buf     = NULL;
-
-        if (vst->slices != vst->cur_slice)
-            //FIXME find out how to set slices correct from the begin
-            memmove(pkt->data + 1 + 8 * vst->cur_slice,
-                    pkt->data + 1 + 8 * vst->slices,
-                    vst->videobuf_pos - 1 - 8 * vst->slices);
-        pkt->size   = vst->videobuf_pos + 8 * (vst->cur_slice - vst->slices);
-        pkt->pts    = AV_NOPTS_VALUE;
-        pkt->pos    = vst->pkt_pos;
-        vst->slices = 0;
-    }
-
-    if (vst->cur_slice == vst->num_slices)
-        return 0;
-    else
-        return RM_SLICES_REMAINING;
+    pkt->size   = videobuf_pos + 8 * (cur_slice - slices);
+    pkt->pts    = AV_NOPTS_VALUE;
+    pkt->pos    = pkt_pos;
+    //}
+    return 0;
 }
-
 ///* Heavily refactored from the old code. */
 //static int sync(AVFormatContext *s, int64_t *timestamp, int *flags,
 //                int *stream_index, int64_t *pos)
@@ -906,21 +935,22 @@ static int handle_slice(AVFormatContext *s, RMVidStream *vst, AVPacket *pkt,
  * inconvenient places.
  */
 static int rm_assemble_video(AVFormatContext *s, RMStream *rmst,
-                             RMPacketCache *rmpc, AVPacket *pkt, int data_len)
+                             RMPacketCache *rmpc, AVPacket *pkt, int dch_len)
 {
     uint8_t first_bits, subpacket_type, pic_num;
     uint32_t len, pos, seq;
     int ret;
 
     printf("In AV, position: %"PRIx64"\n", avio_tell(s->pb));
-    len = data_len;
+    len = dch_len; /* Length of the current data chunk. */
     first_bits = avio_r8(s->pb);
     subpacket_type = first_bits >> 6;
     switch(subpacket_type) {
+    /* Whole frame(s). */
     case RM_MULTIPLE_FRAMES: /* 11 */
         len     = get_num(s->pb);
-        if (len != data_len)
-            printf("Handle len: %i, data_len: %i\n", len, data_len);
+        if (len != dch_len)
+            printf("Handle len: %i, dch_len: %i\n", len, dch_len);
         pos     = get_num(s->pb); /* TODO: this is a timestamp. */
         pic_num = avio_r8(s->pb);
         /* Intentional fallthrough */
@@ -934,9 +964,10 @@ static int rm_assemble_video(AVFormatContext *s, RMStream *rmst,
         avio_read(s->pb, pkt->data + 9, len);
         rmpc->pending_packets = 1;
         return 0;
+    /* Partial frames, not whole ones. */
     case RM_LAST_PARTIAL_FRAME: /* 10 */ /* Intentional fallthrough */
     case RM_PARTIAL_FRAME:      /* 00 */
-        ret = handle_slice(s, &(rmst->vst), pkt, subpacket_type, first_bits);
+        ret = handle_slices(s, pkt, subpacket_type, first_bits, dch_len);
         if (ret == 0)
             rmpc->pending_packets = 1; /* TODO: maybe > 1? */
         return ret;
@@ -994,8 +1025,8 @@ static int rm_cache_packet(AVFormatContext *s, AVPacket *pkt)
         if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO)
         {
             int vid_ok;
-            uint64_t tmp_timestamp, tmp_pos; /* TODO FIXME */
-            int tmp_flags, tmp_stream_index; /* TODO FIXME */
+            //uint64_t tmp_timestamp, tmp_pos; /* TODO FIXME */
+            //int tmp_flags, tmp_stream_index; /* TODO FIXME */
             //sync_ok = sync(s, &tmp_timestamp, &tmp_flags, &tmp_stream_index, &tmp_pos);
             vid_ok = rm_assemble_video(s, rmst, rmpc, pkt, chunk_size);
             if (vid_ok < 0)
