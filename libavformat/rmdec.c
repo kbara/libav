@@ -807,7 +807,9 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
     slice_header_bytes   = avio_tell(s->pb) - pre_slice_header_pos + 1;
 
     //if ((seq & 0x7F) == 1 || curpic_num != pic_num) {
-    slices        = ((hdr & 0x3F) << 1) + 1;
+    slices        = ((hdr & 0x3F) << 1);
+    if (seq & 0x80) /* The first bit of seq is the last slice count field. */
+        slices += 1;
     videobuf_size = full_frame_len + 8 * slices + 1;
     if(av_new_packet(pkt, videobuf_size) < 0)
         return AVERROR(ENOMEM);
@@ -820,18 +822,27 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
     avio_seek(s->pb, -1 * slice_header_bytes, SEEK_CUR);
 
     /* Slice numbers start at 1. */
-    for (cur_slice = 1; cur_slice < slices; cur_slice++) {
+    for (cur_slice = 1; cur_slice <= slices; cur_slice++) {
         int dch_ret, slice_header;
         int64_t pre_header_pos;
 
         pre_slice_header_pos = avio_tell(s->pb);
         slice_header         = avio_r8(s->pb);
-        seq                  = avio_r8(s->pb);
+        seq                  = avio_r8(s->pb) & 0x7F;
         full_frame_len       = get_num(s->pb);
         pos                  = get_num(s->pb);
         pic_num              = avio_r8(s->pb);
         slice_header_bytes   = avio_tell(s->pb) - pre_slice_header_pos;
 
+        /* Sanity check: the current slice should match the last 7 bits of seq. */
+        if (cur_slice != seq)
+        {
+            av_log(s, AV_LOG_ERROR,
+                   "RealMedia: bad slice #, wanted %"PRIu64", got %"PRIu64"\n",
+                   cur_slice, seq);
+            av_free_packet(pkt);
+            return AVERROR_INVALIDDATA;
+        }
         printf("cur_slice: %i at 0x%"PRIx64"\n", cur_slice, avio_tell(s->pb));
         cur_len -= slice_header_bytes;
 
@@ -852,7 +863,7 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
         videobuf_pos += cur_len;
 
         /* Don't read the data header after the last slice. */
-        if (cur_slice != slices - 1) {
+        if (cur_slice != slices) {
             pre_header_pos = avio_tell(s->pb);
             printf("Pre-dch pos: 0x%"PRIx64"\n", pre_header_pos);
             dch_ret = rm_read_data_chunk_header(s);
