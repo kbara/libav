@@ -711,6 +711,86 @@ static int rm_probe(AVProbeData *p)
     return AVPROBE_SCORE_MAX;
 }
 
+static int rm_read_index_header(AVFormatContext *s, uint32_t *next_header)
+{
+    uint32_t index_tag, size, num_indices;
+    int16_t object_version, stream_number;
+
+    num_indices = 0; /* Make sure this is defined. */
+
+    index_tag = avio_rl32(s->pb);
+    if (index_tag != RM_INDX_HEADER) {
+        av_log(s, AV_LOG_ERROR,
+               "RealMedia: got %"PRIx32", but expected an INDX section.\n",
+               index_tag);
+        return AVERROR_INVALIDDATA;
+    }
+
+    size           = avio_rb32(s->pb);
+    object_version = avio_rb16(s->pb);
+    if (object_version == 0) {
+        num_indices   = avio_rb32(s->pb);
+        stream_number = avio_rb16(s->pb);
+        *next_header  = avio_rb32(s->pb);
+    } else {
+        av_log(s, AV_LOG_ERROR, "RealMedia: unknown index version %"PRIu16"\n",
+               object_version);
+        return AVERROR_INVALIDDATA;
+    }
+
+    /* Read the Index Records */
+    for (int i = 0; i < num_indices; i++)
+    {
+        /* offset       = Offset from the beginning of the file
+         * packet_count = # of packets from beginning until now,
+         *                assuming the file is played from the beginning.
+         */
+        uint32_t timestamp, offset, packet_count;
+        uint16_t ir_object_version;
+
+        object_version = avio_rb16(s->pb);
+        if (ir_object_version == 0)
+        {
+            timestamp    = avio_rb32(s->pb);
+            offset       = avio_rb32(s->pb);
+            packet_count = avio_rb32(s->pb);
+        } else {
+            av_log(s, AV_LOG_ERROR, "RealMedia: unknown index version %"PRIu16"\n",
+                   ir_object_version);
+            return AVERROR_INVALIDDATA;
+        }
+    }
+
+    return num_indices;
+}
+
+static int rm_read_indices(AVFormatContext *s)
+{
+    int index_count;
+    uint32_t next_header_start;
+
+    index_count = rm_read_index_header(s, &next_header_start);
+    /* First one's already been read */
+    for (int i = 1; i < index_count; i++) {
+        int ret;
+
+        /* This shouldn't happen, but there's enough info to recover. */
+        if (avio_tell(s->pb) != next_header_start)
+        {
+            printf("i: %i\n", i);
+            av_log(s, AV_LOG_WARNING,
+                   "RealMedia: Index expected at %"PRIx32"; at %"PRIx64"\n",
+                   next_header_start, avio_tell(s->pb));
+            avio_seek(s->pb, next_header_start, SEEK_SET);
+        }
+
+        ret = rm_read_index_header(s, &next_header_start);
+        if (ret < 0)
+            return ret;
+    }
+    return 0;
+}
+
 static int get_num(AVIOContext *pb)
 {
     int n, n1;
@@ -725,6 +805,7 @@ static int get_num(AVIOContext *pb)
     }
 }
 
+/* TODO: check if this is at the expected index position. */
 static int rm_read_data_chunk_header(AVFormatContext *s)
 {
     RMDemuxContext *rm = s->priv_data;
@@ -742,11 +823,17 @@ static int rm_read_data_chunk_header(AVFormatContext *s)
         avio_rb16(s->pb); /* ASM rule */
         avio_r8(s->pb); /* ASM flags */
     } else {
-         av_log(s, AV_LOG_ERROR,
-                "RealMedia: Send sample. Unknown packet_version %"PRIx16" "
-                "at hex position %"PRIx64".\n",
-                rm->cur_pkt_version, avio_tell(s->pb));
-         return AVERROR_INVALIDDATA;
+        avio_seek(s->pb, rm->cur_pkt_start, SEEK_SET);
+        if (avio_rl32(s->pb) == RM_INDX_HEADER) {
+            avio_seek(s->pb, -4, SEEK_CUR);
+            return rm_read_indices(s);
+        }
+        /* It wasn't an index; something has gone badly wrong. */
+        av_log(s, AV_LOG_ERROR,
+               "RealMedia: Send sample. Unknown packet_version %"PRIx16" "
+               "at hex position %"PRIx64".\n",
+               rm->cur_pkt_version, rm->cur_pkt_start);
+        return AVERROR_INVALIDDATA;
     }
 
     if (rm->cur_stream_number >= rm->num_streams) {
@@ -1646,9 +1733,17 @@ static int rm_read_packet(AVFormatContext *s, AVPacket *pkt)
     int cache_read;
 
     if ((cache_read = rm_read_cached_packet(s, pkt)) == -1) {
-        /* There were no cached packets; cache at least one. */
-        rm_cache_packet(s, pkt);
-        return rm_read_cached_packet(s, pkt);
+        RMDemuxContext *rm = s->priv_data;
+        /* There were no cached packets; cache at least one,
+           if there are any left to cache. */
+        if (avio_tell(s->pb) < rm->first_indx_offset) {
+            rm_cache_packet(s, pkt);
+            return rm_read_cached_packet(s, pkt);
+        } else {
+            /* Read the indexes, and then the file ends. */
+            rm_read_indices(s);
+            return AVERROR(EIO);
+        }
     }
     return cache_read;
 }
