@@ -64,7 +64,7 @@
 #define RM_LAST_PARTIAL_FRAME 2 /* 10 */
 #define RM_MULTIPLE_FRAMES    3 /* 11 */
 
-//#define RM_SLICES_REMAINING 0x1000 /* Arbitrary positive number */
+#define RM_MULTIFRAME_PENDING 0x1000 /* Arbitrary large positive number */
 
 /* The relevant VSELP format has 159-bit frames, stored in 20 bytes */
 #define RA144_PKT_SIZE 20
@@ -124,6 +124,7 @@ typedef struct RMPacketCache {
     uint8_t *pkt_buf;
     size_t buf_size;
     uint8_t *next_pkt_start;
+    uint32_t next_offset;
 } RMPacketCache;
 
 /* RealMedia files have one Media Property header per stream */
@@ -1081,12 +1082,20 @@ static int rm_assemble_video(AVFormatContext *s, RMStream *rmst,
     case RM_MULTIPLE_FRAMES: /* 11 */
         /* TODO FIXME: do these need to be in seperate packets? */
         /* TODO FIXME: put these in a buffer, not directly in a packet.*/
-        len     = get_num(s->pb);
-        if (len != dch_len)
-            printf("Handle len: %i, dch_len: %i\n", len, dch_len);
-        pos     = get_num(s->pb); /* TODO: this is a timestamp. */
-        pic_num = avio_r8(s->pb);
-        /* Intentional fallthrough */
+        //len     = get_num(s->pb);
+        //if (len != dch_len)
+        //    printf("Handle len: %i, dch_len: %i\n", len, dch_len);
+        //pos     = get_num(s->pb); /* TODO: this is a timestamp. */
+        //pic_num = avio_r8(s->pb);
+        avio_seek(s->pb, -1, SEEK_CUR);
+        if (rmpc->pkt_buf)
+            av_free(rmpc->pkt_buf);
+        if (initialize_pkt_buf(rmpc, dch_len))
+            return AVERROR(ENOMEM);
+        avio_read(s->pb, rmpc->pkt_buf, dch_len);
+        rmpc->pending_packets += RM_MULTIFRAME_PENDING;
+        rmpc->next_offset      = 0;
+        break;
     case RM_WHOLE_FRAME: /* 01 */
         /* Why is it +9 with the prelude below? */
         if (av_new_packet(pkt, len + 9) < 0)
@@ -1245,12 +1254,18 @@ static int rm_get_generic_packet(AVFormatContext *s, AVStream *st,
     RMPacketCache *rmpc = &(rmst->rmpc);
 
     if (!rmpc->pending_packets) {
+        av_log(s, AV_LOG_WARNING,
+               "RealMedia: tried to retrieve non-pending packet.\n");
         return -1; /* No packet pending on this stream. */
     }
-    if (rmpc->pkt_buf + rmpc->buf_size < rmpc->next_pkt_start + pkt_size)
+    if (rmpc->pkt_buf + rmpc->buf_size < rmpc->next_pkt_start + pkt_size) {
+        av_log(s, AV_LOG_ERROR,
+               "RealMedia: tried to read too much in get_generic_packet.\n");
+        rmpc->pending_packets = 0;
         return -2; /* Attempt to read too much. */
+    }
 
-    av_new_packet(pkt, pkt_size);
+    av_new_packet(pkt, pkt_size + 9);
     memcpy(pkt->data, rmpc->next_pkt_start, pkt_size);
     pkt->stream_index = st->index;
     rmpc->pending_packets--;
@@ -1309,14 +1324,113 @@ static int rm_postread_video_packet(RMStream *rmst, int bytes_read)
     return 0;
 }
 
+/* Get one frame from a multi-frame packet.
+   The multiframe packet format:
+   [11......] multiframe indicator, 6 bits reserved
+   [AB......] A is reserved, B indicates frame size:
+   if B = 0, frame bits = 30, else frame bits = 14
+   [CD......] C is reserved, D indicates timestamp size.
+   If D = 0, timestamp bits = 30, else timestamp bits = 14
+   [EEEEEEEE] Sequence number.
+   [The specified number of data bytes]
+*/
+#define RM_FRAME_SIZE_MASK   0x40
+#define RM_FRAME_OFFSET_BITS 0x3F
+static int rm_get_one_frame(AVFormatContext *s, AVStream *st, AVPacket *pkt,
+                            int pkt_size)
+{
+    RMStream *rm        = st->priv_data;
+    RMPacketCache *rmpc = &(rm->rmpc);
+    uint8_t first_bits;
+    int32_t cur_offset, frame_size, first_offset_bits, timestamp;
+    int ret = 0;
+
+    cur_offset = rmpc->packets_read;
+    if ((rmpc->pkt_buf[cur_offset] >> 6) != RM_MULTIPLE_FRAMES)
+    {
+        av_log(s->pb, AV_LOG_ERROR, "RealMedia: broken multiple frame.\n");
+        ret = AVERROR_INVALIDDATA; /* TODO: better error code? */
+        goto cleanup;
+    }
+    cur_offset++;
+
+    first_offset_bits = rmpc->pkt_buf[cur_offset] & RM_FRAME_OFFSET_BITS;
+    if (rmpc->pkt_buf[cur_offset] & RM_FRAME_SIZE_MASK) {
+        frame_size = (first_offset_bits << 8) + rmpc->pkt_buf[cur_offset + 1];
+        cur_offset += 2;
+    } else {
+        frame_size = (first_offset_bits    << 24) +
+            (rmpc->pkt_buf[cur_offset + 1] << 16) +
+            (rmpc->pkt_buf[cur_offset + 2] <<  8) +
+            rmpc->pkt_buf[cur_offset + 3];
+        cur_offset += 4;
+    }
+
+    first_offset_bits = rmpc->pkt_buf[cur_offset] & RM_FRAME_OFFSET_BITS;
+    if (rmpc->pkt_buf[cur_offset] & RM_FRAME_SIZE_MASK) {
+        timestamp = (first_offset_bits << 8) + rmpc->pkt_buf[cur_offset + 1];
+        cur_offset += 2;
+    } else {
+        timestamp  = (first_offset_bits    << 24) +
+            (rmpc->pkt_buf[cur_offset + 1] << 16) +
+            (rmpc->pkt_buf[cur_offset + 2] <<  8) +
+            rmpc->pkt_buf[cur_offset + 3];
+        cur_offset += 4;
+    }
+
+    cur_offset++; /* ignore the sequence number */
+    if (cur_offset + frame_size > rmpc->buf_size)
+    {
+        av_log(s, AV_LOG_ERROR,
+               "RealMedia: frame size too large in multiple frame.\n");
+        ret = AVERROR_INVALIDDATA;
+        goto cleanup;
+    }
+
+    if (av_new_packet(pkt, pkt_size + 9) < 0)
+        return AVERROR(ENOMEM);
+
+    pkt->data[0] = 0;
+    AV_WL32(pkt->data + 1, 1);
+    AV_WL32(pkt->data + 5, 0);
+    rmpc->pending_packets = 1;
+    memcmp(pkt->data, rmpc->next_pkt_start, frame_size);
+    pkt->stream_index    = st->index;
+    if (timestamp)
+        pkt->pts         = timestamp;
+
+    rmpc->next_pkt_start = cur_offset + frame_size;
+
+    if (rmpc->next_pkt_start == rmpc->buf_size) {
+        ret = 0;
+        goto cleanup;
+    } else {
+        return 0;
+    }
+
+cleanup:
+    av_freep(&rmpc->pkt_buf);
+    av_free_packet(pkt);
+    rmpc->buf_size = 0;
+    rmpc->next_pkt_start  = 0;
+    rmpc->pending_packets = 0;
+    return ret;
+}
+
 static int rm_get_video_packet(AVFormatContext *s, AVStream *st,
                                AVPacket *pkt, int pkt_size)
 {
     RMStream *rm        = st->priv_data;
     RMPacketCache *rmpc = &(rm->rmpc);
-    rmpc->pending_packets--;
-    pkt->stream_index = st->index;
-    return 0;
+
+    /* Is there a packet already set up? */
+    if (rmpc->pending_packets ^ RM_MULTIFRAME_PENDING) {
+        rmpc->pending_packets--;
+        pkt->stream_index = st->index;
+        return 0;
+    }
+    /* Handle multiframe packets */
+    return rm_get_one_frame(s, st, pkt, pkt_size);
 }
 
 static int rm_read_media_properties_header(AVFormatContext *s,
