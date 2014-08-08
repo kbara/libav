@@ -1009,7 +1009,7 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
     }*/
     cur_slice -= 1;
     printf("videobuf_pos: %i, other: %i\n", videobuf_pos, cur_slice - compat_slices);
-    pkt->size   = videobuf_pos + 8 * (cur_slice - compat_slices);
+    pkt->size   = videobuf_pos; //+ 8 * (cur_slice - compat_slices);
     pkt->pts    = AV_NOPTS_VALUE;
     pkt->pos    = pkt_pos;
     //}
