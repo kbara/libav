@@ -1813,8 +1813,19 @@ static int rm_read_packet(AVFormatContext *s, AVPacket *pkt)
     return cache_read;
 }
 
+/* TODO: am I actually using RMVidStream by now? */
+static void rm_cleanup_stream(AVStream *st)
+{
+    RMStream *rmst = st->priv_data;
+    rm_clear_rmpc(&rmst->rmpc);
+    av_free(rmst->rmmp.type_specific_data);
+}
+
 static int rm_read_close(AVFormatContext *s)
 {
+    RMDemuxContext *rmdc = s->priv_data;
+    for (int i = 0; i < rmdc->num_streams; i++)
+        rm_cleanup_stream(s->streams[i]);
     return 0;
 }
 
