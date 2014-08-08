@@ -805,7 +805,7 @@ static int rm_read_indices(AVFormatContext *s)
     return err_ret; /* 0 iff everything was ok */
 }
 
-static int get_num(AVIOContext *pb)
+static int rm_get_num(AVIOContext *pb)
 {
     int n, n1;
 
@@ -879,7 +879,7 @@ static int rm_read_extradata(AVIOContext *pb, AVCodecContext *avctx,
     return 0;
 }
 
-static int initialize_pkt_buf(RMPacketCache *rmpc, int size)
+static int rm_initialize_pkt_buf(RMPacketCache *rmpc, int size)
 {
     rmpc->pkt_buf = av_mallocz(size);
     if (!rmpc->pkt_buf)
@@ -890,8 +890,8 @@ static int initialize_pkt_buf(RMPacketCache *rmpc, int size)
 
 /* Undocumented; logic adapted from the old code. */
 /* This assumes slices are contiguous; revisit if false. */
-static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
-                        int hdr, int dch_len)
+static int rm_handle_slices(AVFormatContext *s, AVPacket *pkt,
+                            int subpacket_type, int hdr, int dch_len)
 {
     RMDemuxContext *rm = s->priv_data;
     int full_frame_len, pos, cur_len, compat_slices;
@@ -903,8 +903,8 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
 
     pre_slice_header_pos = avio_tell(s->pb);
     seq                  = avio_r8(s->pb);
-    full_frame_len       = get_num(s->pb);
-    pos                  = get_num(s->pb);
+    full_frame_len       = rm_get_num(s->pb);
+    pos                  = rm_get_num(s->pb);
     avio_r8(s->pb);      /* pic_num */
     /* The +1 is because 'hdr' was read by the caller. */
     slice_header_bytes   = avio_tell(s->pb) - pre_slice_header_pos + 1;
@@ -937,8 +937,8 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
         pre_slice_header_pos = avio_tell(s->pb);
         avio_r8(s->pb);      /* Slice header */
         seq                  = avio_r8(s->pb) & 0x7F;
-        full_frame_len       = get_num(s->pb);
-        pos                  = get_num(s->pb);
+        full_frame_len       = rm_get_num(s->pb);
+        pos                  = rm_get_num(s->pb);
         avio_r8(s->pb);      /* pic_num */
         slice_header_bytes   = avio_tell(s->pb) - pre_slice_header_pos;
 
@@ -1037,7 +1037,7 @@ static int rm_assemble_video(AVFormatContext *s, RMStream *rmst,
         avio_seek(s->pb, -1, SEEK_CUR);
         if (rmpc->pkt_buf)
             rm_clear_rmpc(rmpc);
-        if (initialize_pkt_buf(rmpc, dch_len))
+        if (rm_initialize_pkt_buf(rmpc, dch_len))
             return AVERROR(ENOMEM);
         avio_read(s->pb, rmpc->pkt_buf, dch_len);
         rmpc->pending_packets += RM_MULTIFRAME_PENDING;
@@ -1057,7 +1057,7 @@ static int rm_assemble_video(AVFormatContext *s, RMStream *rmst,
     /* Partial frames, not whole ones. */
     case RM_LAST_PARTIAL_FRAME: /* 10 */ /* Intentional fallthrough */
     case RM_PARTIAL_FRAME:      /* 00 */
-        ret = handle_slices(s, pkt, subpacket_type, first_bits, dch_len);
+        ret = rm_handle_slices(s, pkt, subpacket_type, first_bits, dch_len);
         if (ret >= 0)
             rmpc->pending_packets = 1;
         if (ret > 0)
@@ -1139,7 +1139,7 @@ static int rm_cache_packet(AVFormatContext *s, AVPacket *pkt)
 
         /* Initialize the packet buffer if necessary */
         if (!rmpc->pkt_buf)
-            if (initialize_pkt_buf(rmpc, data_bytes_to_read))
+            if (rm_initialize_pkt_buf(rmpc, data_bytes_to_read))
                 return AVERROR(ENOMEM);
         /* Revisit this if adding partial packet support. */
         if (data_bytes_to_read > rmpc->buf_size) {
@@ -1601,7 +1601,7 @@ static int rm_read_data_header(AVFormatContext *s, RMDataHeader *rmdh)
     return 0;
 }
 
-static int initialize_streams(AVFormatContext *s, int num_streams)
+static int rm_initialize_streams(AVFormatContext *s, int num_streams)
 {
     int i, j, err = 0;
     AVStream *st;
@@ -1669,7 +1669,7 @@ static int rm_read_prop_header(AVFormatContext *s)
     rm->cur_pkt_start = 0;
     rm->cur_pkt_size  = 0;
 
-    init_stream_ret = initialize_streams(s, rm->num_streams);
+    init_stream_ret = rm_initialize_streams(s, rm->num_streams);
     if (init_stream_ret) /* Setting up failed */
         return init_stream_ret; /* Preserve why */
 
