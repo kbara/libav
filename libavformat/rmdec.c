@@ -180,7 +180,7 @@ typedef struct RMDemuxContext {
     uint16_t num_streams, flags;
     /* Information related to the current packet */
     uint16_t cur_pkt_size, cur_stream_number, cur_pkt_version;
-    int cur_pkt_start;
+    int64_t cur_pkt_start;
     uint32_t cur_timestamp_ms;
     RMDataHeader cur_data_header;
 } RMDemuxContext;
@@ -881,9 +881,10 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
                         int hdr, int dch_len)
 {
     RMDemuxContext *rm = s->priv_data;
-    int seq, full_frame_len, pos, pic_num, cur_slice, cur_len, compat_slices;
-    int slices, videobuf_size, videobuf_pos, /*curpic_num,*/ pkt_pos;
+    int full_frame_len, pos, cur_len, compat_slices;
+    int slices, videobuf_size, videobuf_pos, pkt_pos;
     int slice_header_bytes = 0;
+    uint8_t cur_slice, seq;
     int64_t pre_slice_header_pos;
     int ends_with_multiframe = 0;
 
@@ -891,7 +892,7 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
     seq                  = avio_r8(s->pb);
     full_frame_len       = get_num(s->pb);
     pos                  = get_num(s->pb);
-    pic_num              = avio_r8(s->pb);
+    avio_r8(s->pb);      /* pic_num */
     /* The +1 is because 'hdr' was read by the caller. */
     slice_header_bytes   = avio_tell(s->pb) - pre_slice_header_pos + 1;
 
@@ -906,10 +907,6 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
     if(av_new_packet(pkt, videobuf_size) < 0)
         return AVERROR(ENOMEM);
     videobuf_pos = 8 * slices + 1;
-    /* Zero out explicitly-set header bytes; this simplifies
-       backwards compatibility with an old slice-count bug. */
-    for (int i = 0; i < videobuf_pos; i++)
-        pkt->data[i] = '\0';
     //cur_slice    = 0;
     //curpic_num   = pic_num;
     pkt_pos      = avio_tell(s->pb);
@@ -920,23 +917,23 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
 
     /* Slice numbers start at 1. */
     for (cur_slice = 1; cur_slice <= slices; cur_slice++) {
-        int dch_ret, slice_header;
+        int dch_ret;
         int64_t pre_header_pos;
         int garbage_bytes = 0;
 
         pre_slice_header_pos = avio_tell(s->pb);
-        slice_header         = avio_r8(s->pb);
+        avio_r8(s->pb);      /* Slice header */
         seq                  = avio_r8(s->pb) & 0x7F;
         full_frame_len       = get_num(s->pb);
         pos                  = get_num(s->pb);
-        pic_num              = avio_r8(s->pb);
+        avio_r8(s->pb);      /* pic_num */
         slice_header_bytes   = avio_tell(s->pb) - pre_slice_header_pos;
 
         /* Sanity check: the current slice should match the last 7 bits of seq. */
         if (cur_slice != seq)
         {
             av_log(s, AV_LOG_ERROR,
-                   "RealMedia: bad slice #, wanted %"PRIu64", got %"PRIu64"\n",
+                   "RealMedia: bad slice #, wanted %"PRIu8", got %"PRIu8"\n",
                    cur_slice, seq);
             av_free_packet(pkt);
             return AVERROR_INVALIDDATA;
@@ -990,24 +987,6 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
         }
     }
 
-    /* All the slices have been read */
-    //if (subpacket_type == 2 || videobuf_pos == videobuf_size) {
-    //    vst->pkt.data[0] = vst->cur_slice - 1;
-    //    *pkt             = vst->pkt;
-    //    vst->pkt.data    = NULL;
-    //    vst->pkt.size    = 0;
-    //    vst->pkt.buf     = NULL;
-
-    /* This is dead code, based on the way slices
-       were initially set incorrectly... TODO: audit it
-       and the WL32 code above to make sure the offsets are correct.
-    if (slices != cur_slice) {
-        printf("Investigate why slices != cur_slice at the end.\n");
-        //FIXME find out how to set slices correct from the begin
-            memmove(pkt->data + 1 + 8 * cur_slice,
-                    pkt->data + 1 + 8 * slices,
-                    videobuf_pos - 1 - 8 * slices);
-    }*/
     cur_slice -= 1;
     //printf("videobuf_pos: %i, other: %i\n", videobuf_pos, cur_slice - compat_slices);
     pkt->size   = videobuf_pos; //+ 8 * (cur_slice - compat_slices);
@@ -1017,47 +996,7 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
     /* 0 if false, bytes left if true. */
     return ends_with_multiframe;
 }
-///* Heavily refactored from the old code. */
-//static int sync(AVFormatContext *s, int64_t *timestamp, int *flags,
-//                int *stream_index, int64_t *pos)
-//{
-//    RMDemuxContext *rm = s->priv_data;
-//    uint32_t state, len;
-//    uint16_t stream_num;
-//
-//tryagain:
-//    printf("In sync, position %"PRIx64"\n", avio_tell(s->pb));
-//    if (s->pb->eof_reached) {
-//        av_log(s, AV_LOG_WARNING, "RealMedia: unexpected EOF.\n");
-//        return AVERROR(EOF);
-//    }
 
-    //if (rm->remaining_len > 0)
-    //{
-    //    printf("Bring over the remaining_len case.\n");
-    //    return 0; /* FIXME TODO */
-    //}
-
-//    state = avio_rb32(s->pb);
-//    if ((state > 0xFFFF) || (state <= 12))
-//        printf("This needs to take more logic from sync.\n");
-
-//    len        = state - 12;
-//    stream_num = avio_rb16(s->pb);
-//    avio_rb32(s->pb); /* TODO: timestamp */
-//    avio_r8(s->pb); /* TODO: flags */
-
-//    if (stream_num >= rm->num_streams) /* Out of bounds */
-//    {
-//        printf("Out of bound stream number... really?!\n");
-//        avio_skip(s->pb, len);
-        //rm->remaining_len = 0;
-//        goto tryagain;
-//    }
-//    *stream_index = stream_num;
-
-//    return 0;
-//}
 
 /* Figure out which bitstream layout is being used, frame information, etc.
  * This partially replaces rm_assemble_video_frame, and shamelessly borrows
@@ -1069,8 +1008,8 @@ static int rm_assemble_video(AVFormatContext *s, RMStream *rmst,
                              RMPacketCache *rmpc, AVPacket *pkt, int dch_len,
                              uint32_t timestamp)
 {
-    uint8_t first_bits, subpacket_type, pic_num;
-    uint32_t len, pos, seq;
+    uint8_t first_bits, subpacket_type;
+    uint32_t len;
     int ret;
 
     //printf("In AV, position: %"PRIx64"\n", avio_tell(s->pb));
@@ -1078,13 +1017,8 @@ static int rm_assemble_video(AVFormatContext *s, RMStream *rmst,
     first_bits     = avio_r8(s->pb);
     subpacket_type = first_bits >> 6;
     switch(subpacket_type) {
-    /* Whole frame(s). */
     case RM_MULTIPLE_FRAMES: /* 11 */
-        /* TODO FIXME: do these need to be in seperate packets? */
-        /* TODO FIXME: put these in a buffer, not directly in a packet.*/
         //len     = get_num(s->pb);
-        //if (len != dch_len)
-        //    printf("Handle len: %i, dch_len: %i\n", len, dch_len);
         //pos     = get_num(s->pb); /* TODO: this is a timestamp. */
         //pic_num = avio_r8(s->pb);
         avio_seek(s->pb, -1, SEEK_CUR);
@@ -1171,16 +1105,11 @@ static int rm_cache_packet(AVFormatContext *s, AVPacket *pkt)
         {
             int vid_ok;
             uint32_t ts;
-            //uint64_t tmp_timestamp, tmp_pos; /* TODO FIXME */
-            //int tmp_flags, tmp_stream_index; /* TODO FIXME */
-            //sync_ok = sync(s, &tmp_timestamp, &tmp_flags, &tmp_stream_index, &tmp_pos);
             ts = rm->cur_timestamp_ms;
             vid_ok = rm_assemble_video(s, rmst, rmpc, pkt, chunk_size, ts);
             if (vid_ok < 0)
                 /* It went horribly wrong; see if something else can be retrieved. */
                 return rm_cache_packet(s, pkt);
-            //if (vid_ok != RM_SLICES_REMAINING)
-            //    return vid_ok; /* Done! */
             return vid_ok;
         }
 
@@ -1341,8 +1270,7 @@ static int rm_get_one_frame(AVFormatContext *s, AVStream *st, AVPacket *pkt,
 {
     RMStream *rm        = st->priv_data;
     RMPacketCache *rmpc = &(rm->rmpc);
-    uint8_t first_bits;
-    int32_t cur_offset, frame_size, first_offset_bits, timestamp;
+    int32_t cur_offset, first_bits, frame_size, timestamp;
     int ret = 0;
 
     cur_offset = rmpc->packets_read;
@@ -1354,27 +1282,27 @@ static int rm_get_one_frame(AVFormatContext *s, AVStream *st, AVPacket *pkt,
     }
     cur_offset++;
 
-    first_offset_bits = rmpc->pkt_buf[cur_offset] & RM_FRAME_OFFSET_BITS;
+    first_bits = rmpc->pkt_buf[cur_offset] & RM_FRAME_OFFSET_BITS;
     if (rmpc->pkt_buf[cur_offset] & RM_FRAME_SIZE_MASK) {
-        frame_size = (first_offset_bits << 8) + rmpc->pkt_buf[cur_offset + 1];
+        frame_size = (first_bits << 8) + rmpc->pkt_buf[cur_offset + 1];
         cur_offset += 2;
     } else {
-        frame_size = (first_offset_bits    << 24) +
-            (rmpc->pkt_buf[cur_offset + 1] << 16) +
-            (rmpc->pkt_buf[cur_offset + 2] <<  8) +
-            rmpc->pkt_buf[cur_offset + 3];
+        frame_size = (first_bits                    << 24) +
+                     (rmpc->pkt_buf[cur_offset + 1] << 16) +
+                     (rmpc->pkt_buf[cur_offset + 2] <<  8) +
+                      rmpc->pkt_buf[cur_offset + 3];
         cur_offset += 4;
     }
 
-    first_offset_bits = rmpc->pkt_buf[cur_offset] & RM_FRAME_OFFSET_BITS;
+    first_bits = rmpc->pkt_buf[cur_offset] & RM_FRAME_OFFSET_BITS;
     if (rmpc->pkt_buf[cur_offset] & RM_FRAME_SIZE_MASK) {
-        timestamp = (first_offset_bits << 8) + rmpc->pkt_buf[cur_offset + 1];
+        timestamp = (first_bits << 8) + rmpc->pkt_buf[cur_offset + 1];
         cur_offset += 2;
     } else {
-        timestamp  = (first_offset_bits    << 24) +
-            (rmpc->pkt_buf[cur_offset + 1] << 16) +
-            (rmpc->pkt_buf[cur_offset + 2] <<  8) +
-            rmpc->pkt_buf[cur_offset + 3];
+        timestamp = (first_bits                    << 24) +
+                    (rmpc->pkt_buf[cur_offset + 1] << 16) +
+                    (rmpc->pkt_buf[cur_offset + 2] <<  8) +
+                     rmpc->pkt_buf[cur_offset + 3];
         cur_offset += 4;
     }
 
@@ -1387,21 +1315,21 @@ static int rm_get_one_frame(AVFormatContext *s, AVStream *st, AVPacket *pkt,
         goto cleanup;
     }
 
-    if (av_new_packet(pkt, pkt_size + 9) < 0)
+    if (av_new_packet(pkt, frame_size + 9) < 0)
         return AVERROR(ENOMEM);
 
     pkt->data[0] = 0;
     AV_WL32(pkt->data + 1, 1);
     AV_WL32(pkt->data + 5, 0);
     rmpc->pending_packets = 1;
-    memcmp(pkt->data, rmpc->next_pkt_start, frame_size);
+    memcpy(pkt->data, rmpc->pkt_buf + cur_offset, frame_size);
     pkt->stream_index    = st->index;
     if (timestamp)
         pkt->pts         = timestamp;
 
-    rmpc->next_pkt_start = cur_offset + frame_size;
+    rmpc->next_offset = cur_offset + frame_size;
 
-    if (rmpc->next_pkt_start == rmpc->buf_size) {
+    if (rmpc->next_offset == rmpc->buf_size) {
         ret = 0;
         goto cleanup;
     } else {
