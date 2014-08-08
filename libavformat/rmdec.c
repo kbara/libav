@@ -904,7 +904,7 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
     videobuf_size = full_frame_len + 8 * compat_slices + 1;
     if(av_new_packet(pkt, videobuf_size) < 0)
         return AVERROR(ENOMEM);
-    videobuf_pos = 8 * compat_slices + 1; 
+    videobuf_pos = 8 * slices + 1;
     /* Zero out explicitly-set header bytes; this simplifies
        backwards compatibility with an old slice-count bug. */
     for (int i = 0; i < videobuf_pos; i++)
@@ -961,7 +961,7 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
 
         AV_WL32(pkt->data - 7 + 8 * cur_slice, 1);
         AV_WL32(pkt->data - 3 + 8 * cur_slice,
-                videobuf_pos - 8 * compat_slices - 1);
+                videobuf_pos - 8 * slices - 1);
         if (videobuf_pos + cur_len > videobuf_size) {
             printf("videobuf_pos + cur_len > videobuf_size\n");
             av_free_packet(pkt);
@@ -1007,7 +1007,9 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
                     pkt->data + 1 + 8 * slices,
                     videobuf_pos - 1 - 8 * slices);
     }*/
-    pkt->size   = videobuf_pos + 8 * (cur_slice - slices);
+    cur_slice -= 1;
+    printf("videobuf_pos: %i, other: %i\n", videobuf_pos, cur_slice - compat_slices);
+    pkt->size   = videobuf_pos + 8 * (cur_slice - compat_slices);
     pkt->pts    = AV_NOPTS_VALUE;
     pkt->pos    = pkt_pos;
     //}
