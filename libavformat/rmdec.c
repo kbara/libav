@@ -1835,10 +1835,40 @@ static int rm_read_close(AVFormatContext *s)
     return 0;
 }
 
-static int64_t rm_read_dts(AVFormatContext *s, int stream_index,
+/* Elenril said something about pts rather than dts. Thoughts? */
+/* Cargo-culted from the old code, asfdec, and mpeg.c */
+static int64_t rm_read_pts(AVFormatContext *s, int stream_index,
                            int64_t *ppos, int64_t pos_limit)
 {
-    return 0;
+    RMDemuxContext *rmdc = s->priv_data;
+    int64_t start_pos, header_bytes;
+    int64_t dts = AV_NOPTS_VALUE;
+
+    /* TODO: actually find the next data chunk header after *ppos */
+    if (avio_seek(s->pb, *ppos, SEEK_SET) < 0)
+        return AV_NOPTS_VALUE;
+
+    for (;;) {
+        start_pos = avio_tell(s->pb);
+        if (rm_read_data_chunk_header(s)) {
+            av_log(s, AV_LOG_WARNING,
+                   "RealMedia: data chunk header failure in rm_read_pts.\n");
+            return AV_NOPTS_VALUE;
+        }
+
+        /* Wrong stream; seek to the next likely header and try again. */
+        /* TODO: handle multiple data sections. */
+        if (rmdc->cur_stream_number != stream_index) {
+            header_bytes = avio_tell(s->pb) - start_pos;
+            avio_seek(s->pb, rmdc->cur_pkt_size - header_bytes, SEEK_CUR);
+            continue;
+        }
+
+        dts = rmdc->cur_timestamp_ms;
+        break;
+    }
+
+    return dts;
 }
 
 
@@ -1894,7 +1924,7 @@ AVInputFormat ff_rm_demuxer = {
     .read_header    = rm_read_header,
     .read_packet    = rm_read_packet,
     .read_close     = rm_read_close,
-    .read_timestamp = rm_read_dts,
+    .read_timestamp = rm_read_pts,
 };
 
 AVInputFormat ff_rdt_demuxer = {
