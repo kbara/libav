@@ -1455,7 +1455,10 @@ static int rm_read_media_properties_header(AVFormatContext *s,
         avio_skip(s->pb, 2); /* Old code said: maybe bits per sample? */
         if (avio_rb32(s->pb) != 0)
             av_log(s, AV_LOG_WARNING, "RealMedia: expected zeros.\n");
-        rmst->fps = avio_rb32(s->pb); /* TODO: what's the point of av_reduce?*/
+        rmst->fps = avio_rb32(s->pb);
+        if (rmst->fps > 0)
+            av_reduce(&st->avg_frame_rate.den, &st->avg_frame_rate.num,
+                      0x10000, rmst->fps, (1 << 30) - 1);
 
         st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
         inter->interleaver_tag = st->codec->codec_id;
