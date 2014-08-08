@@ -721,7 +721,9 @@ static int rm_probe(AVProbeData *p)
 
 static int rm_read_index_header(AVFormatContext *s, uint32_t *next_header)
 {
-    uint32_t index_tag, size, num_indices;
+    RMDemuxContext *rmdc = s->priv_data;
+    AVStream *st;
+    uint32_t index_tag, num_indices;
     int16_t object_version, stream_number;
 
     num_indices = 0; /* Make sure this is defined. */
@@ -734,8 +736,8 @@ static int rm_read_index_header(AVFormatContext *s, uint32_t *next_header)
         return AVERROR_INVALIDDATA;
     }
 
-    size           = avio_rb32(s->pb);
-    object_version = avio_rb16(s->pb);
+    avio_rb32(s->pb); /* the size of the index chunk */
+    object_version    = avio_rb16(s->pb);
     if (object_version == 0) {
         num_indices   = avio_rb32(s->pb);
         stream_number = avio_rb16(s->pb);
@@ -746,14 +748,22 @@ static int rm_read_index_header(AVFormatContext *s, uint32_t *next_header)
         return AVERROR_INVALIDDATA;
     }
 
+    if (stream_number >= rmdc->num_streams)
+    {
+        av_log(s, AV_LOG_ERROR, "Stream number %"PRIu16" too large.\n",
+               stream_number);
+        return AVERROR_INVALIDDATA;
+    }
+    st = s->streams[stream_number];
+
     /* Read the Index Records */
     for (int i = 0; i < num_indices; i++)
     {
         /* offset       = Offset from the beginning of the file
-         * packet_count = # of packets from beginning until now,
+         * packet count = # of packets from beginning until now,
          *                assuming the file is played from the beginning.
          */
-        uint32_t timestamp, offset, packet_count;
+        uint32_t timestamp, offset;
         uint16_t ir_object_version;
 
         object_version = avio_rb16(s->pb);
@@ -761,9 +771,11 @@ static int rm_read_index_header(AVFormatContext *s, uint32_t *next_header)
         {
             timestamp    = avio_rb32(s->pb);
             offset       = avio_rb32(s->pb);
-            packet_count = avio_rb32(s->pb);
+            avio_rb32(s->pb); /* packet count */
+            av_add_index_entry(st, offset, timestamp, 0, 0, AVINDEX_KEYFRAME);
         } else {
-            av_log(s, AV_LOG_ERROR, "RealMedia: unknown index version %"PRIu16"\n",
+            av_log(s, AV_LOG_ERROR,
+                   "RealMedia: unknown index version %"PRIu16"\n",
                    ir_object_version);
             return AVERROR_INVALIDDATA;
         }
@@ -774,15 +786,15 @@ static int rm_read_index_header(AVFormatContext *s, uint32_t *next_header)
 
 static int rm_read_indices(AVFormatContext *s)
 {
-    int index_count;
+    int index_count, err_ret = 0;
     uint32_t next_header_start;
 
     index_count = rm_read_index_header(s, &next_header_start);
     /* First one's already been read */
     for (int i = 1; i < index_count; i++) {
-        int ret;
+        int index_ret;
 
-        /* This shouldn't happen, but there's enough info to recover. */
+        /* Recover if reading an index fails; read the next  */
         if ((avio_tell(s->pb) != next_header_start) && (next_header_start != 0))
         {
             printf("i: %i\n", i);
@@ -792,11 +804,11 @@ static int rm_read_indices(AVFormatContext *s)
             avio_seek(s->pb, next_header_start, SEEK_SET);
         }
 
-        ret = rm_read_index_header(s, &next_header_start);
-        if (ret < 0)
-            return ret;
+        index_ret = rm_read_index_header(s, &next_header_start);
+        if (index_ret < 0)
+            err_ret = index_ret;
     }
-    return 0;
+    return err_ret; /* 0 iff everything was ok */
 }
 
 static int get_num(AVIOContext *pb)
