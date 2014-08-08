@@ -940,7 +940,7 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
             av_free_packet(pkt);
             return AVERROR_INVALIDDATA;
         }
-        printf("cur_slice: %i at 0x%"PRIx64"\n", cur_slice, avio_tell(s->pb));
+        //printf("cur_slice: %i at 0x%"PRIx64"\n", cur_slice, avio_tell(s->pb));
         cur_len -= slice_header_bytes;
 
         /* RM_LAST_PARTIAL_FRAME slices can be followed by
@@ -963,11 +963,11 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
         AV_WL32(pkt->data - 3 + 8 * cur_slice,
                 videobuf_pos - 8 * slices - 1);
         if (videobuf_pos + cur_len > videobuf_size) {
-            printf("videobuf_pos + cur_len > videobuf_size\n");
+            av_log(s, AV_LOG_ERROR, "videobuf_pos + cur_len > videobuf_size\n");
             av_free_packet(pkt);
             return AVERROR_INVALIDDATA;
         }
-        printf("cur_len: %i\n", cur_len);
+        //printf("cur_len: %i\n", cur_len);
         if (avio_read(s->pb, pkt->data + videobuf_pos, cur_len) != cur_len)
             return AVERROR(EIO);
         videobuf_pos += cur_len;
@@ -978,7 +978,7 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
         /* Don't read the data header after the last slice. */
         if (cur_slice != slices) {
             pre_header_pos = avio_tell(s->pb);
-            printf("Pre-dch pos: 0x%"PRIx64"\n", pre_header_pos);
+            //printf("Pre-dch pos: 0x%"PRIx64"\n", pre_header_pos);
             dch_ret = rm_read_data_chunk_header(s);
             if (dch_ret)
             {   av_log(s, AV_LOG_ERROR,
@@ -1008,7 +1008,7 @@ static int handle_slices(AVFormatContext *s, AVPacket *pkt, int subpacket_type,
                     videobuf_pos - 1 - 8 * slices);
     }*/
     cur_slice -= 1;
-    printf("videobuf_pos: %i, other: %i\n", videobuf_pos, cur_slice - compat_slices);
+    //printf("videobuf_pos: %i, other: %i\n", videobuf_pos, cur_slice - compat_slices);
     pkt->size   = videobuf_pos; //+ 8 * (cur_slice - compat_slices);
     pkt->pts    = AV_NOPTS_VALUE;
     pkt->pos    = pkt_pos;
@@ -1072,7 +1072,7 @@ static int rm_assemble_video(AVFormatContext *s, RMStream *rmst,
     uint32_t len, pos, seq;
     int ret;
 
-    printf("In AV, position: %"PRIx64"\n", avio_tell(s->pb));
+    //printf("In AV, position: %"PRIx64"\n", avio_tell(s->pb));
     len            = dch_len; /* Length of the current data chunk. */
     first_bits     = avio_r8(s->pb);
     subpacket_type = first_bits >> 6;
@@ -1738,7 +1738,7 @@ static int rm_read_cached_packet(AVFormatContext *s, AVPacket *pkt)
         if (rmpc->pending_packets) {
             Interleaver *inter      = &(rmst->interleaver);
             ret = inter->get_packet(s, st, pkt, rmst->subpkt_size);
-            printf("Packet size: 0x%x, pos: 0x%"PRIx64"\n", pkt->size, avio_tell(s->pb));
+            //printf("Packet size: 0x%x, pos: 0x%"PRIx64"\n", pkt->size, avio_tell(s->pb));
             return ret;
         }
     }
