@@ -186,6 +186,13 @@ typedef struct RMDemuxContext {
 } RMDemuxContext;
 
 
+/* Utility and common functions */
+static void rm_clear_rmpc(RMPacketCache *rmpc)
+{
+    av_free(rmpc->pkt_buf);
+    memset(rmpc, '\0', sizeof(RMPacketCache));
+}
+
 
 /* RealAudio Demuxer */
 static int ra_probe(AVProbeData *p)
@@ -1023,7 +1030,7 @@ static int rm_assemble_video(AVFormatContext *s, RMStream *rmst,
         //pic_num = avio_r8(s->pb);
         avio_seek(s->pb, -1, SEEK_CUR);
         if (rmpc->pkt_buf)
-            av_free(rmpc->pkt_buf);
+            rm_clear_rmpc(rmpc);
         if (initialize_pkt_buf(rmpc, dch_len))
             return AVERROR(ENOMEM);
         avio_read(s->pb, rmpc->pkt_buf, dch_len);
@@ -1322,7 +1329,7 @@ static int rm_get_one_frame(AVFormatContext *s, AVStream *st, AVPacket *pkt,
     AV_WL32(pkt->data + 1, 1);
     AV_WL32(pkt->data + 5, 0);
     rmpc->pending_packets = 1;
-    memcpy(pkt->data, rmpc->pkt_buf + cur_offset, frame_size);
+    memcpy(pkt->data + 9, rmpc->pkt_buf + cur_offset, frame_size);
     pkt->stream_index    = st->index;
     if (timestamp)
         pkt->pts         = timestamp;
@@ -1337,11 +1344,8 @@ static int rm_get_one_frame(AVFormatContext *s, AVStream *st, AVPacket *pkt,
     }
 
 cleanup:
-    av_freep(&rmpc->pkt_buf);
     av_free_packet(pkt);
-    rmpc->buf_size = 0;
-    rmpc->next_pkt_start  = 0;
-    rmpc->pending_packets = 0;
+    rm_clear_rmpc(rmpc);
     return ret;
 }
 
@@ -1355,6 +1359,8 @@ static int rm_get_video_packet(AVFormatContext *s, AVStream *st,
     if (rmpc->pending_packets ^ RM_MULTIFRAME_PENDING) {
         rmpc->pending_packets--;
         pkt->stream_index = st->index;
+        if (rmpc->pending_packets == 0)
+            rm_clear_rmpc(rmpc);
         return 0;
     }
     /* Handle multiframe packets */
