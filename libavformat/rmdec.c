@@ -726,13 +726,11 @@ static int rm_read_index_header(AVFormatContext *s, uint32_t *next_header)
     uint32_t index_tag, num_indices;
     int16_t object_version, stream_number;
 
-    num_indices = 0; /* Make sure this is defined. */
-
     index_tag = avio_rl32(s->pb);
     if (index_tag != RM_INDX_HEADER) {
         av_log(s, AV_LOG_ERROR,
-               "RealMedia: got %"PRIx32", but expected an INDX section.\n",
-               index_tag);
+               "RealMedia: got %"PRIx32", not INDX section (0x%"PRIx64").\n",
+               index_tag, avio_tell(s->pb));
         return AVERROR_INVALIDDATA;
     }
 
@@ -766,7 +764,7 @@ static int rm_read_index_header(AVFormatContext *s, uint32_t *next_header)
         uint32_t timestamp, offset;
         uint16_t ir_object_version;
 
-        object_version = avio_rb16(s->pb);
+        ir_object_version = avio_rb16(s->pb);
         if (ir_object_version == 0)
         {
             timestamp    = avio_rb32(s->pb);
@@ -781,32 +779,27 @@ static int rm_read_index_header(AVFormatContext *s, uint32_t *next_header)
         }
     }
 
-    return num_indices;
+    return 0;
 }
 
 static int rm_read_indices(AVFormatContext *s)
 {
-    int index_count, err_ret = 0;
-    uint32_t next_header_start;
+    int err_ret = 0;
+    uint32_t next_header_start = -1;
 
-    index_count = rm_read_index_header(s, &next_header_start);
-    /* First one's already been read */
-    for (int i = 1; i < index_count; i++) {
-        int index_ret;
+    while (next_header_start && (!s->pb->eof_reached)) {
+        int index_ret = rm_read_index_header(s, &next_header_start);
+        if (index_ret < 0)
+            err_ret = index_ret;
 
         /* Recover if reading an index fails; read the next  */
         if ((avio_tell(s->pb) != next_header_start) && (next_header_start != 0))
         {
-            printf("i: %i\n", i);
             av_log(s, AV_LOG_WARNING,
                    "RealMedia: Index expected at %"PRIx32"; at %"PRIx64"\n",
                    next_header_start, avio_tell(s->pb));
             avio_seek(s->pb, next_header_start, SEEK_SET);
         }
-
-        index_ret = rm_read_index_header(s, &next_header_start);
-        if (index_ret < 0)
-            err_ret = index_ret;
     }
     return err_ret; /* 0 iff everything was ok */
 }
