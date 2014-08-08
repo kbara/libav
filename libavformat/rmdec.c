@@ -785,9 +785,10 @@ static int rm_read_index_header(AVFormatContext *s, uint32_t *next_header)
 static int rm_read_indices(AVFormatContext *s)
 {
     int err_ret = 0;
-    uint32_t next_header_start = -1;
+    uint32_t next_header_start;
 
-    while (next_header_start && (!s->pb->eof_reached)) {
+    /* eof_reached is only set after reading too far. */
+    while (s->pb->buffer_size > avio_tell(s->pb)) {
         int index_ret = rm_read_index_header(s, &next_header_start);
         if (index_ret < 0)
             err_ret = index_ret;
