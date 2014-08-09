@@ -74,6 +74,7 @@
 
 /* An internal signature in RealAudio 2.0 (.ra version 4) headers */
 #define RA4_SIGNATURE MKTAG('.', 'r', 'a', '4')
+#define RA5_SIGNATURE MKTAG('.', 'r', 'a', '5')
 
 #define RM_VIDEO_TAG MKTAG('V', 'I', 'D', 'O')
 
@@ -406,24 +407,25 @@ static int ra_read_header_v3(AVFormatContext *s, uint16_t header_size,
     return 0;
 }
 
-static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size,
-                             RADemuxContext *ra, AVStream *st)
+static int ra_read_header_v4_5(AVFormatContext *s, uint16_t header_size,
+                             RADemuxContext *ra, AVStream *st, int32_t version)
 {
     RA4Stream *rast = &(ra->rast);
 
-    int content_description_size, is_fourcc_ok;
-    uint32_t ra4_signature, variable_data_size, variable_header_size;
+    int content_description_size, is_fourcc_ok, expected_signature;
+    uint32_t ra_signature, variable_data_size, variable_header_size;
     uint32_t interleaver_id;
     uint16_t version2;
     uint8_t interleaver_id_len;
 
     ra->avst = st;
 
-    ra4_signature = avio_rl32(s->pb);
-    if (ra4_signature != RA4_SIGNATURE) {
+    expected_signature = version == 4 ? RA4_SIGNATURE : RA5_SIGNATURE;
+    ra_signature = avio_rl32(s->pb);
+    if (ra_signature != expected_signature) {
         av_log(s, AV_LOG_ERROR,
-               "RealAudio: bad ra4 signature %"PRIx32", expected %"PRIx32".\n",
-               ra4_signature, RA4_SIGNATURE);
+               "RealAudio: bad ra signature %"PRIx32", expected %"PRIx32".\n",
+               ra_signature, expected_signature);
         return AVERROR_INVALIDDATA;
     }
 
@@ -433,10 +435,10 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size,
 
 
     version2 = avio_rb16(s->pb);
-    if (version2 != 4) {
+    if (version2 != version) {
         av_log(s, AV_LOG_ERROR,
-               "RealAudio: Second version %"PRIx16", expected 4\n",
-               version2);
+               "RealAudio: Second version %"PRIx16", expected %"PRIx32".\n",
+               version2, version);
         return AVERROR_INVALIDDATA;
     }
 
@@ -456,6 +458,8 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size,
     avio_skip(s->pb, 2); /* Unknown */
     st->codec->sample_rate = avio_rb16(s->pb);
     avio_skip(s->pb, 2); /* Unknown */
+    if (version == 5)
+        avio_skip(s->pb, 6); /* Unknown */
     rast->sample_size = avio_rb16(s->pb);
     st->codec->channels = avio_rb16(s->pb);
 
@@ -466,26 +470,34 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size,
     printf("Sample rate: %x\n", st->codec->sample_rate);
     printf("Sample size: %x\n", rast->sample_size);
 
-    interleaver_id_len = avio_r8(s->pb);
-    if (interleaver_id_len != 4) {
-        av_log(s, AV_LOG_ERROR,
-               "RealAudio: Unexpected interleaver ID length %"PRIu8", expected 4.\n",
-               interleaver_id_len);
-        return AVERROR_INVALIDDATA;
-    }
-    rast->interleaver_id = interleaver_id = avio_rl32(s->pb);
-    printf("Interleaver: %c%c%c%c\n", interleaver_id >> 24,
-           (interleaver_id >> 16) & 0xff, (interleaver_id >> 8) & 0xff,
-           interleaver_id & 0xff);
+    if (version == 4) {
+        interleaver_id_len = avio_r8(s->pb);
+        if (interleaver_id_len != 4) {
+            av_log(s, AV_LOG_ERROR,
+                   "RealAudio: Unexpected interleaver ID length %"PRIu8", "
+                   "expected 4.\n",
+                interleaver_id_len);
+            return AVERROR_INVALIDDATA;
+        }
+        rast->interleaver_id = interleaver_id = avio_rl32(s->pb);
+        printf("Interleaver: %c%c%c%c\n", interleaver_id >> 24,
+               (interleaver_id >> 16) & 0xff, (interleaver_id >> 8) & 0xff,
+             interleaver_id & 0xff);
 
-    is_fourcc_ok = get_fourcc(s, &(rast->fourcc_tag));
-    if (is_fourcc_ok < 0)
-        return is_fourcc_ok; /* Preserve the error code */
+        is_fourcc_ok = get_fourcc(s, &(rast->fourcc_tag));
+        if (is_fourcc_ok < 0)
+            return is_fourcc_ok; /* Preserve the error code */
+    } else if (version == 5) {
+        rast->interleaver_id = interleaver_id = avio_rl32(s->pb);
+        rast->fourcc_tag     = avio_rl32(s->pb);
+    }
     st->codec->codec_tag = rast->fourcc_tag;
     /*printf("Fourcc: %c%c%c%c\n", fourcc_tag >> 24,
            (fourcc_tag >> 16) & 0xff, (fourcc_tag >> 8) & 0xff,
            fourcc_tag & 0xff); TODO */
     avio_skip(s->pb, 3); /* Unknown */
+    if (version == 5)
+        avio_skip(s->pb, 1); /* Unknown */
 
     content_description_size = ra_read_content_description(s);
     if (content_description_size < 0) {
@@ -515,13 +527,14 @@ static int ra_read_header_with(AVFormatContext *s, RADemuxContext *ra,
     ra->version = version;
     header_size = avio_rb16(s->pb); /* Excluding bytes until now */
 
+    /* Version 3 is quite different; v4 and v5 are very similar. */
     if (version == 3)
         return ra_read_header_v3(s, header_size, ra, st);
-    else if (version == 4)
-        return ra_read_header_v4(s, header_size, ra, st);
+    else if ((version == 4) || (version == 5))
+        return ra_read_header_v4_5(s, header_size, ra, st, version);
     else {
         av_log(s, AV_LOG_ERROR, "RealAudio: Unsupported version %"PRIx16"\n", version);
-        return AVERROR_INVALIDDATA;
+        return AVERROR_PATCHWELCOME;
     }
 }
 
