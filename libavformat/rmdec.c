@@ -86,47 +86,49 @@
 #define DEINT_ID_VBRF MKTAG('v', 'b', 'r', 'f') ///< VBR case for AAC
 #define DEINT_ID_VBRS MKTAG('v', 'b', 'r', 's') ///< VBR case for AAC
 
-/* pkt_size and len are signed ints because that's what functions
-   such as avio_read take - it's questionable. */
-typedef struct Interleaver {
-    uint32_t interleaver_tag;
-    int (*get_packet)(AVFormatContext *s, AVStream *st, AVPacket *pkt,
-                      int pkt_size);
-    int (*preread_packet)(AVFormatContext *s, RMStream *rmst);
-    int (*postread_packet)(RMStream *rmst, int bytes_read);
-    void *priv_data;
-} Interleaver;
 
-typedef struct Int4State {
-    int subpkt_fs, subpkt_cfs;
-} Int4State;
+struct Interleaver;
 
-typedef struct RA4Stream {
-    uint8_t *pkt_contents;
+typedef struct RAStream {
     uint32_t coded_frame_size, interleaver_id, fourcc_tag;
     uint16_t codec_flavor, subpacket_h, frame_size, subpacket_size, sample_size;
     int full_pkt_size, subpkt_size, subpacket_pp;
-} RA4Stream;
+} RAStream;
 
-/* Demux context for RealAudio */
-typedef struct RADemuxContext {
-    int version;
-    AVStream *avst;
-    struct RA4Stream rast;
-    int pending_audio_packets;
-    int audio_packets_read;
-} RADemuxContext;
-
-
-/* TODO: decide how to handle overlap with RADemuxContext */
-typedef struct RMPacketCache {
+typedef struct RealPacketCache {
     int pending_packets;
     int packets_read;
     uint8_t *pkt_buf;
     size_t buf_size;
     uint8_t *next_pkt_start;
     uint32_t next_offset;
-} RMPacketCache;
+} RealPacketCache;
+
+/* Demux context for RealAudio */
+typedef struct RADemuxContext {
+    int version;
+    struct RAStream rast;
+    //int pending_audio_packets;
+    //int audio_packets_read;
+    RealPacketCache *rpc;
+    AVStream *avst;
+    struct Interleaver *interleaver;
+    void *interleaver_state;
+} RADemuxContext;
+
+/* pkt_size and len are signed ints because that's what functions
+   such as avio_read take - it's questionable. */
+typedef struct Interleaver {
+    uint32_t interleaver_tag;
+    int (*get_packet)(AVFormatContext *s, AVPacket *pkt,
+                      RADemuxContext *radc, int pkt_size);
+    int (*postread_packet)(RADemuxContext *radc, int bytes_read);
+    void *priv_data;
+} Interleaver;
+
+typedef struct Int4State {
+    int subpkt_fs, subpkt_cfs;
+} Int4State;
 
 /* RealMedia files have one Media Property header per stream */
 typedef struct RMMediaProperties {
@@ -161,10 +163,9 @@ typedef struct RMStream {
     int full_pkt_size, subpkt_size, fps;
     int subpacket_pp; /* Subpackets per full packet. */
     RMMediaProperties rmmp;
-    RMPacketCache rmpc;
+    RealPacketCache *rpc;
     RADemuxContext radc; /* Unused if not RA */
-    Interleaver interleaver;
-    RMVidStream vst;
+    //RMVidStream vst;
 } RMStream;
 
 /* Demux context for RealMedia (audio+video).
@@ -187,11 +188,136 @@ typedef struct RMDemuxContext {
 } RMDemuxContext;
 
 
-/* Utility and common functions */
-static void rm_clear_rmpc(RMPacketCache *rmpc)
+/* Utility code */
+static int rm_initialize_pkt_buf(RealPacketCache *rpc, int size)
 {
-    av_free(rmpc->pkt_buf);
-    memset(rmpc, '\0', sizeof(RMPacketCache));
+    rpc->pkt_buf = av_mallocz(size);
+    if (!rpc->pkt_buf)
+        return AVERROR(ENOMEM);
+    rpc->buf_size       = size;
+    return 0;
+}
+
+static void rm_clear_rpc(RealPacketCache *rpc)
+{
+    av_free(rpc->pkt_buf);
+    memset(rpc, '\0', sizeof(RealPacketCache));
+}
+
+
+/* Audio interleavers */
+
+static int rm_postread_generic_packet(RADemuxContext *radc, int bytes_read)
+{
+    RealPacketCache *rpc = radc->rpc;
+    RAStream *rast       = &(radc->rast);
+
+    rpc->packets_read    = bytes_read / rast->full_pkt_size;
+    rpc->pending_packets = rpc->packets_read;
+    rpc->next_pkt_start  = rpc->pkt_buf;
+    return 0;
+}
+
+/* TODO: if partial packets need to be implemented, the read needs to change.*/
+static int rm_get_generic_packet(AVFormatContext *s, AVPacket *pkt,
+                                 RADemuxContext *radc, int pkt_size)
+{
+    RealPacketCache *rpc = radc->rpc;
+    AVStream *st         = radc->avst;
+
+    if (!rpc->pending_packets) {
+        av_log(s, AV_LOG_WARNING,
+               "RealMedia: tried to retrieve non-pending packet.\n");
+        return -1; /* No packet pending on this stream. */
+    }
+    if (rpc->pkt_buf + rpc->buf_size < rpc->next_pkt_start + pkt_size) {
+        av_log(s, AV_LOG_ERROR,
+               "RealMedia: tried to read too much in get_generic_packet.\n");
+        rpc->pending_packets = 0;
+        return -2; /* Attempt to read too much. */
+    }
+
+    if (av_new_packet(pkt, pkt_size) < 0)
+        return AVERROR(ENOMEM);
+    memcpy(pkt->data, rpc->next_pkt_start, pkt_size);
+    pkt->stream_index = st->index;
+    rpc->pending_packets--;
+    if (rpc->pending_packets)
+        rpc->next_pkt_start += pkt_size;
+    return 0;
+}
+
+static int rm_postread_int4_packet(RADemuxContext *radc, int bytes_read)
+{
+    RealPacketCache *rpc = radc->rpc;
+    RAStream *rast       = &(radc->rast);
+    Int4State *int4state = radc->interleaver_state;
+
+    rpc->packets_read    = bytes_read / rast->coded_frame_size;
+    rpc->pending_packets = rpc->packets_read;
+
+    /* Reset state */
+    rpc->next_pkt_start  = rpc->pkt_buf;
+    memset(int4state, '\0', sizeof(Int4State));
+    return 0;
+}
+
+static int rm_get_int4_packet(AVFormatContext *s, AVPacket *pkt,
+                              RADemuxContext *radc, int pkt_size)
+{
+    RAStream *rast       = &(radc->rast);
+    RealPacketCache *rpc = radc->rpc;
+    AVStream *st         = radc->avst;
+    Int4State *int4state = radc->interleaver_state;
+    uint8_t *pkt_start;
+
+    assert(rast->coded_frame_size == pkt_size);
+    pkt_start = rpc->next_pkt_start + rast->coded_frame_size *
+                (int4state->subpkt_cfs * rast->subpacket_h / 2 +
+                int4state->subpkt_fs);
+
+    if (av_new_packet(pkt, rast->subpkt_size) < 0)
+        return AVERROR(ENOMEM);
+    memcpy(pkt->data, pkt_start, rast->subpkt_size);
+    pkt->stream_index = st->index;
+    rpc->pending_packets--;
+
+    int4state->subpkt_cfs++;
+    if (int4state->subpkt_cfs >= rast->subpacket_h) {
+        int4state->subpkt_cfs = 0;
+        int4state->subpkt_fs++;
+        if (int4state->subpkt_fs >= rast->subpacket_h / 2)
+            int4state->subpkt_fs = 0;
+    }
+
+    if ((int4state->subpkt_fs == 0) && (int4state->subpkt_cfs == 0)) {
+        rpc->next_pkt_start += rast->full_pkt_size;
+    }
+
+    return 0;
+}
+
+Interleaver ra_interleavers[] = {
+    {
+        .interleaver_tag = 0,
+        .get_packet      = rm_get_generic_packet,
+        .postread_packet = rm_postread_generic_packet
+    },
+    {
+        .interleaver_tag = DEINT_ID_INT4,
+        .get_packet      = rm_get_int4_packet,
+        .postread_packet = rm_postread_int4_packet
+    }
+};
+
+static int ra_interleaver_count = sizeof(ra_interleavers);
+
+static Interleaver *ra_find_interleaver(uint32_t tag)
+{
+    for (int i = 0; i < ra_interleaver_count; i++)
+        if (ra_interleavers[i].interleaver_tag == tag)
+            return &ra_interleavers[i];
+    return NULL;
 }
 
 
@@ -212,8 +338,10 @@ static int ra_probe(AVProbeData *p)
 
 /* TODO: fully implement this... */
 static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
-                                    AVStream *st, RA4Stream *rast)
+                                    AVStream *st, RADemuxContext *radc)
 {
+    RAStream *rast = &(radc->rast);
+
     rast->subpacket_pp = 1;
 
     if (codec_id == AV_CODEC_ID_RA_288) {
@@ -228,12 +356,17 @@ static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
          * Calculate the size they all take together. */
         rast->subpacket_pp = rast->subpacket_h * rast->frame_size /
             st->codec->block_align;
-        rast->full_pkt_size = rast->subpacket_pp * rast->coded_frame_size;
-        rast->subpkt_size   = rast->full_pkt_size / rast->subpacket_pp;
+        rast->full_pkt_size     = rast->subpacket_pp * rast->coded_frame_size;
+        rast->subpkt_size       = rast->full_pkt_size / rast->subpacket_pp;
+        radc->interleaver       = ra_find_interleaver(DEINT_ID_INT4);
+        radc->interleaver_state = av_mallocz(sizeof(Int4State));
+        if (!radc->interleaver_state)
+            return AVERROR(ENOMEM);
         break;
     case DEINT_ID_INT0:
         rast->full_pkt_size = (rast->coded_frame_size * rast->subpacket_h) / 2;
         rast->subpkt_size   = rast->full_pkt_size;
+        radc->interleaver   = ra_find_interleaver(0); /* Generic's enough */
         break;
     default:
             printf("Implement full_pkt_size for another interleaver.\n");
@@ -249,7 +382,7 @@ static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
 
 /* This is taken almost verbatim from the old code */
 /* TODO: get it reviewed */
-static int ra4_sanity_check_headers(uint32_t interleaver_id, RA4Stream *rast, AVStream *st)
+static int ra4_sanity_check_headers(uint32_t interleaver_id, RAStream *rast, AVStream *st)
 {
     if (rast->interleaver_id == DEINT_ID_INT4) {
         if (st->codec->block_align <= 0)
@@ -356,7 +489,7 @@ static int get_fourcc(AVFormatContext *s, uint32_t *fourcc)
 static int ra_read_header_v3(AVFormatContext *s, uint16_t header_size,
                              RADemuxContext *ra, AVStream *st)
 {
-    RA4Stream   *rast = &(ra->rast);
+    RAStream   *rast = &(ra->rast);
 
     int content_description_size, is_fourcc_ok, start_pos;
     uint32_t fourcc_tag, header_bytes_read;
@@ -401,8 +534,11 @@ static int ra_read_header_v3(AVFormatContext *s, uint16_t header_size,
     st->codec->codec_type     = AVMEDIA_TYPE_AUDIO;
     st->codec->sample_rate    = 8000;
 
-    ra->avst = st;
+    ra->avst        = st;
+    ra->interleaver = ra_find_interleaver(0);
+
     rast->subpacket_pp  = 1;
+    rast->subpkt_size   = RA144_PKT_SIZE;
     rast->full_pkt_size = RA144_PKT_SIZE;
     return 0;
 }
@@ -410,7 +546,7 @@ static int ra_read_header_v3(AVFormatContext *s, uint16_t header_size,
 static int ra_read_header_v4_5(AVFormatContext *s, uint16_t header_size,
                              RADemuxContext *ra, AVStream *st, int32_t version)
 {
-    RA4Stream *rast = &(ra->rast);
+    RAStream *rast = &(ra->rast);
 
     int content_description_size, is_fourcc_ok, expected_signature;
     uint32_t ra_signature, variable_data_size, variable_header_size;
@@ -511,7 +647,7 @@ static int ra_read_header_v4_5(AVFormatContext *s, uint16_t header_size,
     st->codec->codec_type     = AVMEDIA_TYPE_AUDIO;
     printf("Codec id %x\n", st->codec->codec_id);
 
-    ra4_codec_specific_setup(st->codec->codec_id, s, st, rast);
+    ra4_codec_specific_setup(st->codec->codec_id, s, st, ra);
 
     return ra4_sanity_check_headers(rast->interleaver_id, rast, st);
 }
@@ -522,28 +658,37 @@ static int ra_read_header_with(AVFormatContext *s, RADemuxContext *ra,
                                AVStream *st)
 {
     uint16_t version, header_size;
+    int ret;
 
     version = avio_rb16(s->pb);
     ra->version = version;
     header_size = avio_rb16(s->pb); /* Excluding bytes until now */
+    ra->rpc = av_mallocz(sizeof(RealPacketCache));
+    if (!ra->rpc)
+        return AVERROR(ENOMEM);
 
     /* Version 3 is quite different; v4 and v5 are very similar. */
     if (version == 3)
-        return ra_read_header_v3(s, header_size, ra, st);
+        ret = ra_read_header_v3(s, header_size, ra, st);
     else if ((version == 4) || (version == 5))
-        return ra_read_header_v4_5(s, header_size, ra, st, version);
+        ret = ra_read_header_v4_5(s, header_size, ra, st, version);
     else {
         av_log(s, AV_LOG_ERROR, "RealAudio: Unsupported version %"PRIx16"\n", version);
-        return AVERROR_PATCHWELCOME;
+        ret = AVERROR_PATCHWELCOME;
     }
+    if (ret < 0)
+        av_freep(&ra->rpc);
+    return ret;
 }
 
 /* This handles pure RealAudio files */
 static int ra_read_header(AVFormatContext *s)
 {
-    RADemuxContext *ra = s->priv_data;
+    RADemuxContext *ra   = s->priv_data;
+    RAStream *rast       = &(ra->rast);
     uint32_t tag;
     AVStream *st;
+    int header_ret;
 
     tag = avio_rl32(s->pb);
     if (tag != RA_HEADER) {
@@ -557,7 +702,13 @@ static int ra_read_header(AVFormatContext *s)
     if (!st)
         return AVERROR(ENOMEM);
 
-    return ra_read_header_with(s, ra, st);
+    header_ret = ra_read_header_with(s, ra, st);
+    if (header_ret < 0) {
+        av_freep(&(ra->rpc));
+        return header_ret;
+    }
+
+    return rm_initialize_pkt_buf(ra->rpc, rast->full_pkt_size);
 }
 
 /* Exactly the same as in the old code */
@@ -575,126 +726,60 @@ static void ra_ac3_swap_bytes(AVStream *st, AVPacket *pkt)
     }
 }
 
-static int ra_retrieve_cache(RADemuxContext *ra, AVStream *st, RA4Stream *rast,
-                             AVPacket *pkt)
+static int ra_store_cache(AVFormatContext *s, Interleaver *inter,
+                    RealPacketCache *rpc, RADemuxContext *radc, int size)
 {
-    /* This replaces the old ff_rm_retrieve_cache */
-    // TODO: handle VBRF/VBRS
-    /* The cache is a fraction of a megabyte; using memcpy
-       rather than reference-counted buffers is reasonable. */
-    if (ra->pending_audio_packets) {
-        av_new_packet(pkt, st->codec->block_align);
-        /*memcpy(pkt->data,
-               rast->pkt_contents + st->codec->block_align *
-                    (rast->subpacket_h * rast->frame_size /
-                    st->codec->block_align - ra->pending_audio_packets),
-                st->codec->block_align); */
-        memcpy(pkt->data,
-               rast->pkt_contents + st->codec->block_align *
-                (ra->audio_packets_read - ra->pending_audio_packets),
-               st->codec->block_align);
-        /* TODO: are the next two lines necessary? */
-        pkt->flags = 0; /* TODO: revisit this when using timestamps */
-        pkt->stream_index = st->index;
-        ra->pending_audio_packets--;
-    }
-
+    int bytes_read;
+    bytes_read = avio_read(s->pb, rpc->pkt_buf, size);
+    rpc->next_pkt_start = rpc->pkt_buf;
+    inter->postread_packet(radc, bytes_read);
     return 0;
 }
 
-/* This was part of ff_rm_parse_packet */
-/* Warning: dealing with subpackets has been made local,
-   and there is explicit looping; the control flow is different */
-static int ra_read_interleaved_packets(AVFormatContext *s, AVPacket *pkt,
-                                       RADemuxContext *ra)
+static int ra_read_packet_with(AVFormatContext *s, AVPacket *pkt,
+                               RADemuxContext *radc)
 {
-    AVStream *st = ra->avst;
-    RA4Stream *rast = &(ra->rast);
-    int expected_packets, read_packets, read;
-    size_t interleaved_buffer_size;
+    RAStream *rast       = &(radc->rast);
+    RealPacketCache *rpc = radc->rpc;
+    Interleaver *inter   = radc->interleaver;
+    AVStream *st         = radc->avst;
+    int pkt_get_ret;
 
-    /* There's data waiting around already; return that */
-    if (ra->pending_audio_packets) {
-        return ra_retrieve_cache(ra, st, rast, pkt);
+    if (s->pb->eof_reached)
+        return AVERROR(EIO);
+    /* Cache a packet if possible; preserve the error if not. */
+    if (!rpc->pending_packets) {
+        int ret = ra_store_cache(s, inter, rpc, radc, rast->full_pkt_size);
+        if (ret <0)
+            return ret;
     }
+    if (pkt_get_ret = inter->get_packet(s, pkt, radc, rast->full_pkt_size) < 0)
+        return pkt_get_ret;
+    ra_ac3_swap_bytes(st, pkt); /* TODO: put this in get_packet? */
+    return 0;
+//    if (ra->version == 3)
+//        return av_get_packet(s->pb, pkt, rast->full_pkt_size);
 
-    /* Clear the stored packet counts, so there's no chance of having stale ones
-       if an error occurs during this function. */
-    ra->pending_audio_packets = 0;
-    ra->audio_packets_read = 0;
+    /* Nope, it's a bit more complicated */
 
-    expected_packets = rast->subpacket_h * rast->frame_size /
-        st->codec->block_align;
-    read_packets = 0;
-    interleaved_buffer_size = expected_packets * rast->coded_frame_size;
-
-    if ((rast->interleaver_id == DEINT_ID_INT4) && (!(rast->pkt_contents))) {
-        rast->pkt_contents = av_mallocz(interleaved_buffer_size);
-        if (!rast->pkt_contents)
-            return AVERROR(ENOMEM);
-    }
-
-    for (int subpkt_cnt = 0; subpkt_cnt < rast->subpacket_h; subpkt_cnt++) {
-        if (rast->interleaver_id == DEINT_ID_INT4) {
-            for (int cur_subpkt = 0;
-                 cur_subpkt < rast->subpacket_h / 2;
-                 cur_subpkt++) {
-                read = avio_read(s->pb,
-                                 rast->pkt_contents +
-                                    cur_subpkt * 2 * rast->frame_size +
-                                    subpkt_cnt * rast->coded_frame_size,
-                                 rast->coded_frame_size);
-                if (read > 0)
-                    read_packets++;
-                else {
-                    ra->pending_audio_packets = read_packets;
-                    return AVERROR_EOF;
-                }
-            }
-        } else if (rast->interleaver_id == DEINT_ID_GENR) {
-            printf("IMPLEMENT GENR!\n");
-            return -1; /* TODO FIXME */
-        } else {
-            av_log(s, AV_LOG_ERROR,
-                   "RealAudio: internal error, unexpected interleaver\n");
-            return AVERROR_INVALIDDATA;
-        }
-    }
-    ra->pending_audio_packets = FFMIN(expected_packets, read_packets);
-    ra->audio_packets_read = read_packets;
-    return ra_retrieve_cache(ra, st, rast, pkt);
-}
-
-
-static int ra_read_packet_with(AVFormatContext *s, AVPacket *pkt, RADemuxContext *ra)
-{
-    RA4Stream *rast = &(ra->rast);
-    AVStream *st = ra->avst;
-    int get_pkt;
-
-    if (ra->version == 3)
-        return av_get_packet(s->pb, pkt, rast->full_pkt_size);
-
-    /* Nope, it's version 4, and a bit more complicated */
-
-    if (rast->interleaver_id == DEINT_ID_INT4) {
-        return ra_read_interleaved_packets(s, pkt, ra);
-    /* Simple case: no interleaving */
-    } else if (rast->interleaver_id == DEINT_ID_INT0) {
-        get_pkt = av_get_packet(s->pb, pkt, rast->full_pkt_size);
-        /* Swap the bytes iff it's ac3 - check done in rm_ac3_swap_bytes */
-        ra_ac3_swap_bytes(st, pkt);
-        return get_pkt;
-    } else if ((rast->interleaver_id == DEINT_ID_VBRF) ||
-        (rast->interleaver_id == DEINT_ID_VBRS)) {
-        /* TODO FIXME implement this */
-        av_log(s, AV_LOG_ERROR, "RealAudio: VBR* unimplemented.\n");
-        return AVERROR_INVALIDDATA;
-    } else {
-        av_log(s, AV_LOG_ERROR,
-            "RealAudio: internal error, unknown interleaver\n");
-        return AVERROR_INVALIDDATA;
-    }
+//    if (rast->interleaver_id == DEINT_ID_INT4) {
+//        return ra_read_interleaved_packets(s, pkt, ra);
+//    /* Simple case: no interleaving */
+//    } else if (rast->interleaver_id == DEINT_ID_INT0) {
+//        get_pkt = av_get_packet(s->pb, pkt, rast->full_pkt_size);
+//        /* Swap the bytes iff it's ac3 - check done in rm_ac3_swap_bytes */
+//        ra_ac3_swap_bytes(st, pkt);
+//        return get_pkt;
+//    } else if ((rast->interleaver_id == DEINT_ID_VBRF) ||
+//        (rast->interleaver_id == DEINT_ID_VBRS)) {
+//        /* TODO FIXME implement this */
+//        av_log(s, AV_LOG_ERROR, "RealAudio: VBR* unimplemented.\n");
+//        return AVERROR_INVALIDDATA;
+//    } else {
+//        av_log(s, AV_LOG_ERROR,
+//            "RealAudio: internal error, unknown interleaver\n");
+//        return AVERROR_INVALIDDATA;
+//    }
 }
 
 static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
@@ -702,12 +787,12 @@ static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
     return ra_read_packet_with(s, pkt, s->priv_data);
 }
 
+/* TODO: revisit this */
 static int ra_read_close(AVFormatContext *s)
 {
-    RADemuxContext *ra = s->priv_data;
-    RA4Stream *rast = &(ra->rast);
+//    RADemuxContext *ra = s->priv_data;
+//    RAStream *rast = &(ra->rast);
 
-    av_freep(&(rast->pkt_contents));
     return 0;
 }
 
@@ -892,14 +977,6 @@ static int rm_read_extradata(AVIOContext *pb, AVCodecContext *avctx,
     return 0;
 }
 
-static int rm_initialize_pkt_buf(RMPacketCache *rmpc, int size)
-{
-    rmpc->pkt_buf = av_mallocz(size);
-    if (!rmpc->pkt_buf)
-        return AVERROR(ENOMEM);
-    rmpc->buf_size = size;
-    return 0;
-}
 
 /* Undocumented; logic adapted from the old code. */
 /* This assumes slices are contiguous; revisit if false. */
@@ -1031,7 +1108,7 @@ static int rm_handle_slices(AVFormatContext *s, AVPacket *pkt,
  * inconvenient places.
  */
 static int rm_assemble_video(AVFormatContext *s, RMStream *rmst,
-                             RMPacketCache *rmpc, AVPacket *pkt, int dch_len,
+                             RealPacketCache *rpc, AVPacket *pkt, int dch_len,
                              uint32_t timestamp)
 {
     uint8_t first_bits, subpacket_type;
@@ -1048,14 +1125,14 @@ static int rm_assemble_video(AVFormatContext *s, RMStream *rmst,
         //pos     = get_num(s->pb); /* TODO: this is a timestamp. */
         //pic_num = avio_r8(s->pb);
         avio_seek(s->pb, -1, SEEK_CUR);
-        if (rmpc->pkt_buf)
-            rm_clear_rmpc(rmpc);
-        if (rm_initialize_pkt_buf(rmpc, dch_len))
+        if (rpc->pkt_buf)
+            rm_clear_rpc(rpc);
+        if (rm_initialize_pkt_buf(rpc, dch_len))
             return AVERROR(ENOMEM);
-        avio_read(s->pb, rmpc->pkt_buf, dch_len);
-        rmpc->pending_packets += RM_MULTIFRAME_PENDING;
-        rmpc->next_offset      = 0;
-        break;
+        avio_read(s->pb, rpc->pkt_buf, dch_len);
+        rpc->pending_packets += RM_MULTIFRAME_PENDING;
+        rpc->next_offset      = 0;
+        return 0;
     case RM_WHOLE_FRAME: /* 01 */
         /* Why is it +9 with the prelude below? */
         if (av_new_packet(pkt, len + 9) < 0)
@@ -1065,16 +1142,16 @@ static int rm_assemble_video(AVFormatContext *s, RMStream *rmst,
         AV_WL32(pkt->data + 5, 0);
         avio_read(s->pb, pkt->data + 9, len);
         pkt->pts = timestamp;
-        rmpc->pending_packets = 1;
+        rpc->pending_packets = 1;
         return 0;
     /* Partial frames, not whole ones. */
     case RM_LAST_PARTIAL_FRAME: /* 10 */ /* Intentional fallthrough */
     case RM_PARTIAL_FRAME:      /* 00 */
         ret = rm_handle_slices(s, pkt, subpacket_type, first_bits, dch_len);
         if (ret >= 0)
-            rmpc->pending_packets = 1;
+            rpc->pending_packets = 1;
         if (ret > 0)
-            return rm_assemble_video(s, rmst, rmpc, pkt, ret, timestamp);
+            return rm_assemble_video(s, rmst, rpc, pkt, ret, timestamp);
         return ret;
     }
     return 0; /* Unreachable, but GCC insists. */
@@ -1090,8 +1167,9 @@ static int rm_cache_packet(AVFormatContext *s, AVPacket *pkt)
 {
     AVStream *st;
     RMStream *rmst;
-    RMPacketCache *rmpc;
+    RealPacketCache *rpc;
     Interleaver *inter;
+    RADemuxContext *radc;
     RMDemuxContext *rm = s->priv_data;
     int read_so_far        = 0;
     uint8_t *read_to       = NULL;
@@ -1123,7 +1201,8 @@ static int rm_cache_packet(AVFormatContext *s, AVPacket *pkt)
 
         st         = s->streams[rm->cur_stream_number];
         rmst       = st->priv_data;
-        rmpc       = &(rmst->rmpc);
+        radc       = &(rmst->radc);
+        rpc        = rmst->rpc;
 
         chunk_size = rm->cur_pkt_size - header_bytes;
         /* Bail out of all this and handle this elsewhere if it's video */
@@ -1132,16 +1211,16 @@ static int rm_cache_packet(AVFormatContext *s, AVPacket *pkt)
             int vid_ok;
             uint32_t ts;
             ts = rm->cur_timestamp_ms;
-            vid_ok = rm_assemble_video(s, rmst, rmpc, pkt, chunk_size, ts);
+            vid_ok = rm_assemble_video(s, rmst, rpc, pkt, chunk_size, ts);
             if (vid_ok < 0)
                 /* It went horribly wrong; see if something else can be retrieved. */
                 return rm_cache_packet(s, pkt);
             return vid_ok;
         }
 
-        inter = &(rmst->interleaver);
+        inter = radc->interleaver;
 
-        inter->preread_packet(s, rmst);
+        //inter->preread_packet(s, radc);
 
         /* FIXME: if chunk sizes aren't constant for a stream, this
            needs to be rewritten. */
@@ -1151,19 +1230,19 @@ static int rm_cache_packet(AVFormatContext *s, AVPacket *pkt)
                                  av_gcd(rmst->full_pkt_size, chunk_size);
 
         /* Initialize the packet buffer if necessary */
-        if (!rmpc->pkt_buf)
-            if (rm_initialize_pkt_buf(rmpc, data_bytes_to_read))
+        if (!rpc->pkt_buf)
+            if (rm_initialize_pkt_buf(rpc, data_bytes_to_read))
                 return AVERROR(ENOMEM);
         /* Revisit this if adding partial packet support. */
-        if (data_bytes_to_read > rmpc->buf_size) {
+        if (data_bytes_to_read > rpc->buf_size) {
             printf("Add realloc support.\n");
             return -1;
         }
 
         if (!read_to) {
-            read_to = rmpc->pkt_buf;
+            read_to = rpc->pkt_buf;
             /* Make sure no stale data is present. */
-            memset(read_to, '\0', rmpc->buf_size);
+            memset(read_to, '\0', rpc->buf_size);
         }
 
         //return av_get_packet(s->pb, pkt, pkt_size)
@@ -1182,102 +1261,17 @@ static int rm_cache_packet(AVFormatContext *s, AVPacket *pkt)
         return AVERROR(EIO);
     }
 
-    inter->postread_packet(rmst, bytes_read);
-    rmpc->next_pkt_start = rmpc->pkt_buf;
+    inter->postread_packet(radc, bytes_read);
+    rpc->next_pkt_start = rpc->pkt_buf;
     return 0;
 }
 
-static int rm_preread_generic_packet(AVFormatContext *s, RMStream *rmst)
-{
-    return 0;
-}
-
-static int rm_postread_generic_packet(RMStream *rmst, int bytes_read)
-{
-    RMPacketCache *rmpc = &(rmst->rmpc);
-
-    rmpc->packets_read    = bytes_read / rmst->full_pkt_size;
-    rmpc->pending_packets = rmpc->packets_read;
-    return 0;
-}
-
-/* TODO: if partial packets need to be implemented, the read needs to change.*/
-static int rm_get_generic_packet(AVFormatContext *s, AVStream *st,
-                                 AVPacket *pkt, int pkt_size)
-{
-    RMStream *rmst      = st->priv_data;
-    RMPacketCache *rmpc = &(rmst->rmpc);
-
-    if (!rmpc->pending_packets) {
-        av_log(s, AV_LOG_WARNING,
-               "RealMedia: tried to retrieve non-pending packet.\n");
-        return -1; /* No packet pending on this stream. */
-    }
-    if (rmpc->pkt_buf + rmpc->buf_size < rmpc->next_pkt_start + pkt_size) {
-        av_log(s, AV_LOG_ERROR,
-               "RealMedia: tried to read too much in get_generic_packet.\n");
-        rmpc->pending_packets = 0;
-        return -2; /* Attempt to read too much. */
-    }
-
-    av_new_packet(pkt, pkt_size + 9);
-    memcpy(pkt->data, rmpc->next_pkt_start, pkt_size);
-    pkt->stream_index = st->index;
-    rmpc->pending_packets--;
-    rmpc->next_pkt_start += pkt_size;
-    return 0;
-}
-
-static int rm_postread_int4_packet(RMStream *rmst, int bytes_read)
-{
-    RMPacketCache *rmpc = &(rmst->rmpc);
-
-    /* Full packets, not subpackets */
-    rmpc->packets_read    =  bytes_read / rmst->full_pkt_size;
-    rmpc->pending_packets = rmpc->packets_read;
-    return 0;
-}
-
-static int rm_get_int4_packet(AVFormatContext *s, AVStream *st,
-                              AVPacket *pkt, int pkt_size)
-{
-    RMStream *rmst       = st->priv_data;
-    RMPacketCache *rmpc  = &(rmst->rmpc);
-    RA4Stream *rast      = &(rmst->radc.rast);
-    Int4State *int4state = rmst->interleaver.priv_data;
-    uint8_t *pkt_start;
-
-    assert(rast->coded_frame_size == pkt_size);
-    pkt_start = rmpc->next_pkt_start +
-                    int4state->subpkt_fs * 2 * rast->frame_size +
-                    int4state->subpkt_cfs * rast->coded_frame_size;
-
-    av_new_packet(pkt, rmst->subpkt_size);
-    memcpy(pkt->data, pkt_start, rmst->subpkt_size);
-    pkt->stream_index = st->index;
-
-    int4state->subpkt_fs++;
-    if (int4state->subpkt_fs >= rast->subpacket_h / 2) {
-        int4state->subpkt_fs = 0;
-        int4state->subpkt_cfs++;
-        if (int4state->subpkt_cfs >= rast->subpacket_h)
-            int4state->subpkt_cfs = 0;
-    }
-    if ((int4state->subpkt_fs == 0) && (int4state->subpkt_cfs == 0)) {
-        rmpc->next_pkt_start += rmst->full_pkt_size;
-        rmpc->pending_packets--;
-        printf("Pending packets: %i\n", rmpc->pending_packets);
-    }
-
-    return 0;
-}
-
-
+/*
 static int rm_postread_video_packet(RMStream *rmst, int bytes_read)
 {
     printf("Postread called\n");
     return 0;
-}
+}*/
 
 /* Get one frame from a multi-frame packet.
    The multiframe packet format:
@@ -1294,13 +1288,13 @@ static int rm_postread_video_packet(RMStream *rmst, int bytes_read)
 static int rm_get_one_frame(AVFormatContext *s, AVStream *st, AVPacket *pkt,
                             int pkt_size)
 {
-    RMStream *rm        = st->priv_data;
-    RMPacketCache *rmpc = &(rm->rmpc);
+    RMStream *rm         = st->priv_data;
+    RealPacketCache *rpc = rm->rpc;
     int32_t cur_offset, first_bits, frame_size, timestamp;
     int ret = 0;
 
-    cur_offset = rmpc->packets_read;
-    if ((rmpc->pkt_buf[cur_offset] >> 6) != RM_MULTIPLE_FRAMES)
+    cur_offset = rpc->packets_read;
+    if ((rpc->pkt_buf[cur_offset] >> 6) != RM_MULTIPLE_FRAMES)
     {
         av_log(s->pb, AV_LOG_ERROR, "RealMedia: broken multiple frame.\n");
         ret = AVERROR_INVALIDDATA; /* TODO: better error code? */
@@ -1308,32 +1302,32 @@ static int rm_get_one_frame(AVFormatContext *s, AVStream *st, AVPacket *pkt,
     }
     cur_offset++;
 
-    first_bits = rmpc->pkt_buf[cur_offset] & RM_FRAME_OFFSET_BITS;
-    if (rmpc->pkt_buf[cur_offset] & RM_FRAME_SIZE_MASK) {
-        frame_size = (first_bits << 8) + rmpc->pkt_buf[cur_offset + 1];
+    first_bits = rpc->pkt_buf[cur_offset] & RM_FRAME_OFFSET_BITS;
+    if (rpc->pkt_buf[cur_offset] & RM_FRAME_SIZE_MASK) {
+        frame_size = (first_bits << 8) + rpc->pkt_buf[cur_offset + 1];
         cur_offset += 2;
     } else {
         frame_size = (first_bits                    << 24) +
-                     (rmpc->pkt_buf[cur_offset + 1] << 16) +
-                     (rmpc->pkt_buf[cur_offset + 2] <<  8) +
-                      rmpc->pkt_buf[cur_offset + 3];
+                     (rpc->pkt_buf[cur_offset + 1] << 16) +
+                     (rpc->pkt_buf[cur_offset + 2] <<  8) +
+                      rpc->pkt_buf[cur_offset + 3];
         cur_offset += 4;
     }
 
-    first_bits = rmpc->pkt_buf[cur_offset] & RM_FRAME_OFFSET_BITS;
-    if (rmpc->pkt_buf[cur_offset] & RM_FRAME_SIZE_MASK) {
-        timestamp = (first_bits << 8) + rmpc->pkt_buf[cur_offset + 1];
+    first_bits = rpc->pkt_buf[cur_offset] & RM_FRAME_OFFSET_BITS;
+    if (rpc->pkt_buf[cur_offset] & RM_FRAME_SIZE_MASK) {
+        timestamp = (first_bits << 8) + rpc->pkt_buf[cur_offset + 1];
         cur_offset += 2;
     } else {
         timestamp = (first_bits                    << 24) +
-                    (rmpc->pkt_buf[cur_offset + 1] << 16) +
-                    (rmpc->pkt_buf[cur_offset + 2] <<  8) +
-                     rmpc->pkt_buf[cur_offset + 3];
+                    (rpc->pkt_buf[cur_offset + 1] << 16) +
+                    (rpc->pkt_buf[cur_offset + 2] <<  8) +
+                     rpc->pkt_buf[cur_offset + 3];
         cur_offset += 4;
     }
 
     cur_offset++; /* ignore the sequence number */
-    if (cur_offset + frame_size > rmpc->buf_size)
+    if (cur_offset + frame_size > rpc->buf_size)
     {
         av_log(s, AV_LOG_ERROR,
                "RealMedia: frame size too large in multiple frame.\n");
@@ -1347,15 +1341,15 @@ static int rm_get_one_frame(AVFormatContext *s, AVStream *st, AVPacket *pkt,
     pkt->data[0] = 0;
     AV_WL32(pkt->data + 1, 1);
     AV_WL32(pkt->data + 5, 0);
-    rmpc->pending_packets = 1;
-    memcpy(pkt->data + 9, rmpc->pkt_buf + cur_offset, frame_size);
+    rpc->pending_packets = 1;
+    memcpy(pkt->data + 9, rpc->pkt_buf + cur_offset, frame_size);
     pkt->stream_index    = st->index;
     if (timestamp)
         pkt->pts         = timestamp;
 
-    rmpc->next_offset = cur_offset + frame_size;
+    rpc->next_offset = cur_offset + frame_size;
 
-    if (rmpc->next_offset == rmpc->buf_size) {
+    if (rpc->next_offset == rpc->buf_size) {
         ret = 0;
         goto cleanup;
     } else {
@@ -1364,7 +1358,7 @@ static int rm_get_one_frame(AVFormatContext *s, AVStream *st, AVPacket *pkt,
 
 cleanup:
     av_free_packet(pkt);
-    rm_clear_rmpc(rmpc);
+    rm_clear_rpc(rpc);
     return ret;
 }
 
@@ -1372,14 +1366,14 @@ static int rm_get_video_packet(AVFormatContext *s, AVStream *st,
                                AVPacket *pkt, int pkt_size)
 {
     RMStream *rm        = st->priv_data;
-    RMPacketCache *rmpc = &(rm->rmpc);
+    RealPacketCache *rpc = rm->rpc;
 
     /* Is there a packet already set up? */
-    if (rmpc->pending_packets ^ RM_MULTIFRAME_PENDING) {
-        rmpc->pending_packets--;
+    if (rpc->pending_packets ^ RM_MULTIFRAME_PENDING) {
+        rpc->pending_packets--;
         pkt->stream_index = st->index;
-        if (rmpc->pending_packets == 0)
-            rm_clear_rmpc(rmpc);
+        if (rpc->pending_packets == 0)
+            rm_clear_rpc(rpc);
         return 0;
     }
     /* Handle multiframe packets */
@@ -1468,15 +1462,15 @@ static int rm_read_media_properties_header(AVFormatContext *s,
     if (content_tag == RA_HEADER) {
         RMStream *rmst;
         RADemuxContext *radc;
-        RA4Stream *rast;
-        Interleaver *inter;
+        RAStream *rast;
+        //Interleaver *inter;
 
         st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
 
         rmst     = st->priv_data;
         radc     = &(rmst->radc);
         rast     = &(radc->rast);
-        inter    = &(rmst->interleaver);
+        //inter    = &(rmst->interleaver);
 
         header_ret = ra_read_header_with(s, radc, st);
         if (header_ret) {
@@ -1485,10 +1479,12 @@ static int rm_read_media_properties_header(AVFormatContext *s,
             return header_ret;
         }
         rmmp->is_realaudio = 1;
+        rmst->rpc           = radc->rpc;
         rmst->full_pkt_size = rast->full_pkt_size;
         rmst->subpkt_size   = rast->subpkt_size;
         rmst->subpacket_pp  = rast->subpacket_pp;
 
+        /* TODO: this should become obsolete
         switch(rast->interleaver_id) {
         case DEINT_ID_INT4:
             inter->priv_data = av_mallocz(sizeof(Int4State));
@@ -1500,14 +1496,14 @@ static int rm_read_media_properties_header(AVFormatContext *s,
             inter->postread_packet = rm_postread_int4_packet;
             break;
         default:
-            inter->interleaver_tag = 0; /* generic */
+            inter->interleaver_tag = 0;
             inter->get_packet      = rm_get_generic_packet;
             inter->preread_packet  = rm_preread_generic_packet;
             inter->postread_packet = rm_postread_generic_packet;
-        }
+        } */
     } else if (RM_VIDEO_TAG == (content_tag2 = avio_rl32(s->pb))) {
         RMStream *rmst     = st->priv_data;
-        Interleaver *inter = &(rmst->interleaver);
+        //Interleaver *inter = &(rmst->interleaver);
         int extradata_ret;
 
         st->codec->codec_tag = avio_rl32(s->pb);
@@ -1528,16 +1524,22 @@ static int rm_read_media_properties_header(AVFormatContext *s,
                       0x10000, rmst->fps, (1 << 30) - 1);
 
         st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
-        inter->interleaver_tag = st->codec->codec_id;
-        inter->get_packet      = rm_get_video_packet;
+        //inter->interleaver_tag = st->codec->codec_id;
+        //inter->get_packet      = rm_get_video_packet;
         //inter->preread_packet  = rm_preread_video_packet;
-        inter->postread_packet = rm_postread_video_packet;
+        //inter->postread_packet = rm_postread_video_packet;
+
+        rmst->rpc = av_mallocz(sizeof(RealPacketCache));
+        if (!rmst->rpc)
+            return AVERROR(ENOMEM);
 
         extradata_ret = rm_read_extradata(s->pb, st->codec,
                                           rmmp->type_specific_size -
                                           (avio_tell(s->pb) - before_embed));
-        if (extradata_ret < 0)
+        if (extradata_ret < 0) {
+            av_freep(&rmst->rpc);
             return extradata_ret;
+        }
     } else {
         printf("Deal with tag %x\n", content_tag);
         /* FIXME TODO: make these initializations more reasonable. */
@@ -1797,16 +1799,21 @@ static int rm_read_cached_packet(AVFormatContext *s, AVPacket *pkt)
     int i;
 
     for (i = 0; i < rm->num_streams; i++) {
-        AVStream *st        = st = s->streams[i];
-        RMStream *rmst      = st->priv_data;
-        RMPacketCache *rmpc = &(rmst->rmpc);
-        int ret;
+        AVStream *st         = st = s->streams[i];
+        RMStream *rmst       = st->priv_data;
+        RealPacketCache *rpc = rmst->rpc;
+        RADemuxContext *radc = &(rmst->radc);
+        //int ret;
 
-        if (rmpc->pending_packets) {
-            Interleaver *inter      = &(rmst->interleaver);
-            ret = inter->get_packet(s, st, pkt, rmst->subpkt_size);
+        if (rpc->pending_packets) {
+            Interleaver *inter;
+            if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
+                return rm_get_video_packet(s, st, pkt, rmst->subpkt_size);
+            }
+            inter = radc->interleaver;
+            return inter->get_packet(s, pkt, radc, rmst->subpkt_size);
             //printf("Packet size: 0x%x, pos: 0x%"PRIx64"\n", pkt->size, avio_tell(s->pb));
-            return ret;
+            //return ret;
         }
     }
     return -1; /* No queued packets */
@@ -1836,7 +1843,7 @@ static int rm_read_packet(AVFormatContext *s, AVPacket *pkt)
 static void rm_cleanup_stream(AVStream *st)
 {
     RMStream *rmst = st->priv_data;
-    rm_clear_rmpc(&rmst->rmpc);
+    rm_clear_rpc(rmst->rpc);
     av_free(rmst->rmmp.type_specific_data);
 }
 
@@ -1901,8 +1908,6 @@ int ff_rm_retrieve_cache(AVFormatContext *s, AVIOContext *pb,
 RMStream *ff_rm_alloc_rmstream (void)
 {
     RMStream *rmst = av_mallocz(sizeof(RMStream));
-    if (rmst)
-        rmst->vst.curpic_num = -1;
     return rmst;
 }
 
