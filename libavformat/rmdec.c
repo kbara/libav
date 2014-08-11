@@ -205,6 +205,24 @@ static void rm_clear_rpc(RealPacketCache *rpc)
 }
 
 
+/* Lightly modified from the old code. */
+static int real_read_extradata(AVIOContext *pb, AVCodecContext *avctx,
+                             uint32_t size)
+{
+    avctx->extradata = av_mallocz(size/* + FF_INPUT_BUFFER_PADDING_SIZE*/);
+    if (!avctx->extradata)
+        return AVERROR(ENOMEM);
+    avctx->extradata_size = avio_read(pb, avctx->extradata, size);
+    if (avctx->extradata_size != size) {
+        av_freep(&avctx->extradata);
+        if (avctx->extradata_size < 0)
+            return avctx->extradata_size;
+        else
+            return AVERROR(EIO);
+    }
+    return 0;
+}
+
 /* Audio interleavers */
 
 static int rm_postread_generic_packet(RADemuxContext *radc, int bytes_read)
@@ -344,13 +362,56 @@ static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
 
     rast->subpacket_pp = 1;
 
-    if (codec_id == AV_CODEC_ID_RA_288) {
+    switch(st->codec->codec_id) {
+    uint32_t codecdata_length;
+    int ret;
+
+    case AV_CODEC_ID_RA_288:
         st->codec->block_align = rast->coded_frame_size;
+        break;
+    /*case AV_CODEC_ID_ATRAC3:
+        avio_skip(s->pb, 3);
+        if (radc->version == 5)
+            avio_skip(s->pb, 1);
+        codecdata_length = avio_rb32(s->pb);
+        if ((ret = real_read_extradata(s->pb, st->codec, codecdata_length)) < 0)
+            return ret;
+        if (rast->subpacket_size == 0) { // it's unsigned
+            av_log(s, AV_LOG_ERROR,
+                   "RealMedia: ATRAC3 subpacket size must not be 0.\n");
+            return AVERROR_INVALIDDATA;
+        }
+        st->codec->block_align = rast->subpacket_size;
+        break;*/ // untested, etc
+    case AV_CODEC_ID_SIPR:
+        /*avio_skip(s->pb, 3);
+        if (radc->version == 5)
+            avio_skip(s->pb, 1);
+        codecdata_length = avio_rb32(s->pb);*/
+        printf("At %"PRIx64"\n", avio_tell(s->pb));
+        if (rast->codec_flavor > 3) {
+            av_log(s, AV_LOG_ERROR,
+                   "RealMedia: SIPR file flavor %"PRIu16" too large\n",
+                   rast->codec_flavor);
+            return AVERROR_INVALIDDATA;
+        }
+        st->codec->block_align = ff_sipr_subpk_size[rast->codec_flavor];
+        //if ((ret = real_read_extradata(s->pb, st->codec, codecdata_length)) < 0)
+        //    return ret;
+        break;
+    case AV_CODEC_ID_AAC:
+        printf("Put in AAC support\n");
+        return AVERROR_INVALIDDATA; /* TODO */
+        break;
+    default:
+        printf("Add support for another codec.\n"); /* TODO */
+        return AVERROR_INVALIDDATA;
     }
-    /* TODO FIXME: handle other formats here */
+
 
     printf("rast->interleaver_id: %x\n", rast->interleaver_id);
     switch(rast->interleaver_id) {
+
     case DEINT_ID_INT4:
         /* Int4 is composed of several interleaved subpackets.
          * Calculate the size they all take together. */
@@ -376,6 +437,12 @@ static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
     if (st->codec->codec_id == AV_CODEC_ID_AC3) {
         rast->full_pkt_size *= 2;
         rast->subpkt_size   *= 2;
+    }
+
+    /* This check is probably overly cautious... */
+    if (rast->full_pkt_size == 0) {
+        av_log(s, AV_LOG_ERROR, "RealMedia: full packet size must not be zero.\n");
+        return AVERROR_INVALIDDATA;
     }
     return 0;
 }
@@ -959,24 +1026,6 @@ static int rm_read_data_chunk_header(AVFormatContext *s)
     return 0;
 }
 
-/* Lightly modified from the old code. */
-static int rm_read_extradata(AVIOContext *pb, AVCodecContext *avctx,
-                             uint32_t size)
-{
-    avctx->extradata = av_mallocz(size/* + FF_INPUT_BUFFER_PADDING_SIZE*/);
-    if (!avctx->extradata)
-        return AVERROR(ENOMEM);
-    avctx->extradata_size = avio_read(pb, avctx->extradata, size);
-    if (avctx->extradata_size != size) {
-        av_freep(&avctx->extradata);
-        if (avctx->extradata_size < 0)
-            return avctx->extradata_size;
-        else
-            return AVERROR(EIO);
-    }
-    return 0;
-}
-
 
 /* Undocumented; logic adapted from the old code. */
 /* This assumes slices are contiguous; revisit if false. */
@@ -1533,7 +1582,7 @@ static int rm_read_media_properties_header(AVFormatContext *s,
         if (!rmst->rpc)
             return AVERROR(ENOMEM);
 
-        extradata_ret = rm_read_extradata(s->pb, st->codec,
+        extradata_ret = real_read_extradata(s->pb, st->codec,
                                           rmmp->type_specific_size -
                                           (avio_tell(s->pb) - before_embed));
         if (extradata_ret < 0) {
