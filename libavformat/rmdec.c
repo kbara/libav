@@ -620,8 +620,10 @@ static int ra_read_header_v4_5(AVFormatContext *s, uint16_t header_size,
     uint32_t interleaver_id;
     uint16_t version2;
     uint8_t interleaver_id_len;
+    uint64_t start_pos, header_bytes_read;
 
     ra->avst = st;
+    start_pos = avio_tell(s->pb);
 
     expected_signature = version == 4 ? RA4_SIGNATURE : RA5_SIGNATURE;
     ra_signature = avio_rl32(s->pb);
@@ -715,6 +717,14 @@ static int ra_read_header_v4_5(AVFormatContext *s, uint16_t header_size,
     printf("Codec id %x\n", st->codec->codec_id);
 
     ra4_codec_specific_setup(st->codec->codec_id, s, st, ra);
+
+    header_bytes_read = avio_tell(s->pb) - start_pos;
+    if (header_size && (header_bytes_read != header_size)) {
+        av_log(s, AV_LOG_WARNING,
+               "RealAudio: read %"PRIx64" header bytes, expected %"PRIx32".\n",
+               header_bytes_read, header_size);
+        avio_seek(s->pb, header_size - header_bytes_read, SEEK_CUR);
+    }
 
     return ra4_sanity_check_headers(rast->interleaver_id, rast, st);
 }
