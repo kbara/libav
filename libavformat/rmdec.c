@@ -265,6 +265,20 @@ static int rm_get_generic_packet(AVFormatContext *s, AVPacket *pkt,
     return 0;
 }
 
+static int rm_get_sipr_packet(AVFormatContext *s, AVPacket *pkt,
+                              RADemuxContext *radc, int pkt_size)
+{
+    RAStream *rast = &(radc->rast);
+    int ret;
+
+    ret = rm_get_generic_packet(s, pkt, radc, pkt_size);
+    if (ret < 0)
+        return ret;
+
+    ff_rm_reorder_sipr_data(pkt->data, rast->subpacket_h, rast->frame_size);
+    return 0;
+}
+
 static int rm_postread_int4_packet(RADemuxContext *radc, int bytes_read)
 {
     RealPacketCache *rpc = radc->rpc;
@@ -325,6 +339,11 @@ Interleaver ra_interleavers[] = {
         .interleaver_tag = DEINT_ID_INT4,
         .get_packet      = rm_get_int4_packet,
         .postread_packet = rm_postread_int4_packet
+    },
+    {
+        .interleaver_tag = DEINT_ID_SIPR,
+        .get_packet      = rm_get_sipr_packet,
+        .postread_packet = rm_postread_generic_packet /* Generic's enough */
     }
 };
 
@@ -353,18 +372,54 @@ static int ra_probe(AVProbeData *p)
     return AVPROBE_SCORE_MAX;
 }
 
+static int ra_interleaver_specific_setup(AVFormatContext *s, AVStream *st,
+                                         RADemuxContext *radc)
+{
+    RAStream *rast = &(radc->rast);
+
+    printf("rast->interleaver_id: %x\n", rast->interleaver_id);
+    switch(rast->interleaver_id) {
+
+    case DEINT_ID_INT4:
+        /* Int4 is composed of several interleaved subpackets.
+         * Calculate the size they all take together. */
+        rast->subpacket_pp = rast->subpacket_h * rast->frame_size /
+            st->codec->block_align;
+        rast->full_pkt_size     = rast->subpacket_pp * rast->coded_frame_size;
+        rast->subpkt_size       = rast->full_pkt_size / rast->subpacket_pp;
+        radc->interleaver       = ra_find_interleaver(DEINT_ID_INT4);
+        radc->interleaver_state = av_mallocz(sizeof(Int4State));
+        if (!radc->interleaver_state)
+            return AVERROR(ENOMEM);
+        break;
+    case DEINT_ID_INT0:
+        rast->full_pkt_size = (rast->coded_frame_size * rast->subpacket_h) / 2;
+        rast->subpkt_size   = rast->full_pkt_size;
+        radc->interleaver   = ra_find_interleaver(0); /* Generic's enough */
+        break;
+    case DEINT_ID_SIPR:
+        rast->full_pkt_size = rast->coded_frame_size;
+        rast->subpkt_size   = rast->full_pkt_size;
+        radc->interleaver   = ra_find_interleaver(DEINT_ID_SIPR);
+        break;
+    default:
+            printf("Implement full_pkt_size for another interleaver.\n");
+            return -1; /* FIXME TODO */
+    }
+    return 0;
+}
 
 /* TODO: fully implement this... */
 static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
                                     AVStream *st, RADemuxContext *radc)
 {
     RAStream *rast = &(radc->rast);
+    int ret;
 
     rast->subpacket_pp = 1;
 
     switch(st->codec->codec_id) {
     uint32_t codecdata_length;
-    int ret;
 
     case AV_CODEC_ID_RA_288:
         st->codec->block_align = rast->coded_frame_size;
@@ -388,7 +443,6 @@ static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
         if (radc->version == 5)
             avio_skip(s->pb, 1);
         codecdata_length = avio_rb32(s->pb);*/
-        printf("At %"PRIx64"\n", avio_tell(s->pb));
         if (rast->codec_flavor > 3) {
             av_log(s, AV_LOG_ERROR,
                    "RealMedia: SIPR file flavor %"PRIu16" too large\n",
@@ -408,38 +462,15 @@ static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
         return AVERROR_INVALIDDATA;
     }
 
-
-    printf("rast->interleaver_id: %x\n", rast->interleaver_id);
-    switch(rast->interleaver_id) {
-
-    case DEINT_ID_INT4:
-        /* Int4 is composed of several interleaved subpackets.
-         * Calculate the size they all take together. */
-        rast->subpacket_pp = rast->subpacket_h * rast->frame_size /
-            st->codec->block_align;
-        rast->full_pkt_size     = rast->subpacket_pp * rast->coded_frame_size;
-        rast->subpkt_size       = rast->full_pkt_size / rast->subpacket_pp;
-        radc->interleaver       = ra_find_interleaver(DEINT_ID_INT4);
-        radc->interleaver_state = av_mallocz(sizeof(Int4State));
-        if (!radc->interleaver_state)
-            return AVERROR(ENOMEM);
-        break;
-    case DEINT_ID_INT0:
-        rast->full_pkt_size = (rast->coded_frame_size * rast->subpacket_h) / 2;
-        rast->subpkt_size   = rast->full_pkt_size;
-        radc->interleaver   = ra_find_interleaver(0); /* Generic's enough */
-        break;
-    default:
-            printf("Implement full_pkt_size for another interleaver.\n");
-            return -1; /* FIXME TODO */
-    }
+    ret = ra_interleaver_specific_setup(s, st, radc);
+    if (ret < 0)
+        return ret;
 
     if (st->codec->codec_id == AV_CODEC_ID_AC3) {
         rast->full_pkt_size *= 2;
         rast->subpkt_size   *= 2;
     }
 
-    /* This check is probably overly cautious... */
     if (rast->full_pkt_size == 0) {
         av_log(s, AV_LOG_ERROR, "RealMedia: full packet size must not be zero.\n");
         return AVERROR_INVALIDDATA;
@@ -710,7 +741,6 @@ static int ra_read_header_v4_5(AVFormatContext *s, uint16_t header_size,
         return content_description_size; /* Preserve the error code */
     }
 
-    /* TODO: only RAv3 handling sets a channel layout - is that correct? */
     st->codec->codec_id       = ff_codec_get_id(ff_rm_codec_tags,
                                                 st->codec->codec_tag);
     st->codec->codec_type     = AVMEDIA_TYPE_AUDIO;
