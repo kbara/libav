@@ -265,17 +265,16 @@ static int rm_get_generic_packet(AVFormatContext *s, AVPacket *pkt,
     return 0;
 }
 
-static int rm_get_sipr_packet(AVFormatContext *s, AVPacket *pkt,
-                              RADemuxContext *radc, int pkt_size)
+static int rm_postread_sipr_packet(RADemuxContext *radc, int bytes_read)
 {
+    RealPacketCache *rpc = radc->rpc;
     RAStream *rast = &(radc->rast);
-    int ret;
 
-    ret = rm_get_generic_packet(s, pkt, radc, pkt_size);
-    if (ret < 0)
-        return ret;
+    ff_rm_reorder_sipr_data(rpc->pkt_buf, rast->subpacket_h, rast->frame_size);
+    rpc->packets_read    = bytes_read / rast->full_pkt_size;
+    rpc->pending_packets = rpc->packets_read;
+    rpc->next_pkt_start  = rpc->pkt_buf;
 
-    ff_rm_reorder_sipr_data(pkt->data, rast->subpacket_h, rast->frame_size);
     return 0;
 }
 
@@ -342,8 +341,8 @@ Interleaver ra_interleavers[] = {
     },
     {
         .interleaver_tag = DEINT_ID_SIPR,
-        .get_packet      = rm_get_sipr_packet,
-        .postread_packet = rm_postread_generic_packet /* Generic's enough */
+        .get_packet      = rm_get_generic_packet,
+        .postread_packet = rm_postread_sipr_packet
     }
 };
 
