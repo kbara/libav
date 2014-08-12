@@ -993,9 +993,11 @@ static int rm_read_index_header(AVFormatContext *s, uint32_t *next_header)
 
 static int rm_read_indices(AVFormatContext *s)
 {
+    RMDemuxContext *rmdc = s->priv_data;
     int err_ret = 0;
     uint32_t next_header_start;
 
+    rmdc->already_tried_reading_index = 1;
     /* eof_reached is only set after reading too far. */
     while (s->pb->buffer_size > avio_tell(s->pb)) {
         int index_ret = rm_read_index_header(s, &next_header_start);
@@ -1929,7 +1931,7 @@ static int rm_read_packet(AVFormatContext *s, AVPacket *pkt)
             rm_read_indices(s);
             return AVERROR(EIO); /* There is nothing after them. */
         } else {
-            rm_cache_packet(s, pkt);
+            cache_read = rm_cache_packet(s, pkt);
             return rm_read_cached_packet(s, pkt);
         }
     }
