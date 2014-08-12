@@ -185,6 +185,7 @@ typedef struct RMDemuxContext {
     int64_t cur_pkt_start;
     uint32_t cur_timestamp_ms;
     RMDataHeader cur_data_header;
+    int already_tried_reading_index;
 } RMDemuxContext;
 
 
@@ -1919,13 +1920,17 @@ static int rm_read_packet(AVFormatContext *s, AVPacket *pkt)
         RMDemuxContext *rm = s->priv_data;
         /* There were no cached packets; cache at least one,
            if there are any left to cache. */
-        if (avio_tell(s->pb) < rm->first_indx_offset) {
-            rm_cache_packet(s, pkt);
-            return rm_read_cached_packet(s, pkt);
-        } else {
+
+        if ((rm->first_indx_offset) && /* Indexes expected */
+            /* And already far enough into the file to find the first index */
+            (avio_tell(s->pb) < rm->first_indx_offset) &&
+            (!rm->already_tried_reading_index)) { /* And not tried already */
             /* Read the indexes, and then the file ends. */
             rm_read_indices(s);
-            return AVERROR(EIO);
+            return AVERROR(EIO); /* There is nothing after them. */
+        } else {
+            rm_cache_packet(s, pkt);
+            return rm_read_cached_packet(s, pkt);
         }
     }
     return cache_read;
