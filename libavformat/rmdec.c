@@ -457,6 +457,9 @@ static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
         printf("Put in AAC support\n");
         return AVERROR_INVALIDDATA; /* TODO */
         break;
+    case AV_CODEC_ID_AC3:
+        /* Handle this after the interleaver setup. */
+        break;
     default:
         printf("Add support for another codec.\n"); /* TODO */
         return AVERROR_INVALIDDATA;
