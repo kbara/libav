@@ -1330,8 +1330,10 @@ static int rm_cache_packet(AVFormatContext *s, AVPacket *pkt)
                 return AVERROR(ENOMEM);
         /* Revisit this if adding partial packet support. */
         if (data_bytes_to_read > rpc->buf_size) {
-            printf("Add realloc support.\n");
-            return -1;
+            uint8_t *old_buf = rpc->pkt_buf;
+            if (rm_initialize_pkt_buf(rpc, data_bytes_to_read))
+                return AVERROR(ENOMEM);
+            av_free(old_buf);
         }
 
         if (!read_to) {
