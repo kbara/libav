@@ -1480,9 +1480,10 @@ static int rm_read_media_properties_header(AVFormatContext *s,
 {
     RMDemuxContext *rm = s->priv_data;
     AVStream *st;
+    int64_t fix_offset;
     uint32_t mdpr_tag, content_tag, content_tag2, before_embed, after_embed;
     uint16_t chunk_version;
-    int bytes_read, header_ret, fix_offset;
+    int bytes_read, header_ret;
 
     mdpr_tag = avio_rl32(s->pb);
     if (mdpr_tag != RM_MDPR_HEADER) {
@@ -1635,6 +1636,16 @@ static int rm_read_media_properties_header(AVFormatContext *s,
             av_freep(&rmst->rpc);
             return extradata_ret;
         }
+    } else if (!strcmp("logical-fileinfo", rmmp->mime_type)) {
+        /* This stream has no packets, but all streams having an RPC simplifies
+           the rest of the code. */
+        RMStream *rmst     = st->priv_data;
+        int bytes_already_read = avio_tell(s->pb) - before_embed;
+
+        rmst->rpc = av_mallocz(sizeof(RealPacketCache));
+        if (!rmst->rpc)
+            return AVERROR(ENOMEM);
+        avio_skip(s->pb, rmmp->type_specific_size - bytes_already_read);
     } else {
         printf("Deal with tag %x\n", content_tag);
         /* FIXME TODO: make these initializations more reasonable. */
@@ -1647,8 +1658,9 @@ static int rm_read_media_properties_header(AVFormatContext *s,
     if (after_embed != (rmmp->type_specific_size + before_embed)) {
         fix_offset = (rmmp->type_specific_size + before_embed) - after_embed;
         av_log(s, AV_LOG_WARNING,
-               "RealMedia: ended up in the wrong place reading MDPR "
-               "type-specific data, attempting to recover.\n");
+               "RealMedia: ended in the wrong place reading MDPR type-specific"
+               " data by %"PRIi64" bytes, attempting to recover.\n",
+               fix_offset);
         avio_seek(s->pb, fix_offset, SEEK_CUR);
     }
 
@@ -1925,7 +1937,7 @@ static int rm_read_packet(AVFormatContext *s, AVPacket *pkt)
 
         if ((rm->first_indx_offset) && /* Indexes expected */
             /* And already far enough into the file to find the first index */
-            (avio_tell(s->pb) < rm->first_indx_offset) &&
+            (avio_tell(s->pb) >= rm->first_indx_offset) &&
             (!rm->already_tried_reading_index)) { /* And not tried already */
             /* Read the indexes, and then the file ends. */
             rm_read_indices(s);
