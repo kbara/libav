@@ -430,8 +430,10 @@ static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
         if (radc->version == 5)
             avio_skip(s->pb, 1); /* Unknown */
         codecdata_length = avio_rb32(s->pb);
-        if ((ret = real_read_extradata(s->pb, st->codec, codecdata_length)) < 0)
-            return ret;
+        if (codecdata_length)
+            ret = real_read_extradata(s->pb, st->codec, codecdata_length);
+            if (ret < 0)
+                return ret;
         break;
     /* Document the codecs that don't */
     case AV_CODEC_ID_AC3:
