@@ -419,31 +419,43 @@ static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
 
     rast->subpacket_pp = 1;
 
+/* Some codecs have extradata; the code for handling it is identical. */
     switch(st->codec->codec_id) {
-    uint32_t codecdata_length;
-
-    case AV_CODEC_ID_RA_288:
-        st->codec->block_align = rast->coded_frame_size;
-        break;
-    /*case AV_CODEC_ID_ATRAC3:
-        avio_skip(s->pb, 3);
+        uint32_t codecdata_length;
+    case AV_CODEC_ID_COOK:
+    case AV_CODEC_ID_ATRAC3:
+    case AV_CODEC_ID_SIPR:
+    case AV_CODEC_ID_AAC:
+        avio_skip(s->pb, 3); /* Unknown */
         if (radc->version == 5)
-            avio_skip(s->pb, 1);
+            avio_skip(s->pb, 1); /* Unknown */
         codecdata_length = avio_rb32(s->pb);
         if ((ret = real_read_extradata(s->pb, st->codec, codecdata_length)) < 0)
             return ret;
+        break;
+    /* Document the codecs that don't */
+    case AV_CODEC_ID_AC3:
+    case AV_CODEC_ID_RA_288:
+        break;
+    /* Warn if anything else is found. */
+    default:
+        av_log(s, AV_LOG_WARNING, "Does codec %"PRIx32" have extradata?\n",
+               st->codec->codec_id);
+    }
+
+    switch(st->codec->codec_id) {
+    case AV_CODEC_ID_RA_288:
+        st->codec->block_align = rast->coded_frame_size;
+        break;
+    case AV_CODEC_ID_ATRAC3:
         if (rast->subpacket_size == 0) { // it's unsigned
             av_log(s, AV_LOG_ERROR,
                    "RealMedia: ATRAC3 subpacket size must not be 0.\n");
             return AVERROR_INVALIDDATA;
         }
         st->codec->block_align = rast->subpacket_size;
-        break;*/ // untested, etc
+        break;
     case AV_CODEC_ID_SIPR:
-        /*avio_skip(s->pb, 3);
-        if (radc->version == 5)
-            avio_skip(s->pb, 1);
-        codecdata_length = avio_rb32(s->pb);*/
         if (rast->codec_flavor > 3) {
             av_log(s, AV_LOG_ERROR,
                    "RealMedia: SIPR file flavor %"PRIu16" too large\n",
@@ -451,15 +463,13 @@ static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
             return AVERROR_INVALIDDATA;
         }
         st->codec->block_align = ff_sipr_subpk_size[rast->codec_flavor];
-        //if ((ret = real_read_extradata(s->pb, st->codec, codecdata_length)) < 0)
-        //    return ret;
-        break;
-    case AV_CODEC_ID_AAC:
-        printf("Put in AAC support\n");
-        return AVERROR_INVALIDDATA; /* TODO */
         break;
     case AV_CODEC_ID_AC3:
         /* Handle this after the interleaver setup. */
+        break;
+    /* Everything's been done already for the following. */
+    case AV_CODEC_ID_COOK:
+    case AV_CODEC_ID_AAC:
         break;
     default:
         printf("Add support for another codec.\n"); /* TODO */
@@ -593,17 +603,17 @@ static int ra_read_header_v3(AVFormatContext *s, uint16_t header_size,
 {
     RAStream   *rast = &(ra->rast);
 
-    int content_description_size, is_fourcc_ok, start_pos;
+    int content_ret, is_fourcc_ok, start_pos;
     uint32_t fourcc_tag, header_bytes_read;
 
     start_pos = avio_tell(s->pb);
     avio_skip(s->pb, 10); /* unknown */
     avio_skip(s->pb, 4); /* Data size: currently unused by this code */
 
-    content_description_size = ra_read_content_description(s);
-    if (content_description_size < 0) {
+    content_ret = ra_read_content_description(s);
+    if (content_ret < 0) {
         av_log(s, AV_LOG_ERROR, "RealAudio: error reading header metadata.\n");
-        return content_description_size; /* Preserve the error code */
+        return content_ret; /* Preserve the error code */
     }
 
     header_bytes_read = avio_tell(s->pb) - start_pos;
@@ -650,7 +660,7 @@ static int ra_read_header_v4_5(AVFormatContext *s, uint16_t header_size,
 {
     RAStream *rast = &(ra->rast);
 
-    int content_description_size, is_fourcc_ok, expected_signature;
+    int is_fourcc_ok, expected_signature;
     uint32_t ra_signature, variable_data_size, variable_header_size;
     uint32_t interleaver_id;
     uint16_t version2;
@@ -735,15 +745,6 @@ static int ra_read_header_v4_5(AVFormatContext *s, uint16_t header_size,
     /*printf("Fourcc: %c%c%c%c\n", fourcc_tag >> 24,
            (fourcc_tag >> 16) & 0xff, (fourcc_tag >> 8) & 0xff,
            fourcc_tag & 0xff); TODO */
-    avio_skip(s->pb, 3); /* Unknown */
-    if (version == 5)
-        avio_skip(s->pb, 1); /* Unknown */
-
-    content_description_size = ra_read_content_description(s);
-    if (content_description_size < 0) {
-        av_log(s, AV_LOG_ERROR, "RealAudio: error reading header metadata.\n");
-        return content_description_size; /* Preserve the error code */
-    }
 
     st->codec->codec_id       = ff_codec_get_id(ff_rm_codec_tags,
                                                 st->codec->codec_tag);
