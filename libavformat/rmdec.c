@@ -284,11 +284,15 @@ static int rm_postread_genr_packet(RADemuxContext *radc, int bytes_read)
 {
     RealPacketCache *rpc = radc->rpc;
     RAStream *rast = &(radc->rast);
+    InterleaverState *genrstate = radc->interleaver_state;
 
     rpc->packets_read    = bytes_read / rast->subpkt_size;
     rpc->pending_packets = rpc->packets_read;
     rpc->next_pkt_start  = rpc->pkt_buf;
 
+    /* Reset state */
+    rpc->next_pkt_start  = rpc->pkt_buf;
+    memset(genrstate, '\0', sizeof(InterleaverState));
     return 0;
 }
 
@@ -298,6 +302,7 @@ static int rm_get_genr_packet(AVFormatContext *s, AVPacket *pkt,
     RealPacketCache *rpc = radc->rpc;
     RAStream *rast = &(radc->rast);
 
+    printf("TODO: write this\n"); /* TODO FIXME */
     rpc->next_pkt_start += rast->subpkt_size;
     return 0;
 }
@@ -429,6 +434,7 @@ static int ra_interleaver_specific_setup(AVFormatContext *s, AVStream *st,
         rast->full_pkt_size = rast->frame_size * rast->subpacket_h;
         rast->subpacket_pp  = rast->full_pkt_size / rast->subpkt_size;
         radc->interleaver   = ra_find_interleaver(DEINT_ID_SIPR);
+        break;
     case DEINT_ID_GENR:
         rast->subpkt_size       = st->codec->block_align;
         rast->full_pkt_size     = rast->frame_size * rast->subpacket_h;
