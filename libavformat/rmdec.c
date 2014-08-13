@@ -379,7 +379,6 @@ static int ra_interleaver_specific_setup(AVFormatContext *s, AVStream *st,
 
     printf("rast->interleaver_id: %x\n", rast->interleaver_id);
     switch(rast->interleaver_id) {
-
     case DEINT_ID_INT4:
         /* Int4 is composed of several interleaved subpackets.
          * Calculate the size they all take together. */
@@ -398,10 +397,11 @@ static int ra_interleaver_specific_setup(AVFormatContext *s, AVStream *st,
         radc->interleaver   = ra_find_interleaver(0); /* Generic's enough */
         break;
     case DEINT_ID_SIPR:
+    case DEINT_ID_GENR:
         rast->subpkt_size   = st->codec->block_align;
         rast->full_pkt_size = rast->frame_size * rast->subpacket_h;
         rast->subpacket_pp  = rast->full_pkt_size / rast->subpkt_size;
-        radc->interleaver   = ra_find_interleaver(DEINT_ID_SIPR);
+        radc->interleaver   = ra_find_interleaver(rast->interleaver_id);
         break;
     default:
             printf("Implement full_pkt_size for another interleaver.\n");
@@ -705,6 +705,10 @@ static int ra_read_header_v4_5(AVFormatContext *s, uint16_t header_size,
     rast->coded_frame_size = avio_rb32(s->pb);
     avio_skip(s->pb, 12); /* Unknown */
     rast->subpacket_h = avio_rb16(s->pb);
+    if (!rast->subpacket_h) {
+        av_log(s, AV_LOG_ERROR, "RealAudio: subpacket_h must not be 0.\n");
+        return AVERROR_INVALIDDATA;
+    }
     st->codec->block_align = rast->frame_size = avio_rb16(s->pb);
     rast->subpacket_size = avio_rb16(s->pb);
     avio_skip(s->pb, 2); /* Unknown */
