@@ -1397,7 +1397,7 @@ static int rm_cache_packet(AVFormatContext *s, AVPacket *pkt)
         //return av_get_packet(s->pb, pkt, pkt_size)
         read_ret = avio_read(s->pb, read_to, chunk_size);
         if (read_ret < 0) {
-            av_log(s, AV_LOG_ERROR, "RealMedia: failed read.\n");
+            av_log(s, AV_LOG_ERROR, "RealMedia: read less than chunk_size.\n");
             return read_ret;
         }
         bytes_read += read_ret;
@@ -1497,7 +1497,7 @@ static int rm_get_one_frame(AVFormatContext *s, AVStream *st, AVPacket *pkt,
         pkt->pts         = timestamp;
 
     rpc->next_offset = cur_offset + frame_size;
-
+    
     if (rpc->next_offset == rpc->buf_size) {
         ret = 0;
         goto cleanup;
