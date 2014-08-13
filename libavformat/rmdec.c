@@ -1494,10 +1494,10 @@ static int rm_get_one_frame(AVFormatContext *s, AVStream *st, AVPacket *pkt,
     memcpy(pkt->data + 9, rpc->pkt_buf + cur_offset, frame_size);
     pkt->stream_index    = st->index;
     if (timestamp)
-        pkt->pts         = timestamp;
+        pkt->dts         = timestamp;
 
     rpc->next_offset = cur_offset + frame_size;
-    
+
     if (rpc->next_offset == rpc->buf_size) {
         ret = 0;
         goto cleanup;
