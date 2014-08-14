@@ -930,12 +930,20 @@ static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
     return ra_read_packet_with(s, pkt, s->priv_data);
 }
 
+/* TODO: do I need to free extradata? */
+static void ra_read_close_with(RADemuxContext *ra)
+{
+    RealPacketCache *rpc = ra->rpc;
+    rm_clear_rpc(rpc);
+    av_free(rpc);
+    av_free(ra->interleaver_state);
+}
+
 /* TODO: revisit this */
 static int ra_read_close(AVFormatContext *s)
 {
-//    RADemuxContext *ra = s->priv_data;
-//    RAStream *rast = &(ra->rast);
-
+    RADemuxContext *ra = s->priv_data;
+    ra_read_close_with(ra);
     return 0;
 }
 
@@ -1998,9 +2006,14 @@ static int rm_read_packet(AVFormatContext *s, AVPacket *pkt)
 /* TODO: am I actually using RMVidStream by now? */
 static void rm_cleanup_stream(AVStream *st)
 {
-    RMStream *rmst = st->priv_data;
+    RMStream *rmst       = st->priv_data;
+    RADemuxContext *radc = &(rmst->radc);
+
     rm_clear_rpc(rmst->rpc);
     av_free(rmst->rmmp.type_specific_data);
+    av_free(rmst);
+    if (st->codec->codec_type == AVMEDIA_TYPE_AUDIO)
+        ra_read_close_with(radc);
 }
 
 static int rm_read_close(AVFormatContext *s)
