@@ -91,7 +91,9 @@
 #define DEINT_ID_VBRS MKTAG('v', 'b', 'r', 's') ///< VBR case for AAC
 
 
+/* Forward declarations */
 struct Interleaver;
+static int rm_read_next_header(AVFormatContext *s);
 
 typedef struct RAStream {
     uint32_t coded_frame_size, interleaver_id, fourcc_tag;
@@ -1043,6 +1045,7 @@ static int rm_read_indices(AVFormatContext *s)
     return err_ret; /* 0 iff everything was ok */
 }
 
+/* Undocumented function from the old code */
 static int rm_get_num(AVIOContext *pb)
 {
     int n, n1;
@@ -1056,6 +1059,7 @@ static int rm_get_num(AVIOContext *pb)
         return (n << 16) | n1;
     }
 }
+
 
 /* TODO: check if this is at the expected index position. */
 static int rm_read_data_chunk_header(AVFormatContext *s)
@@ -1075,17 +1079,9 @@ static int rm_read_data_chunk_header(AVFormatContext *s)
         avio_rb16(s->pb); /* ASM rule */
         avio_r8(s->pb); /* ASM flags */
     } else {
+        /* Unread everything so far and find the next header. */
         avio_seek(s->pb, rm->cur_pkt_start, SEEK_SET);
-        if (avio_rl32(s->pb) == RM_INDX_HEADER) {
-            avio_seek(s->pb, -4, SEEK_CUR);
-            return rm_read_indices(s);
-        }
-        /* It wasn't an index; something has gone badly wrong. */
-        av_log(s, AV_LOG_ERROR,
-               "RealMedia: Send sample. Unknown packet_version %"PRIx16" "
-               "at hex position %"PRIx64".\n",
-               rm->cur_pkt_version, rm->cur_pkt_start);
-        return AVERROR_INVALIDDATA;
+        return rm_read_next_header(s);
     }
 
     if (rm->cur_stream_number >= rm->num_streams) {
@@ -1719,6 +1715,45 @@ static int rm_read_data_header(AVFormatContext *s, RMDataHeader *rmdh)
     rmdh->next_data_chunk_offset = avio_rb32(s->pb);
 
     return 0;
+}
+
+/* This replaces part of the functionality of 'sync'. Given
+   a bad position to start reading from in the stream, find
+   the next header and continue from there. */
+static int rm_read_next_header(AVFormatContext *s)
+{
+    RMDemuxContext *rm = s->priv_data;
+    uint32_t current_bytes;
+
+    av_log(s, AV_LOG_WARNING,
+           "RealMedia: finding next header from position 0x%"PRIx64"\n",
+           avio_tell(s->pb));
+    current_bytes = avio_rb32(s->pb);
+    while (!s->pb->eof_reached)
+    {
+        if (current_bytes == RM_DATA_HEADER)
+        {
+            int dh_ret = rm_read_data_header(s, &(rm->cur_data_header));
+            if (dh_ret < 0)
+                return dh_ret;
+            return rm_read_data_chunk_header(s);
+        } else if (current_bytes == RM_INDX_HEADER) {
+            return rm_read_indices(s);
+        } else if (((current_bytes >> 16) <= 1) && /* DCH v0 or v1 */
+                   (current_bytes & 0xFFFF)) { /* pkt size non-zero */
+            uint16_t possible_stream = avio_rb16(s->pb);
+            if (possible_stream < rm->num_streams) { /* Probably a DCH... try */
+                avio_seek(s->pb, -6, SEEK_CUR); /* Unread header bytes */
+                return rm_read_data_chunk_header(s);
+            }
+        }
+        /* Nope, try the next byte */
+        current_bytes <<= 8;
+        current_bytes += avio_r8(s->pb);
+    }
+
+    av_log(s, AV_LOG_ERROR, "RealMedia: EOF reached searching for headers.\n");
+    return AVERROR_EOF;
 }
 
 static int rm_initialize_streams(AVFormatContext *s, int num_streams)
