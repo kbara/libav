@@ -98,7 +98,8 @@ static int rm_read_next_header(AVFormatContext *s);
 typedef struct RAStream {
     uint32_t coded_frame_size, interleaver_id, fourcc_tag;
     uint16_t codec_flavor, subpacket_h, frame_size, subpacket_size, sample_size;
-    int full_pkt_size, subpkt_size, subpacket_pp;
+    /* The above fields are read; the below ones are calculated. */
+    int full_pkt_size, calc_subpkt_size, subpkt_pp;
 } RAStream;
 
 typedef struct RealPacketCache {
@@ -290,7 +291,7 @@ static int rm_postread_genr_packet(RADemuxContext *radc, int bytes_read)
     RAStream *rast = &(radc->rast);
     InterleaverState *genrstate = radc->interleaver_state;
 
-    rpc->packets_read    = bytes_read / rast->subpkt_size;
+    rpc->packets_read    = bytes_read / rast->calc_subpkt_size;
     rpc->pending_packets = rpc->packets_read;
     rpc->next_pkt_start  = rpc->pkt_buf;
 
@@ -307,7 +308,7 @@ static int rm_get_genr_packet(AVFormatContext *s, AVPacket *pkt,
     RAStream *rast = &(radc->rast);
 
     printf("TODO: write this\n"); /* TODO FIXME */
-    rpc->next_pkt_start += rast->subpkt_size;
+    rpc->next_pkt_start += rast->calc_subpkt_size;
     return 0;
 }
 
@@ -340,9 +341,9 @@ static int rm_get_int4_packet(AVFormatContext *s, AVPacket *pkt,
                 (int4state->subpkt_cnt * rast->subpacket_h / 2 +
                 int4state->subpkt_x);
 
-    if (av_new_packet(pkt, rast->subpkt_size) < 0)
+    if (av_new_packet(pkt, rast->calc_subpkt_size) < 0)
         return AVERROR(ENOMEM);
-    memcpy(pkt->data, pkt_start, rast->subpkt_size);
+    memcpy(pkt->data, pkt_start, rast->calc_subpkt_size);
     pkt->stream_index = st->index;
     rpc->pending_packets--;
 
@@ -419,30 +420,31 @@ static int ra_interleaver_specific_setup(AVFormatContext *s, AVStream *st,
     case DEINT_ID_INT4:
         /* Int4 is composed of several interleaved subpackets.
          * Calculate the size they all take together. */
-        rast->subpacket_pp = rast->subpacket_h * rast->frame_size /
-            st->codec->block_align;
-        rast->full_pkt_size     = rast->subpacket_pp * rast->coded_frame_size;
-        rast->subpkt_size       = rast->full_pkt_size / rast->subpacket_pp;
+        rast->subpkt_pp      = rast->subpacket_h * rast->frame_size /
+                                  st->codec->block_align;
+        rast->full_pkt_size     = rast->subpkt_pp * rast->coded_frame_size;
+        rast->calc_subpkt_size  = rast->full_pkt_size / rast->subpkt_pp;
         radc->interleaver       = ra_find_interleaver(DEINT_ID_INT4);
         radc->interleaver_state = av_mallocz(sizeof(InterleaverState));
         if (!radc->interleaver_state)
             return AVERROR(ENOMEM);
         break;
     case DEINT_ID_INT0:
-        rast->full_pkt_size = (rast->coded_frame_size * rast->subpacket_h) / 2;
-        rast->subpkt_size   = rast->full_pkt_size;
-        radc->interleaver   = ra_find_interleaver(0); /* Generic's enough */
+        rast->full_pkt_size    = (rast->coded_frame_size *
+                                  rast->subpacket_h) / 2;
+        rast->calc_subpkt_size = rast->full_pkt_size;
+        radc->interleaver      = ra_find_interleaver(0); /* Generic's enough */
         break;
     case DEINT_ID_SIPR:
-        rast->subpkt_size   = st->codec->block_align;
-        rast->full_pkt_size = rast->frame_size * rast->subpacket_h;
-        rast->subpacket_pp  = rast->full_pkt_size / rast->subpkt_size;
-        radc->interleaver   = ra_find_interleaver(DEINT_ID_SIPR);
+        rast->calc_subpkt_size = st->codec->block_align; /* Really? */
+        rast->full_pkt_size    = rast->frame_size * rast->subpacket_h;
+        rast->subpkt_pp        = rast->full_pkt_size / rast->calc_subpkt_size;
+        radc->interleaver      = ra_find_interleaver(DEINT_ID_SIPR);
         break;
     case DEINT_ID_GENR:
-        rast->subpkt_size       = st->codec->block_align;
+        rast->calc_subpkt_size  = st->codec->block_align;
         rast->full_pkt_size     = rast->frame_size * rast->subpacket_h;
-        rast->subpacket_pp      = rast->full_pkt_size / rast->subpkt_size;
+        rast->subpkt_pp         = rast->full_pkt_size / rast->calc_subpkt_size;
         radc->interleaver       = ra_find_interleaver(DEINT_ID_GENR);
         radc->interleaver_state = av_mallocz(sizeof(InterleaverState));
         if (!radc->interleaver_state)
@@ -466,7 +468,7 @@ static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
     RAStream *rast = &(radc->rast);
     int ret;
 
-    rast->subpacket_pp = 1;
+    rast->subpkt_pp = 1;
 
 /* Some codecs have extradata; the code for handling it is identical. */
     switch(st->codec->codec_id) {
@@ -533,8 +535,8 @@ static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
         return ret;
 
     if (st->codec->codec_id == AV_CODEC_ID_AC3) {
-        rast->full_pkt_size *= 2;
-        rast->subpkt_size   *= 2;
+        rast->full_pkt_size    *= 2;
+        rast->calc_subpkt_size *= 2;
     }
 
     if (rast->full_pkt_size == 0) {
@@ -701,9 +703,9 @@ static int ra_read_header_v3(AVFormatContext *s, uint16_t header_size,
     ra->avst        = st;
     ra->interleaver = ra_find_interleaver(0);
 
-    rast->subpacket_pp  = 1;
-    rast->subpkt_size   = RA144_PKT_SIZE;
-    rast->full_pkt_size = RA144_PKT_SIZE;
+    rast->subpkt_pp        = 1;
+    rast->calc_subpkt_size = RA144_PKT_SIZE;
+    rast->full_pkt_size    = RA144_PKT_SIZE;
     return 0;
 }
 
@@ -1598,8 +1600,8 @@ static int rm_read_media_properties_header(AVFormatContext *s,
         rmmp->is_realaudio = 1;
         rmst->rpc           = radc->rpc;
         rmst->full_pkt_size = rast->full_pkt_size;
-        rmst->subpkt_size   = rast->subpkt_size;
-        rmst->subpacket_pp  = rast->subpacket_pp;
+        rmst->subpkt_size   = rast->calc_subpkt_size;
+        rmst->subpacket_pp  = rast->subpkt_pp;
 
     } else if (RM_VIDEO_TAG == (content_tag2 = avio_rl32(s->pb))) {
         RMStream *rmst     = st->priv_data;
