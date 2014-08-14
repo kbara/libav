@@ -102,6 +102,7 @@ typedef struct RealPacketCache {
     size_t buf_size;
     uint8_t *next_pkt_start;
     uint32_t next_offset;
+    uint64_t timestamp;
 } RealPacketCache;
 
 /* Demux context for RealAudio */
@@ -114,6 +115,7 @@ typedef struct RADemuxContext {
     AVStream *avst;
     struct Interleaver *interleaver;
     void *interleaver_state;
+    uint64_t timestamp;
 } RADemuxContext;
 
 /* pkt_size and len are signed ints because that's what functions
@@ -195,7 +197,8 @@ static int rm_initialize_pkt_buf(RealPacketCache *rpc, int size)
     rpc->pkt_buf = av_mallocz(size);
     if (!rpc->pkt_buf)
         return AVERROR(ENOMEM);
-    rpc->buf_size       = size;
+    rpc->buf_size  = size;
+    rpc->timestamp = AV_NOPTS_VALUE;
     return 0;
 }
 
@@ -203,6 +206,7 @@ static void rm_clear_rpc(RealPacketCache *rpc)
 {
     av_free(rpc->pkt_buf);
     memset(rpc, '\0', sizeof(RealPacketCache));
+    rpc->timestamp = AV_NOPTS_VALUE;
 }
 
 
@@ -894,7 +898,9 @@ static int ra_store_cache(AVFormatContext *s, Interleaver *inter,
 {
     int bytes_read;
     bytes_read = avio_read(s->pb, rpc->pkt_buf, size);
-    rpc->next_pkt_start = rpc->pkt_buf;
+    rpc->next_pkt_start  = rpc->pkt_buf;
+    /* RA files have no timestamps, unlike RA streams in RM files. */
+    rpc->timestamp = AV_NOPTS_VALUE;
     inter->postread_packet(radc, bytes_read);
     return 0;
 }
@@ -1411,7 +1417,8 @@ static int rm_cache_packet(AVFormatContext *s, AVPacket *pkt)
     }
 
     inter->postread_packet(radc, bytes_read);
-    rpc->next_pkt_start = rpc->pkt_buf;
+    rpc->next_pkt_start  = rpc->pkt_buf;
+    rpc->timestamp       = radc->timestamp;
     return 0;
 }
 
@@ -1547,6 +1554,7 @@ static int rm_read_media_properties_header(AVFormatContext *s,
         return AVERROR_INVALIDDATA;
     }
 
+
     rmmp->chunk_size = avio_rb32(s->pb);
 
     chunk_version = avio_rb16(s->pb);
@@ -1585,6 +1593,8 @@ static int rm_read_media_properties_header(AVFormatContext *s,
     st->duration          = rmmp->duration;
     st->codec->codec_type = AVMEDIA_TYPE_DATA;
 
+    /* stream, pts_wrap_bits, pts_num, pts_den */
+    avpriv_set_pts_info(st, 64, 1, 1000);
 
     bytes_read = avio_read(s->pb, rmmp->stream_desc, rmmp->desc_size);
     if (bytes_read < rmmp->desc_size) {
@@ -1957,7 +1967,7 @@ static int rm_read_header(AVFormatContext *s)
 static int rm_read_cached_packet(AVFormatContext *s, AVPacket *pkt)
 {
     RMDemuxContext *rm = s->priv_data;
-    int i;
+    int i, ret;
 
     for (i = 0; i < rm->num_streams; i++) {
         AVStream *st         = st = s->streams[i];
@@ -1972,9 +1982,14 @@ static int rm_read_cached_packet(AVFormatContext *s, AVPacket *pkt)
                 return rm_get_video_packet(s, st, pkt, rmst->subpkt_size);
             }
             inter = radc->interleaver;
-            return inter->get_packet(s, pkt, radc, rmst->subpkt_size);
+            ret = inter->get_packet(s, pkt, radc, rmst->subpkt_size);
+            /* If there were several cached packets, the timestamps for
+               all but the first were thrown away; give no value rather than
+               an incorrect one. */
+            pkt->dts       = rpc->timestamp;
+            rpc->timestamp = AV_NOPTS_VALUE;
             //printf("Packet size: 0x%x, pos: 0x%"PRIx64"\n", pkt->size, avio_tell(s->pb));
-            //return ret;
+            return ret;
         }
     }
     return -1; /* No queued packets */
