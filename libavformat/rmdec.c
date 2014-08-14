@@ -1342,8 +1342,6 @@ static int rm_cache_packet(AVFormatContext *s, AVPacket *pkt)
 
         inter = radc->interleaver;
 
-        //inter->preread_packet(s, radc);
-
         /* FIXME: if chunk sizes aren't constant for a stream, this
            needs to be rewritten. */
         if (data_bytes_to_read == -1) /* Not set yet */
@@ -1390,12 +1388,6 @@ static int rm_cache_packet(AVFormatContext *s, AVPacket *pkt)
     return 0;
 }
 
-/*
-static int rm_postread_video_packet(RMStream *rmst, int bytes_read)
-{
-    printf("Postread called\n");
-    return 0;
-}*/
 
 /* Get one frame from a multi-frame packet.
    The multiframe packet format:
