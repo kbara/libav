@@ -109,8 +109,6 @@ typedef struct RealPacketCache {
 typedef struct RADemuxContext {
     int version;
     struct RAStream rast;
-    //int pending_audio_packets;
-    //int audio_packets_read;
     RealPacketCache *rpc;
     AVStream *avst;
     struct Interleaver *interleaver;
@@ -152,11 +150,11 @@ typedef struct RMDataHeader {
     uint32_t data_chunk_size, num_data_packets, next_data_chunk_offset;
 } RMDataHeader;
 
-typedef struct RMVidStream {
+/*typedef struct RMVidStream {
     int curpic_num, cur_slice, pkt_pos, videobuf_pos;
     int slices, videobuf_size;
     AVPacket pkt;
-} RMVidStream;
+} RMVidStream;*/
 
 /* Information about a particular RM stream, beyond what is described in
  * the relevant AVStream.
@@ -796,14 +794,10 @@ static int ra_read_header_v4_5(AVFormatContext *s, uint16_t header_size,
         rast->interleaver_id = interleaver_id = avio_rl32(s->pb);
         rast->fourcc_tag     = avio_rl32(s->pb);
     }
-    st->codec->codec_tag = rast->fourcc_tag;
-    /*printf("Fourcc: %c%c%c%c\n", fourcc_tag >> 24,
-           (fourcc_tag >> 16) & 0xff, (fourcc_tag >> 8) & 0xff,
-           fourcc_tag & 0xff); TODO */
-
-    st->codec->codec_id       = ff_codec_get_id(ff_rm_codec_tags,
-                                                st->codec->codec_tag);
-    st->codec->codec_type     = AVMEDIA_TYPE_AUDIO;
+    st->codec->codec_tag  = rast->fourcc_tag;
+    st->codec->codec_id   = ff_codec_get_id(ff_rm_codec_tags,
+                                            st->codec->codec_tag);
+    st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
     printf("Codec id %x\n", st->codec->codec_id);
 
     ra4_codec_specific_setup(st->codec->codec_id, s, st, ra);
@@ -926,29 +920,6 @@ static int ra_read_packet_with(AVFormatContext *s, AVPacket *pkt,
         return pkt_get_ret;
     ra_ac3_swap_bytes(st, pkt); /* TODO: put this in get_packet? */
     return 0;
-//    if (ra->version == 3)
-//        return av_get_packet(s->pb, pkt, rast->full_pkt_size);
-
-    /* Nope, it's a bit more complicated */
-
-//    if (rast->interleaver_id == DEINT_ID_INT4) {
-//        return ra_read_interleaved_packets(s, pkt, ra);
-//    /* Simple case: no interleaving */
-//    } else if (rast->interleaver_id == DEINT_ID_INT0) {
-//        get_pkt = av_get_packet(s->pb, pkt, rast->full_pkt_size);
-//        /* Swap the bytes iff it's ac3 - check done in rm_ac3_swap_bytes */
-//        ra_ac3_swap_bytes(st, pkt);
-//        return get_pkt;
-//    } else if ((rast->interleaver_id == DEINT_ID_VBRF) ||
-//        (rast->interleaver_id == DEINT_ID_VBRS)) {
-//        /* TODO FIXME implement this */
-//        av_log(s, AV_LOG_ERROR, "RealAudio: VBR* unimplemented.\n");
-//        return AVERROR_INVALIDDATA;
-//    } else {
-//        av_log(s, AV_LOG_ERROR,
-//            "RealAudio: internal error, unknown interleaver\n");
-//        return AVERROR_INVALIDDATA;
-//    }
 }
 
 static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
@@ -1644,26 +1615,8 @@ static int rm_read_media_properties_header(AVFormatContext *s,
         rmst->subpkt_size   = rast->subpkt_size;
         rmst->subpacket_pp  = rast->subpacket_pp;
 
-        /* TODO: this should become obsolete
-        switch(rast->interleaver_id) {
-        case DEINT_ID_INT4:
-            inter->priv_data = av_mallocz(sizeof(Int4State));
-            if (!inter->priv_data)
-                return AVERROR(ENOMEM);
-            inter->interleaver_tag = rast->interleaver_id;
-            inter->get_packet      = rm_get_int4_packet;
-            inter->preread_packet  = rm_preread_generic_packet;
-            inter->postread_packet = rm_postread_int4_packet;
-            break;
-        default:
-            inter->interleaver_tag = 0;
-            inter->get_packet      = rm_get_generic_packet;
-            inter->preread_packet  = rm_preread_generic_packet;
-            inter->postread_packet = rm_postread_generic_packet;
-        } */
     } else if (RM_VIDEO_TAG == (content_tag2 = avio_rl32(s->pb))) {
         RMStream *rmst     = st->priv_data;
-        //Interleaver *inter = &(rmst->interleaver);
         int extradata_ret;
 
         st->codec->codec_tag = avio_rl32(s->pb);
@@ -1684,10 +1637,6 @@ static int rm_read_media_properties_header(AVFormatContext *s,
                       0x10000, rmst->fps, (1 << 30) - 1);
 
         st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
-        //inter->interleaver_tag = st->codec->codec_id;
-        //inter->get_packet      = rm_get_video_packet;
-        //inter->preread_packet  = rm_preread_video_packet;
-        //inter->postread_packet = rm_postread_video_packet;
 
         rmst->rpc = av_mallocz(sizeof(RealPacketCache));
         if (!rmst->rpc)
@@ -1712,10 +1661,6 @@ static int rm_read_media_properties_header(AVFormatContext *s,
         avio_skip(s->pb, rmmp->type_specific_size - bytes_already_read);
     } else {
         printf("Deal with tag %x\n", content_tag);
-        /* FIXME TODO: make these initializations more reasonable. */
-        //rmst->full_pkt_size = 1;
-        //rmst->subpkt_size   = 1;
-        //rmst->subpacket_pp  = 1;
     }
 
     after_embed = avio_tell(s->pb);
@@ -1974,7 +1919,6 @@ static int rm_read_cached_packet(AVFormatContext *s, AVPacket *pkt)
         RMStream *rmst       = st->priv_data;
         RealPacketCache *rpc = rmst->rpc;
         RADemuxContext *radc = &(rmst->radc);
-        //int ret;
 
         if (rpc->pending_packets) {
             Interleaver *inter;
