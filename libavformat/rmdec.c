@@ -479,10 +479,11 @@ static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
         if (radc->version == 5)
             avio_skip(s->pb, 1); /* Unknown */
         codecdata_length = avio_rb32(s->pb);
-        if (codecdata_length)
+        if (codecdata_length) {
             ret = real_read_extradata(s->pb, st->codec, codecdata_length);
             if (ret < 0)
                 return ret;
+        }
         break;
     /* Document the codecs that don't */
     case AV_CODEC_ID_AC3:
@@ -1089,7 +1090,7 @@ static int rm_read_data_chunk_header(AVFormatContext *s)
                "RealMedia: Invalid stream %"PRIu32": max is %"PRIu32".\n",
                rm->cur_stream_number, rm->num_streams - 1);
         /* TODO: zero the cur_* variables? */
-        return AVERROR_PATCHWELCOME;
+        return AVERROR_INVALIDDATA;
     }
 
     return 0;
@@ -1733,17 +1734,28 @@ static int rm_read_next_header(AVFormatContext *s)
     {
         if (current_bytes == RM_DATA_HEADER)
         {
-            int dh_ret = rm_read_data_header(s, &(rm->cur_data_header));
+            int dh_ret;
+            av_log(s, AV_LOG_WARNING,
+                   "RealMedia: found DATA header at %"PRIx64"\n",
+                   avio_tell(s->pb));
+            dh_ret = rm_read_data_header(s, &(rm->cur_data_header));
             if (dh_ret < 0)
                 return dh_ret;
             return rm_read_data_chunk_header(s);
         } else if (current_bytes == RM_INDX_HEADER) {
+            av_log(s, AV_LOG_WARNING,
+                   "RealMedia: found INDX header at %"PRIx64"\n",
+                   avio_tell(s->pb));
             return rm_read_indices(s);
         } else if (((current_bytes >> 16) <= 1) && /* DCH v0 or v1 */
                    (current_bytes & 0xFFFF)) { /* pkt size non-zero */
             uint16_t possible_stream = avio_rb16(s->pb);
             if (possible_stream < rm->num_streams) { /* Probably a DCH... try */
                 avio_seek(s->pb, -6, SEEK_CUR); /* Unread header bytes */
+            av_log(s, AV_LOG_WARNING,
+                   "RealMedia: trying DCH at %"PRIx64"\n",
+                   avio_tell(s->pb));
+            return rm_read_indices(s);
                 return rm_read_data_chunk_header(s);
             }
         }
