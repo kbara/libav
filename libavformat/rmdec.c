@@ -1374,7 +1374,6 @@ static int rm_cache_packet(AVFormatContext *s, AVPacket *pkt)
             memset(read_to, '\0', rpc->buf_size);
         }
 
-        //return av_get_packet(s->pb, pkt, pkt_size)
         read_ret = avio_read(s->pb, read_to, chunk_size);
         if (read_ret < 0) {
             av_log(s, AV_LOG_ERROR, "RealMedia: read less than chunk_size.\n");
