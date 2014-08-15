@@ -987,9 +987,6 @@ static int rm_probe(AVProbeData *p)
     /* The dword chunk size is only non-zero in byte 8 in all known samples */
     if ((p->buf[4] != 0) || (p->buf[5] != 0) || (p->buf[6] != 0))
         return 0;
-    /* The word chunk version is always zero */
-    if ((p->buf[8] != 0) || (p->buf[9]) != 0)
-        return 0;
     /* The dword file version is always zero */
     if ((p->buf[10] != 0) || (p->buf[11] != 0) ||
         (p->buf[12] != 0) || (p->buf[13]) != 0)
@@ -1902,9 +1899,9 @@ static int rm_read_header(AVFormatContext *s)
     rm->header_chunk_size = avio_rb32(s->pb);
 
     rm_chunk_version = avio_rb16(s->pb);
-    if (rm_chunk_version != 0) {
+    if (rm_chunk_version > 1) {
         av_log(s, AV_LOG_ERROR,
-               "RealMedia: expected RMF chunk version 0, got %"PRIx16".\n",
+               "RealMedia: expected RMF chunk version 0 or 1, got %"PRIx16".\n",
                rm_chunk_version);
         return AVERROR_INVALIDDATA;
     }
