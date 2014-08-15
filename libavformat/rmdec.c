@@ -471,7 +471,7 @@ static int ra_interleaver_specific_setup(AVFormatContext *s, AVStream *st,
         radc->interleaver      = ra_find_interleaver(0); /* Generic's enough */
         break;
     case DEINT_ID_SIPR:
-        rast->calc_subpkt_size = st->codec->block_align; /* Really? */
+        rast->calc_subpkt_size = st->codec->block_align;
         rast->full_pkt_size    = rast->frame_size * rast->subpacket_h;
         rast->subpkt_pp        = rast->full_pkt_size / rast->calc_subpkt_size;
         radc->interleaver      = ra_find_interleaver(DEINT_ID_SIPR);
@@ -480,6 +480,7 @@ static int ra_interleaver_specific_setup(AVFormatContext *s, AVStream *st,
         rast->calc_subpkt_size  = st->codec->block_align;
         rast->full_pkt_size     = rast->frame_size * rast->subpacket_h;
         rast->subpkt_pp         = rast->full_pkt_size / rast->calc_subpkt_size;
+        st->codec->block_align = rast->subpacket_size;
         radc->interleaver       = ra_find_interleaver(DEINT_ID_GENR);
         radc->interleaver_state = av_mallocz(sizeof(InterleaverState));
         if (!radc->interleaver_state)
