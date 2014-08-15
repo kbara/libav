@@ -2011,9 +2011,9 @@ static void rm_cleanup_stream(AVStream *st)
 
     rm_clear_rpc(rmst->rpc);
     av_free(rmst->rmmp.type_specific_data);
-    av_free(rmst);
     if (st->codec->codec_type == AVMEDIA_TYPE_AUDIO)
         ra_read_close_with(radc);
+    av_free(rmst);
 }
 
 static int rm_read_close(AVFormatContext *s)
