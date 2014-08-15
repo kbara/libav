@@ -277,7 +277,7 @@ static int rm_postread_sipr_packet(RADemuxContext *radc, int bytes_read)
     RAStream *rast = &(radc->rast);
 
     ff_rm_reorder_sipr_data(rpc->pkt_buf, rast->subpacket_h, rast->frame_size);
-    rpc->packets_read    = bytes_read / rast->full_pkt_size;
+    rpc->packets_read    = bytes_read / rast->calc_subpkt_size;
     rpc->pending_packets = rpc->packets_read;
     rpc->next_pkt_start  = rpc->pkt_buf;
 
