@@ -291,7 +291,7 @@ static int rm_postread_genr_packet(RADemuxContext *radc, int bytes_read)
     RAStream *rast = &(radc->rast);
     InterleaverState *genrstate = radc->interleaver_state;
 
-    rpc->packets_read    = bytes_read / rast->subpacket_size;
+    rpc->packets_read    = bytes_read / rast->full_pkt_size;
     rpc->pending_packets = rpc->packets_read;
     rpc->next_pkt_start  = rpc->pkt_buf;
 
@@ -301,7 +301,7 @@ static int rm_postread_genr_packet(RADemuxContext *radc, int bytes_read)
     return 0;
 }
 
-/* This provides a whole macropacket at a time. */
+/* This provides a whole packet at a time, like the old implementation. */
 /* Note: subpacket_size is read from the header; calc_subpkt_size is
    subpacket_size * col_width, aka coded_frame_size, for genr */
 static int rm_get_genr_packet(AVFormatContext *s, AVPacket *pkt,
@@ -310,16 +310,14 @@ static int rm_get_genr_packet(AVFormatContext *s, AVPacket *pkt,
     RAStream *rast              = &(radc->rast);
     RealPacketCache *rpc        = radc->rpc;
     AVStream *st                = radc->avst;
-    InterleaverState *genrstate = radc->interleaver_state;
     uint8_t *pkt_start;
     /* This can be seen as rast->subpacket_h rows of col_width columns */
     int col_width        = rast->calc_subpkt_size / rast->subpacket_size;
     int subpackets       = col_width * rast->subpacket_h;
-    int macropacket_size = subpackets * rast->subpacket_size;
     int extra_offset     = 0;
     int pkt_offset       = 0;
 
-    if (av_new_packet(pkt, macropacket_size) < 0)
+    if (av_new_packet(pkt, rast->full_pkt_size) < 0)
         return AVERROR(ENOMEM);
 
     for (int x = 0; x < col_width; x++) {
@@ -333,10 +331,10 @@ static int rm_get_genr_packet(AVFormatContext *s, AVPacket *pkt,
             //printf("x: %2d, y: %2d, therefore %2ld\n", x, y,
             //       (pkt_start - rpc->next_pkt_start) / rast->subpacket_size);
             memcpy(pkt->data + pkt_offset, pkt_start, rast->subpacket_size);
-            printf("Just wrote %d bytes to offset %d (%d), starting with %x\n",
+            /*printf("Just wrote %d bytes to offset %d (%d), starting with %x\n",
                    rast->subpacket_size, pkt_offset,
                    (pkt_start - rpc->next_pkt_start)/rast->subpacket_size,
-                   *(pkt->data + pkt_offset));
+                   *(pkt->data + pkt_offset));*/
             pkt_offset += rast->subpacket_size;
         }
     }
@@ -345,7 +343,7 @@ static int rm_get_genr_packet(AVFormatContext *s, AVPacket *pkt,
     rpc->pending_packets--;
 
     if (rpc->pending_packets)
-        rpc->next_pkt_start += macropacket_size;
+        rpc->next_pkt_start += rast->full_pkt_size;
     return 0;
 }
 
@@ -1410,7 +1408,8 @@ static int rm_cache_packet(AVFormatContext *s, AVPacket *pkt)
 
         read_ret = avio_read(s->pb, read_to, chunk_size);
         if (read_ret < 0) {
-            av_log(s, AV_LOG_ERROR, "RealMedia: read less than chunk_size.\n");
+            av_log(s, AV_LOG_WARNING,
+                   "RealMedia: read less than chunk_size; file truncated?\n");
             return read_ret;
         }
         bytes_read += read_ret;
@@ -1425,7 +1424,7 @@ static int rm_cache_packet(AVFormatContext *s, AVPacket *pkt)
            return AVERROR_EOF;
         return AVERROR(EIO);
     }
-
+    //printf("read complete\n");
     inter->postread_packet(radc, bytes_read);
     rpc->next_pkt_start  = rpc->pkt_buf;
     return 0;
