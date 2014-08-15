@@ -884,8 +884,9 @@ static int ra_read_header_v5(AVFormatContext *s, uint16_t header_size,
         return AVERROR_INVALIDDATA;
     }
 
+    avio_skip(s->pb, 2); /* rev */
     /* Header size - 16 */
-    variable_header_size = avio_rb32(s->pb);
+    variable_header_size = avio_rb16(s->pb);
     printf("Header size (non-fixed): %x\n", variable_header_size);
 
 
@@ -900,13 +901,12 @@ static int ra_read_header_v5(AVFormatContext *s, uint16_t header_size,
         return AVERROR_INVALIDDATA;
     }
     st->codec->block_align = rast->frame_size = avio_rb16(s->pb);
-    rast->subpacket_size = avio_rb16(s->pb);
+    rast->subpacket_size = avio_rb16(s->pb); /* TODO: revisit... */
     avio_skip(s->pb, 2); /* Unknown */
-    st->codec->sample_rate = avio_rb16(s->pb);
-    avio_skip(s->pb, 2); /* Unknown */
-    avio_skip(s->pb, 6); /* Unknown */
-    rast->sample_size = avio_rb16(s->pb);
-    st->codec->channels = avio_rb16(s->pb);
+    st->codec->sample_rate = avio_rb32(s->pb);
+    rast->sample_size      = avio_rb16(s->pb);
+    avio_skip(s->pb, 6); /* sample_rate2, sample_size2 */
+    st->codec->channels    = avio_rb16(s->pb);
 
     printf("Coded frame size: %x\n", rast->coded_frame_size);
     printf("Subpacket_h: %x\n", rast->subpacket_h);
@@ -914,9 +914,10 @@ static int ra_read_header_v5(AVFormatContext *s, uint16_t header_size,
     printf("Subpacket size: %x\n", rast->subpacket_size);
     printf("Sample rate: %x\n", st->codec->sample_rate);
     printf("Sample size: %x\n", rast->sample_size);
+    printf("Channels: %x\n", st->codec->channels);
 
-    rast->interleaver_id = interleaver_id = avio_rl32(s->pb);
-    rast->fourcc_tag     = avio_rl32(s->pb);
+    rast->interleaver_id  = interleaver_id = avio_rl32(s->pb);
+    rast->fourcc_tag      = avio_rl32(s->pb);
     st->codec->codec_tag  = rast->fourcc_tag;
     st->codec->codec_id   = ff_codec_get_id(ff_rm_codec_tags,
                                             st->codec->codec_tag);
