@@ -2009,10 +2009,13 @@ static void rm_cleanup_stream(AVStream *st)
     RMStream *rmst       = st->priv_data;
     RADemuxContext *radc = &(rmst->radc);
 
-    rm_clear_rpc(rmst->rpc);
     av_free(rmst->rmmp.type_specific_data);
     if (st->codec->codec_type == AVMEDIA_TYPE_AUDIO)
         ra_read_close_with(radc);
+    else {
+        rm_clear_rpc(rmst->rpc);
+        av_free(rmst->rpc);
+    }
     av_free(rmst);
 }
 
