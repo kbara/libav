@@ -498,7 +498,7 @@ static int ra_interleaver_specific_setup(AVFormatContext *s, AVStream *st,
 }
 
 /* TODO: fully implement this... */
-static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
+static int ra_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
                                     AVStream *st, RADemuxContext *radc)
 {
     RAStream *rast = &(radc->rast);
@@ -584,7 +584,7 @@ static int ra4_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
 
 /* This is taken almost verbatim from the old code */
 /* TODO: get it reviewed */
-static int ra4_sanity_check_headers(uint32_t interleaver_id, RAStream *rast, AVStream *st)
+static int ra_sanity_check_headers(uint32_t interleaver_id, RAStream *rast, AVStream *st)
 {
     if (rast->interleaver_id == DEINT_ID_INT4) {
         if (st->codec->block_align <= 0)
@@ -835,7 +835,7 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size,
     st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
     printf("Codec id %x\n", st->codec->codec_id);
 
-    ra4_codec_specific_setup(st->codec->codec_id, s, st, ra);
+    ra_codec_specific_setup(st->codec->codec_id, s, st, ra);
 
     header_bytes_read = avio_tell(s->pb) - start_pos;
     if (header_size && (header_bytes_read != header_size)) {
@@ -844,7 +844,7 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size,
                header_bytes_read, header_size);
         avio_seek(s->pb, header_size - header_bytes_read, SEEK_CUR);
     }
-    return ra4_sanity_check_headers(rast->interleaver_id, rast, st);
+    return ra_sanity_check_headers(rast->interleaver_id, rast, st);
 }
 
 
@@ -924,7 +924,7 @@ static int ra_read_header_v5(AVFormatContext *s, uint16_t header_size,
     st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
     printf("Codec id %x\n", st->codec->codec_id);
 
-    ra4_codec_specific_setup(st->codec->codec_id, s, st, ra);
+    ra_codec_specific_setup(st->codec->codec_id, s, st, ra);
 
     header_bytes_read = avio_tell(s->pb) - start_pos;
     if (header_size && (header_bytes_read != header_size)) {
@@ -934,7 +934,7 @@ static int ra_read_header_v5(AVFormatContext *s, uint16_t header_size,
         avio_seek(s->pb, header_size - header_bytes_read, SEEK_CUR);
     }
 
-    return ra4_sanity_check_headers(rast->interleaver_id, rast, st);
+    return ra_sanity_check_headers(rast->interleaver_id, rast, st);
 }
 
 
