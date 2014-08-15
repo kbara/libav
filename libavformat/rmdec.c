@@ -291,7 +291,7 @@ static int rm_postread_genr_packet(RADemuxContext *radc, int bytes_read)
     RAStream *rast = &(radc->rast);
     InterleaverState *genrstate = radc->interleaver_state;
 
-    rpc->packets_read    = bytes_read / rast->calc_subpkt_size;
+    rpc->packets_read    = bytes_read / rast->subpacket_size;
     rpc->pending_packets = rpc->packets_read;
     rpc->next_pkt_start  = rpc->pkt_buf;
 
@@ -301,14 +301,44 @@ static int rm_postread_genr_packet(RADemuxContext *radc, int bytes_read)
     return 0;
 }
 
+/* This is closely related to int4; merge commonality? */
+/* Note: subpacket_size is read from the header; calc_subpkt_size is
+   subpacket_size * col_width, aka coded_frame_size, for genr */
 static int rm_get_genr_packet(AVFormatContext *s, AVPacket *pkt,
                               RADemuxContext *radc, int pkt_size)
 {
-    RealPacketCache *rpc = radc->rpc;
-    RAStream *rast = &(radc->rast);
+    RAStream *rast              = &(radc->rast);
+    RealPacketCache *rpc        = radc->rpc;
+    AVStream *st                = radc->avst;
+    InterleaverState *genrstate = radc->interleaver_state;
+    uint8_t *pkt_start;
+    /* This can be seen as rast->subpacket_h rows of col_width columns */
+    int col_width  = rast->calc_subpkt_size / rast->subpacket_size;
+    int subpackets = col_width * rast->subpacket_h;
 
-    printf("TODO: write this\n"); /* TODO FIXME */
-    rpc->next_pkt_start += rast->calc_subpkt_size;
+    pkt_start = rpc->next_pkt_start + rast->subpacket_size *
+                ((genrstate->subpkt_cnt * rast->subpacket_h) % subpackets +
+                genrstate->subpkt_x);
+
+    if (av_new_packet(pkt, rast->calc_subpkt_size) < 0)
+        return AVERROR(ENOMEM);
+    memcpy(pkt->data, pkt_start, rast->subpacket_size);
+    pkt->stream_index = st->index;
+    rpc->pending_packets--;
+
+    genrstate->subpkt_cnt++;
+    if (genrstate->subpkt_cnt == col_width) {
+        genrstate->subpkt_x += rast->subpacket_h / 2;
+    } else if (genrstate->subpkt_cnt >= col_width * 2) {
+        genrstate->subpkt_cnt = 0;
+        genrstate->subpkt_x   -= (rast->subpacket_h / 2 - 1);
+        if (genrstate->subpkt_x == col_width) /* Whole 'macropacket' done */
+            genrstate->subpkt_x = 0;
+    }
+
+    if ((genrstate->subpkt_x == 0) && (genrstate->subpkt_cnt == 0)) {
+        rpc->next_pkt_start += rast->full_pkt_size;
+    }
     return 0;
 }
 
