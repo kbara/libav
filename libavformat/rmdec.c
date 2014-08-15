@@ -2016,7 +2016,6 @@ static void rm_cleanup_stream(AVStream *st)
         rm_clear_rpc(rmst->rpc);
         av_free(rmst->rpc);
     }
-    av_free(rmst);
 }
 
 static int rm_read_close(AVFormatContext *s)
