@@ -1386,8 +1386,9 @@ static int rm_cache_packet(AVFormatContext *s, AVPacket *pkt)
     } while (read_so_far < data_bytes_to_read);
 
     if (bytes_read != data_bytes_to_read) {
-        av_log(s, AV_LOG_ERROR, "RealMedia: read the wrong amount.\n");
-        return AVERROR(EIO);
+        av_log(s, AV_LOG_WARNING,
+               "RealMedia: short read caching packets; stream truncated?\n");
+        return s->pb->eof_reached ? AVERROR_EOF : AVERROR(EIO);
     }
 
     inter->postread_packet(radc, bytes_read);
