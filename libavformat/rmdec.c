@@ -2015,12 +2015,10 @@ static int rm_read_header(AVFormatContext *s)
         RMMediaProperties rmmp;
 
         next_tag = avio_rl32(s->pb);
-        printf("next tag: %x\n", next_tag);
         /* FIXME: the tag is being preserved as an extra check */
         avio_seek(s->pb, -4, SEEK_CUR); /* REMOVE THIS */
         switch(next_tag) {
         case RM_PROP_HEADER:
-            printf("prop\n");
             if (prop_count) {
                 av_log(s, AV_LOG_ERROR, "RealMedia: too many PROP headers.\n");
                 return AVERROR_INVALIDDATA;
@@ -2031,13 +2029,11 @@ static int rm_read_header(AVFormatContext *s)
             prop_count = 1;
             break;
         case RM_CONT_HEADER:
-            printf("cont\n");
             header_ret = rm_read_cont_header(s);
             if (header_ret)
                 return header_ret;
             break;
         case RM_MDPR_HEADER:
-            printf("mdpr\n");
             if (!prop_count) {
                 av_log(s, AV_LOG_ERROR, "RealMedia: invalid header order,"
                              " need PROP before MDPR.\n");
@@ -2057,7 +2053,6 @@ static int rm_read_header(AVFormatContext *s)
             }
             break;
         case RM_DATA_HEADER:
-            printf("data\n");
             header_ret = rm_read_data_header(s, &(rm->cur_data_header));
             if (header_ret)
                 return header_ret;
@@ -2065,7 +2060,6 @@ static int rm_read_header(AVFormatContext *s)
         default:
             /* There's not another tag right away */
             //avio_seek(s->pb, -4, SEEK_CUR);
-            printf("Done with headers\n");
             return 0;
         }
     }
