@@ -301,7 +301,7 @@ static int rm_postread_genr_packet(RADemuxContext *radc, int bytes_read)
     return 0;
 }
 
-/* This is closely related to int4; merge commonality? */
+/* This provides a whole macropacket at a time. */
 /* Note: subpacket_size is read from the header; calc_subpkt_size is
    subpacket_size * col_width, aka coded_frame_size, for genr */
 static int rm_get_genr_packet(AVFormatContext *s, AVPacket *pkt,
@@ -313,32 +313,37 @@ static int rm_get_genr_packet(AVFormatContext *s, AVPacket *pkt,
     InterleaverState *genrstate = radc->interleaver_state;
     uint8_t *pkt_start;
     /* This can be seen as rast->subpacket_h rows of col_width columns */
-    int col_width  = rast->calc_subpkt_size / rast->subpacket_size;
-    int subpackets = col_width * rast->subpacket_h;
+    int col_width        = rast->calc_subpkt_size / rast->subpacket_size;
+    int subpackets       = col_width * rast->subpacket_h;
+    int macropacket_size = subpackets * rast->subpacket_size;
+    int extra_offset     = 0;
+    int pkt_offset       = 0;
 
-    pkt_start = rpc->next_pkt_start + rast->subpacket_size *
-                ((genrstate->subpkt_cnt * rast->subpacket_h) % subpackets +
-                genrstate->subpkt_x);
-
-    if (av_new_packet(pkt, rast->calc_subpkt_size) < 0)
+    if (av_new_packet(pkt, macropacket_size) < 0)
         return AVERROR(ENOMEM);
-    memcpy(pkt->data, pkt_start, rast->subpacket_size);
+
+    for (int x = 0; x < rast->subpacket_h / 2; x++) {
+        extra_offset = 0;
+        for (int y = 0; y < col_width * 2; y++) {
+            if (y == col_width)
+                extra_offset = rast->subpacket_h / 2;
+            pkt_start = rpc->next_pkt_start + rast->subpacket_size *
+                        (x + extra_offset +
+                         ((y * rast->subpacket_h) % subpackets));
+            //printf("x: %2d, y: %2d, therefore %2ld\n", x, y,
+            //       (pkt_start - rpc->next_pkt_start) / rast->subpacket_size);
+            memcpy(pkt->data + pkt_offset, pkt_start, rast->subpacket_size);
+            printf("Just wrote %d bytes to offset %d, starting with %x\n",
+                   rast->subpacket_size, pkt_offset, pkt->data + pkt_offset);
+            pkt_offset += rast->subpacket_size;
+        }
+    }
+
     pkt->stream_index = st->index;
     rpc->pending_packets--;
 
-    genrstate->subpkt_cnt++;
-    if (genrstate->subpkt_cnt == col_width) {
-        genrstate->subpkt_x += rast->subpacket_h / 2;
-    } else if (genrstate->subpkt_cnt >= col_width * 2) {
-        genrstate->subpkt_cnt = 0;
-        genrstate->subpkt_x   -= (rast->subpacket_h / 2 - 1);
-        if (genrstate->subpkt_x == col_width) /* Whole 'macropacket' done */
-            genrstate->subpkt_x = 0;
-    }
-
-    if ((genrstate->subpkt_x == 0) && (genrstate->subpkt_cnt == 0)) {
-        rpc->next_pkt_start += rast->full_pkt_size;
-    }
+    if (rpc->pending_packets)
+        rpc->next_pkt_start += macropacket_size;
     return 0;
 }
 
