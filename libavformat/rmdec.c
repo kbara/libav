@@ -322,19 +322,21 @@ static int rm_get_genr_packet(AVFormatContext *s, AVPacket *pkt,
     if (av_new_packet(pkt, macropacket_size) < 0)
         return AVERROR(ENOMEM);
 
-    for (int x = 0; x < rast->subpacket_h / 2; x++) {
+    for (int x = 0; x < col_width; x++) {
         extra_offset = 0;
-        for (int y = 0; y < col_width * 2; y++) {
-            if (y == col_width)
-                extra_offset = rast->subpacket_h / 2;
+        for (int y = 0; y < rast->subpacket_h; y++) {
+            if (y == rast->subpacket_h / 2)
+                extra_offset = col_width;
             pkt_start = rpc->next_pkt_start + rast->subpacket_size *
                         (x + extra_offset +
-                         ((y * rast->subpacket_h) % subpackets));
+                         ((y * col_width * 2) % subpackets));
             //printf("x: %2d, y: %2d, therefore %2ld\n", x, y,
             //       (pkt_start - rpc->next_pkt_start) / rast->subpacket_size);
             memcpy(pkt->data + pkt_offset, pkt_start, rast->subpacket_size);
-            printf("Just wrote %d bytes to offset %d, starting with %x\n",
-                   rast->subpacket_size, pkt_offset, pkt->data + pkt_offset);
+            printf("Just wrote %d bytes to offset %d (%d), starting with %x\n",
+                   rast->subpacket_size, pkt_offset,
+                   (pkt_start - rpc->next_pkt_start)/rast->subpacket_size,
+                   *(pkt->data + pkt_offset));
             pkt_offset += rast->subpacket_size;
         }
     }
