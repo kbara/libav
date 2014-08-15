@@ -1999,7 +1999,9 @@ static int rm_read_packet(AVFormatContext *s, AVPacket *pkt)
             rm_read_indices(s);
             return AVERROR(EIO); /* There is nothing after them. */
         } else {
-            cache_read = rm_cache_packet(s, pkt);
+            int cache_read2 = rm_cache_packet(s, pkt);
+            if (cache_read2 < 0)
+                return cache_read2;
             return rm_read_cached_packet(s, pkt);
         }
     }
