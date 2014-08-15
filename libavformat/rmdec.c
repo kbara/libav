@@ -1554,9 +1554,6 @@ static int rm_read_media_properties_header(AVFormatContext *s,
     }
 
     st = s->streams[rmmp->stream_number];
-    st->priv_data = ff_rm_alloc_rmstream();
-    if (!st->priv_data)
-        return AVERROR(ENOMEM);
 
     st->id                = rmmp->stream_number;
     st->start_time        = rmmp->stream_start_offset;
