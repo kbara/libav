@@ -745,8 +745,8 @@ static int ra_read_header_v3(AVFormatContext *s, uint16_t header_size,
     return 0;
 }
 
-static int ra_read_header_v4_5(AVFormatContext *s, uint16_t header_size,
-                             RADemuxContext *ra, AVStream *st, int32_t version)
+static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size,
+                             RADemuxContext *ra, AVStream *st)
 {
     RAStream *rast = &(ra->rast);
 
@@ -760,7 +760,7 @@ static int ra_read_header_v4_5(AVFormatContext *s, uint16_t header_size,
     ra->avst = st;
     start_pos = avio_tell(s->pb);
 
-    expected_signature = version == 4 ? RA4_SIGNATURE : RA5_SIGNATURE;
+    expected_signature = RA4_SIGNATURE;
     ra_signature = avio_rl32(s->pb);
     if (ra_signature != expected_signature) {
         av_log(s, AV_LOG_ERROR,
@@ -775,10 +775,10 @@ static int ra_read_header_v4_5(AVFormatContext *s, uint16_t header_size,
 
 
     version2 = avio_rb16(s->pb);
-    if (version2 != version) {
+    if (version2 != 4) {
         av_log(s, AV_LOG_ERROR,
                "RealAudio: Second version %"PRIx16", expected %"PRIx32".\n",
-               version2, version);
+               version2, 4);
         return AVERROR_INVALIDDATA;
     }
 
@@ -802,8 +802,6 @@ static int ra_read_header_v4_5(AVFormatContext *s, uint16_t header_size,
     avio_skip(s->pb, 2); /* Unknown */
     st->codec->sample_rate = avio_rb16(s->pb);
     avio_skip(s->pb, 2); /* Unknown */
-    if (version == 5)
-        avio_skip(s->pb, 6); /* Unknown */
     rast->sample_size = avio_rb16(s->pb);
     st->codec->channels = avio_rb16(s->pb);
 
@@ -814,27 +812,111 @@ static int ra_read_header_v4_5(AVFormatContext *s, uint16_t header_size,
     printf("Sample rate: %x\n", st->codec->sample_rate);
     printf("Sample size: %x\n", rast->sample_size);
 
-    if (version == 4) {
-        interleaver_id_len = avio_r8(s->pb);
-        if (interleaver_id_len != 4) {
-            av_log(s, AV_LOG_ERROR,
-                   "RealAudio: Unexpected interleaver ID length %"PRIu8", "
-                   "expected 4.\n",
+    interleaver_id_len = avio_r8(s->pb);
+    if (interleaver_id_len != 4) {
+        av_log(s, AV_LOG_ERROR,
+               "RealAudio: Unexpected interleaver ID length %"PRIu8", "
+                "expected 4.\n",
                 interleaver_id_len);
-            return AVERROR_INVALIDDATA;
-        }
-        rast->interleaver_id = interleaver_id = avio_rl32(s->pb);
-        printf("Interleaver: %c%c%c%c\n", interleaver_id >> 24,
-               (interleaver_id >> 16) & 0xff, (interleaver_id >> 8) & 0xff,
-             interleaver_id & 0xff);
-
-        is_fourcc_ok = get_fourcc(s, &(rast->fourcc_tag));
-        if (is_fourcc_ok < 0)
-            return is_fourcc_ok; /* Preserve the error code */
-    } else if (version == 5) {
-        rast->interleaver_id = interleaver_id = avio_rl32(s->pb);
-        rast->fourcc_tag     = avio_rl32(s->pb);
+        return AVERROR_INVALIDDATA;
     }
+    rast->interleaver_id = interleaver_id = avio_rl32(s->pb);
+    printf("Interleaver: %c%c%c%c\n", interleaver_id >> 24,
+           (interleaver_id >> 16) & 0xff,
+           (interleaver_id >> 8) & 0xff,
+           interleaver_id & 0xff);
+
+    is_fourcc_ok = get_fourcc(s, &(rast->fourcc_tag));
+    if (is_fourcc_ok < 0)
+        return is_fourcc_ok; /* Preserve the error code */
+    st->codec->codec_tag  = rast->fourcc_tag;
+    st->codec->codec_id   = ff_codec_get_id(ff_rm_codec_tags,
+                                            st->codec->codec_tag);
+    st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
+    printf("Codec id %x\n", st->codec->codec_id);
+
+    ra4_codec_specific_setup(st->codec->codec_id, s, st, ra);
+
+    header_bytes_read = avio_tell(s->pb) - start_pos;
+    if (header_size && (header_bytes_read != header_size)) {
+        av_log(s, AV_LOG_WARNING,
+               "RealAudio: read %"PRIx64" header bytes, expected %"PRIx32".\n",
+               header_bytes_read, header_size);
+        avio_seek(s->pb, header_size - header_bytes_read, SEEK_CUR);
+    }
+    return ra4_sanity_check_headers(rast->interleaver_id, rast, st);
+}
+
+
+static int ra_read_header_v5(AVFormatContext *s, uint16_t header_size,
+                             RADemuxContext *ra, AVStream *st)
+{
+    RAStream *rast = &(ra->rast);
+
+    int expected_signature;
+    uint32_t ra_signature, variable_data_size, variable_header_size;
+    uint32_t interleaver_id;
+    uint16_t version2;
+    uint64_t start_pos, header_bytes_read;
+
+    ra->avst = st;
+    start_pos = avio_tell(s->pb);
+
+    expected_signature = RA5_SIGNATURE;
+    ra_signature = avio_rl32(s->pb);
+    if (ra_signature != expected_signature) {
+        av_log(s, AV_LOG_ERROR,
+               "RealAudio: bad ra signature %"PRIx32", expected %"PRIx32".\n",
+               ra_signature, expected_signature);
+        return AVERROR_INVALIDDATA;
+    }
+
+    /* Data size - 0x27 (the fixed-length part) */
+    variable_data_size = avio_rb32(s->pb);
+    printf("Data size (non-fixed): %x\n", variable_data_size);
+
+
+    version2 = avio_rb16(s->pb);
+    if (version2 != 5) {
+        av_log(s, AV_LOG_ERROR,
+               "RealAudio: Second version %"PRIx16", expected %"PRIx32".\n",
+               version2, 5);
+        return AVERROR_INVALIDDATA;
+    }
+
+    /* Header size - 16 */
+    variable_header_size = avio_rb32(s->pb);
+    printf("Header size (non-fixed): %x\n", variable_header_size);
+
+
+    rast->codec_flavor = avio_rb16(s->pb); /* TODO: use this? */
+    printf("Got codec flavor %"PRIx16"\n", rast->codec_flavor);
+
+    rast->coded_frame_size = avio_rb32(s->pb);
+    avio_skip(s->pb, 12); /* Unknown */
+    rast->subpacket_h = avio_rb16(s->pb);
+    if (!rast->subpacket_h) {
+        av_log(s, AV_LOG_ERROR, "RealAudio: subpacket_h must not be 0.\n");
+        return AVERROR_INVALIDDATA;
+    }
+    st->codec->block_align = rast->frame_size = avio_rb16(s->pb);
+    rast->subpacket_size = avio_rb16(s->pb);
+    avio_skip(s->pb, 2); /* Unknown */
+    st->codec->sample_rate = avio_rb16(s->pb);
+    avio_skip(s->pb, 2); /* Unknown */
+    avio_skip(s->pb, 6); /* Unknown */
+    rast->sample_size = avio_rb16(s->pb);
+    st->codec->channels = avio_rb16(s->pb);
+
+    printf("Coded frame size: %x\n", rast->coded_frame_size);
+    printf("Subpacket_h: %x\n", rast->subpacket_h);
+    printf("Frame size: %x\n", rast->frame_size);
+    printf("Subpacket size: %x\n", rast->subpacket_size);
+    printf("Sample rate: %x\n", st->codec->sample_rate);
+    printf("Sample size: %x\n", rast->sample_size);
+
+    rast->interleaver_id = interleaver_id = avio_rl32(s->pb);
+    rast->fourcc_tag     = avio_rl32(s->pb);
     st->codec->codec_tag  = rast->fourcc_tag;
     st->codec->codec_id   = ff_codec_get_id(ff_rm_codec_tags,
                                             st->codec->codec_tag);
@@ -854,6 +936,7 @@ static int ra_read_header_v4_5(AVFormatContext *s, uint16_t header_size,
     return ra4_sanity_check_headers(rast->interleaver_id, rast, st);
 }
 
+
 /* This is called by ra_read_header, as well as for embedded
  * RealAudio streams within RealMedia files */
 static int ra_read_header_with(AVFormatContext *s, RADemuxContext *ra,
@@ -869,11 +952,12 @@ static int ra_read_header_with(AVFormatContext *s, RADemuxContext *ra,
     if (!ra->rpc)
         return AVERROR(ENOMEM);
 
-    /* Version 3 is quite different; v4 and v5 are very similar. */
     if (version == 3)
         ret = ra_read_header_v3(s, header_size, ra, st);
-    else if ((version == 4) || (version == 5))
-        ret = ra_read_header_v4_5(s, header_size, ra, st, version);
+    else if (version == 4)
+        ret = ra_read_header_v4(s, header_size, ra, st);
+    else if (version == 5)
+        ret = ra_read_header_v5(s, header_size, ra, st);
     else {
         av_log(s, AV_LOG_ERROR, "RealAudio: Unsupported version %"PRIx16"\n", version);
         ret = AVERROR_PATCHWELCOME;
