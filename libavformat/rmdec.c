@@ -1557,7 +1557,7 @@ setup:
         if (rm_initialize_pkt_buf(rpc, data_bytes_to_read))
             return AVERROR(ENOMEM);
 
-    do {
+    while (read_so_far < data_bytes_to_read) {
         if (header_preread) {
             header_preread = 0; /* This was the first time; read it next */
         } else {
@@ -1600,7 +1600,7 @@ setup:
         bytes_read += read_ret;
         read_so_far += chunk_size;
         read_to += chunk_size;
-    } while (read_so_far < data_bytes_to_read);
+    }
 
     if (bytes_read != data_bytes_to_read) {
         av_log(s, AV_LOG_WARNING,
