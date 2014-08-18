@@ -145,7 +145,6 @@ typedef struct RMMediaProperties {
     uint8_t stream_desc[256];
     uint8_t mime_type[256];
     uint8_t *type_specific_data;
-    int is_realaudio; /* Not explicitly in the header, but useful */
 } RMMediaProperties;
 
 /* RealMedia files have one or more DATA headers, which contain
@@ -171,6 +170,7 @@ typedef struct RMStream {
     RMMediaProperties rmmp;
     RealPacketCache *rpc;
     RADemuxContext radc; /* Unused if not RA */
+    int is_realaudio;
     //RMVidStream vst;
 } RMStream;
 
@@ -1700,7 +1700,7 @@ static int rm_read_media_properties_header(AVFormatContext *s,
 
     rmmp->type_specific_size = avio_rb32(s->pb);
 
-    if (!rmmp->type_specific_size) {
+    if (!rmmp->type_specific_size) { /* TODO: set codec parameters */
         int is_mp3 = 0;
 
         /* It's probably some other format - guess based on the mime type */
@@ -1711,18 +1711,21 @@ static int rm_read_media_properties_header(AVFormatContext *s,
 
         for (int i = 0; i < rmmp->mime_size - 2; i++)
         {
-            if (strncasecmp(rmmp->mime_type + i, "mp3", 3))
+            if (strncasecmp(rmmp->mime_type + i, "mp3", 3)) {
                 is_mp3 = 1;
+                break;
+            }
         }
 
         if (is_mp3) {
             RMStream *rmst = st->priv_data;
             int rpc_fail;
 
-            if (rpc_fail = rm_initialize_pkt_buf(rmst->rpc, 1) < 0)
+            rpc_fail = rm_initialize_pkt_buf(rmst->rpc, rmmp->largest_pkt);
+            if (rpc_fail < 0)
                 return rpc_fail;
             st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
-
+            st->codec->codec_id   = AV_CODEC_ID_MP3;
         } else {
             av_log(s, AV_LOG_ERROR, "RealMedia: non-MP3 embedded misc MDPR.\n");
             return AVERROR_PATCHWELCOME;
@@ -1753,12 +1756,12 @@ static int rm_read_media_properties_header(AVFormatContext *s,
                    "RealMedia: failed to read embedded RealAudio header.\n");
             return header_ret;
         }
-        rmmp->is_realaudio = 1;
         av_free(rmst->rpc);
         rmst->rpc           = radc->rpc;
         rmst->full_pkt_size = rast->full_pkt_size;
         rmst->subpkt_size   = rast->calc_subpkt_size;
         rmst->subpacket_pp  = rast->subpkt_pp;
+        rmst->is_realaudio = 1;
 
     } else if (RM_VIDEO_TAG == (content_tag2 = avio_rl32(s->pb))) {
         RMStream *rmst     = st->priv_data;
@@ -2154,7 +2157,7 @@ static void rm_cleanup_stream(AVStream *st)
     RADemuxContext *radc = &(rmst->radc);
 
     av_free(rmst->rmmp.type_specific_data);
-    if (st->codec->codec_type == AVMEDIA_TYPE_AUDIO)
+    if (rmst->is_realaudio)
         ra_read_close_with(radc);
     else {
         rm_clear_rpc(rmst->rpc);
