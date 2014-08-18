@@ -1504,66 +1504,75 @@ static int rm_cache_packet(AVFormatContext *s, AVPacket *pkt)
     int first_stream       = -1;
     int bytes_read         = 0;
     int data_bytes_to_read = -1;
+    int header_preread     = 1;
     int chunk_size, pre_header_pos, header_bytes;
+    int data_header_ret, read_ret;
+
+    pre_header_pos = avio_tell(s->pb);
+    data_header_ret = rm_read_data_chunk_header(s);
+    if (data_header_ret)
+    {
+        av_log(s, AV_LOG_ERROR,
+               "RealMedia: error reading data chunk header.\n");
+        return data_header_ret;
+    }
+    header_bytes = avio_tell(s->pb) - pre_header_pos;
+    first_stream = rm->cur_stream_number;
+    st         = s->streams[rm->cur_stream_number];
+    rmst       = st->priv_data;
+    radc       = &(rmst->radc);
+    rpc        = rmst->rpc;
+
+    chunk_size = rm->cur_pkt_size - header_bytes;
+    /* Bail out of all this and handle this elsewhere if it's video */
+    if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO)
+    {
+        int vid_ok;
+        uint32_t ts;
+        ts = rm->cur_timestamp_ms;
+        vid_ok = rm_assemble_video(s, rmst, rpc, pkt, chunk_size, ts);
+        if (vid_ok < 0)
+            /* It went horribly wrong; see if something else can be retrieved. */
+            return rm_cache_packet(s, pkt);
+        return vid_ok;
+    }
+
+    inter = radc->interleaver;
+    /* VBR needs special handling; other interleavers are CBR */
+    if (inter->interleaver_tag == DEINT_ID_VBRS)
+    {
+        return rm_cache_vbr(s, rpc, radc->interleaver_state);
+    }
+
+    /* If it's gotten this far, it's a simple audio format. */
+    data_bytes_to_read = (rmst->full_pkt_size * chunk_size) /
+                          av_gcd(rmst->full_pkt_size, chunk_size);
+
+    /* Initialize the packet buffer if necessary */
+    if (!rpc->pkt_buf)
+        if (rm_initialize_pkt_buf(rpc, data_bytes_to_read))
+            return AVERROR(ENOMEM);
 
     do {
-        int data_header_ret, read_ret; //, start_pos;
+        if (header_preread) {
+            header_preread = 0; /* This was the first time; read it next */
+        } else {
+            data_header_ret = rm_read_data_chunk_header(s);
+            if (data_header_ret)
+            {
+                av_log(s, AV_LOG_ERROR,
+                       "RealMedia: error reading data chunk header.\n");
+                return data_header_ret;
+            }
+            header_bytes = avio_tell(s->pb) - pre_header_pos;
 
-        pre_header_pos = avio_tell(s->pb);
-        data_header_ret = rm_read_data_chunk_header(s);
-        if (data_header_ret)
-        {
-             av_log(s, AV_LOG_ERROR,
-                    "RealMedia: error reading data chunk header.\n");
-            return data_header_ret;
-        }
-        header_bytes = avio_tell(s->pb) - pre_header_pos;
-
-        if (first_stream == -1) {
-            first_stream = rm->cur_stream_number;
-        } else if (first_stream != rm->cur_stream_number) {
-            printf("Looks like this does need partial packet support...\n");
-            /* TODO: implement that, and seek back to start_pos */
-            return -1;
-        }
-
-        st         = s->streams[rm->cur_stream_number];
-        rmst       = st->priv_data;
-        radc       = &(rmst->radc);
-        rpc        = rmst->rpc;
-
-        chunk_size = rm->cur_pkt_size - header_bytes;
-        /* Bail out of all this and handle this elsewhere if it's video */
-        if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO)
-        {
-            int vid_ok;
-            uint32_t ts;
-            ts = rm->cur_timestamp_ms;
-            vid_ok = rm_assemble_video(s, rmst, rpc, pkt, chunk_size, ts);
-            if (vid_ok < 0)
-                /* It went horribly wrong; see if something else can be retrieved. */
-                return rm_cache_packet(s, pkt);
-            return vid_ok;
+            if (first_stream != rm->cur_stream_number) {
+                printf("Looks like this does need partial packet support...\n");
+                /* TODO: implement that, and seek back to start_pos */
+                return -1;
+            }
         }
 
-        inter = radc->interleaver;
-        /* VBR needs special handling; other interleavers are CBR */
-        if (inter->interleaver_tag == DEINT_ID_VBRS)
-        {
-            return rm_cache_vbr(s, rpc, radc->interleaver_state);
-        }
-
-        /* FIXME: if chunk sizes aren't constant for a stream, this
-           needs to be rewritten. */
-        if (data_bytes_to_read == -1) /* Not set yet */
-            /* Least common multiple */
-            data_bytes_to_read = (rmst->full_pkt_size * chunk_size) /
-                                 av_gcd(rmst->full_pkt_size, chunk_size);
-
-        /* Initialize the packet buffer if necessary */
-        if (!rpc->pkt_buf)
-            if (rm_initialize_pkt_buf(rpc, data_bytes_to_read))
-                return AVERROR(ENOMEM);
         /* Revisit this if adding partial packet support. */
         if (data_bytes_to_read > rpc->buf_size) {
             uint8_t *old_buf = rpc->pkt_buf;
