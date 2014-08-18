@@ -546,13 +546,18 @@ static int ra_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
     case AV_CODEC_ID_COOK:
     case AV_CODEC_ID_ATRAC3:
     case AV_CODEC_ID_SIPR:
-    case AV_CODEC_ID_AAC:
-        avio_skip(s->pb, 3); /* Unknown */
-        if (radc->version == 5)
-            avio_skip(s->pb, 1); /* Unknown */
         codecdata_length = avio_rb32(s->pb);
         if (codecdata_length) {
             ret = real_read_extradata(s->pb, st->codec, codecdata_length);
+            if (ret < 0)
+                return ret;
+        }
+        break;
+    case AV_CODEC_ID_AAC: /* Why is this one strange? */
+        codecdata_length = avio_rb32(s->pb);
+        if (codecdata_length >= 1) {
+            avio_skip(s->pb, 1);
+            ret = real_read_extradata(s->pb, st->codec, codecdata_length - 1);
             if (ret < 0)
                 return ret;
         }
@@ -869,6 +874,7 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size,
     st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
     printf("Codec id %x\n", st->codec->codec_id);
 
+    avio_skip(s->pb, 3);
     racss_ret = ra_codec_specific_setup(st->codec->codec_id, s, st, ra);
     if (racss_ret < 0)
         return racss_ret;
@@ -890,6 +896,7 @@ static int ra_read_header_v5(AVFormatContext *s, uint16_t header_size,
     RAStream *rast = &(ra->rast);
 
     int expected_signature, racss_ret;
+    uint8_t interleave_info;
     uint32_t ra_signature, variable_data_size, variable_header_size;
     uint32_t interleaver_id;
     uint16_t version2;
@@ -959,6 +966,14 @@ static int ra_read_header_v5(AVFormatContext *s, uint16_t header_size,
                                             st->codec->codec_tag);
     st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
     printf("Codec id %x\n", st->codec->codec_id);
+
+    avio_skip(s->pb, 3);
+    interleave_info = avio_r8(s->pb);
+    if (interleave_info) {
+        av_log(s, AV_LOG_ERROR,
+               "RealMedia: interleave_info support needed.\n");
+        return AVERROR_PATCHWELCOME;
+    }
 
     racss_ret = ra_codec_specific_setup(st->codec->codec_id, s, st, ra);
     if (racss_ret < 0)
