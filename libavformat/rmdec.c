@@ -41,6 +41,7 @@
    with Keiler. */
 
 #include <inttypes.h>
+#include <strings.h>
 
 #include "libavutil/channel_layout.h"
 #include "libavutil/intreadwrite.h"
@@ -1699,9 +1700,36 @@ static int rm_read_media_properties_header(AVFormatContext *s,
 
     rmmp->type_specific_size = avio_rb32(s->pb);
 
-    /* No type-specific data? Done! */
-    if (!rmmp->type_specific_size)
+    if (!rmmp->type_specific_size) {
+        int is_mp3 = 0;
+
+        /* It's probably some other format - guess based on the mime type */
+        if (strncmp(rmmp->mime_type, "audio", 5)) {
+            av_log(s, AV_LOG_ERROR, "RealMedia: non-audio embedded misc MDPR.\n");
+            return AVERROR_PATCHWELCOME;
+        }
+
+        for (int i = 0; i < rmmp->mime_size - 2; i++)
+        {
+            if (strncasecmp(rmmp->mime_type + i, "mp3", 3))
+                is_mp3 = 1;
+        }
+
+        if (is_mp3) {
+            RMStream *rmst = st->priv_data;
+            int rpc_fail;
+
+            if (rpc_fail = rm_initialize_pkt_buf(rmst->rpc, 1) < 0)
+                return rpc_fail;
+            st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
+
+        } else {
+            av_log(s, AV_LOG_ERROR, "RealMedia: non-MP3 embedded misc MDPR.\n");
+            return AVERROR_PATCHWELCOME;
+        }
+
         return 0;
+    }
 
     before_embed = avio_tell(s->pb);
 
@@ -1726,6 +1754,7 @@ static int rm_read_media_properties_header(AVFormatContext *s,
             return header_ret;
         }
         rmmp->is_realaudio = 1;
+        av_free(rmst->rpc);
         rmst->rpc           = radc->rpc;
         rmst->full_pkt_size = rast->full_pkt_size;
         rmst->subpkt_size   = rast->calc_subpkt_size;
@@ -1756,10 +1785,6 @@ static int rm_read_media_properties_header(AVFormatContext *s,
 
         st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
 
-        rmst->rpc = av_mallocz(sizeof(RealPacketCache));
-        if (!rmst->rpc)
-            return AVERROR(ENOMEM);
-
         extradata_ret = real_read_extradata(s->pb, st->codec,
                                           rmmp->type_specific_size -
                                           (avio_tell(s->pb) - before_embed));
@@ -1768,14 +1793,7 @@ static int rm_read_media_properties_header(AVFormatContext *s,
             return extradata_ret;
         }
     } else if (!strcmp("logical-fileinfo", rmmp->mime_type)) {
-        /* This stream has no packets, but all streams having an RPC simplifies
-           the rest of the code. */
-        RMStream *rmst     = st->priv_data;
         int bytes_already_read = avio_tell(s->pb) - before_embed;
-
-        rmst->rpc = av_mallocz(sizeof(RealPacketCache));
-        if (!rmst->rpc)
-            return AVERROR(ENOMEM);
         avio_skip(s->pb, rmmp->type_specific_size - bytes_already_read);
     } else {
         printf("Deal with tag %x\n", content_tag);
@@ -1912,9 +1930,18 @@ static int rm_initialize_streams(AVFormatContext *s, int num_streams)
             st->priv_data = ff_rm_alloc_rmstream();
             if (!st->priv_data)
                 err = 1;
+            else {
+                RMStream *rmst = st->priv_data;
+                rmst->rpc = av_mallocz(sizeof(RealPacketCache));
+                if (!rmst->rpc)
+                    err = 1;
+            }
         }
         if (err) {
             for (j = 0; j < i; j++) {
+                RMStream *rmst = s->streams[j]->priv_data;
+                if (rmst)
+                    av_free(rmst->rpc);
                 av_free(s->streams[j]->priv_data);
                 av_free(s->streams[j]);
                 return AVERROR(ENOMEM);
