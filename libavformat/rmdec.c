@@ -752,7 +752,7 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size,
 {
     RAStream *rast = &(ra->rast);
 
-    int is_fourcc_ok, expected_signature;
+    int is_fourcc_ok, expected_signature, racss_ret;
     uint32_t ra_signature, variable_data_size, variable_header_size;
     uint32_t interleaver_id;
     uint16_t version2;
@@ -837,7 +837,9 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size,
     st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
     printf("Codec id %x\n", st->codec->codec_id);
 
-    ra_codec_specific_setup(st->codec->codec_id, s, st, ra);
+    racss_ret = ra_codec_specific_setup(st->codec->codec_id, s, st, ra);
+    if (racss_ret < 0)
+        return racss_ret;
 
     header_bytes_read = avio_tell(s->pb) - start_pos;
     if (header_size && (header_bytes_read != header_size)) {
@@ -855,7 +857,7 @@ static int ra_read_header_v5(AVFormatContext *s, uint16_t header_size,
 {
     RAStream *rast = &(ra->rast);
 
-    int expected_signature;
+    int expected_signature, racss_ret;
     uint32_t ra_signature, variable_data_size, variable_header_size;
     uint32_t interleaver_id;
     uint16_t version2;
@@ -926,7 +928,9 @@ static int ra_read_header_v5(AVFormatContext *s, uint16_t header_size,
     st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
     printf("Codec id %x\n", st->codec->codec_id);
 
-    ra_codec_specific_setup(st->codec->codec_id, s, st, ra);
+    racss_ret = ra_codec_specific_setup(st->codec->codec_id, s, st, ra);
+    if (racss_ret < 0)
+        return racss_ret;
 
     header_bytes_read = avio_tell(s->pb) - start_pos;
     if (header_size && (header_bytes_read != header_size)) {
