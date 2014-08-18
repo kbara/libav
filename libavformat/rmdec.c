@@ -129,12 +129,16 @@ typedef struct Interleaver {
     int (*get_packet)(AVFormatContext *s, AVPacket *pkt,
                       RADemuxContext *radc, int pkt_size);
     int (*postread_packet)(RADemuxContext *radc, int bytes_read);
-    void *priv_data;
 } Interleaver;
 
 typedef struct InterleaverState {
     int subpkt_x, subpkt_cnt;
 } InterleaverState;
+
+typedef struct VBRState {
+    int total_packets;
+    int packet_sizes[16];
+} VBRState;
 
 /* RealMedia files have one Media Property header per stream */
 typedef struct RMMediaProperties {
@@ -269,6 +273,21 @@ static int rm_get_generic_packet(AVFormatContext *s, AVPacket *pkt,
     rpc->pending_packets--;
     if (rpc->pending_packets)
         rpc->next_pkt_start += pkt_size;
+    return 0;
+}
+
+static int rm_get_vbr_packet(AVFormatContext *s, AVPacket *pkt,
+                             RADemuxContext *radc, int unused)
+{
+    RealPacketCache *rpc = radc->rpc;
+    VBRState *vbrs       = radc->interleaver_state;
+    int cur_packet;
+
+    cur_packet = vbrs->total_packets - rpc->pending_packets;
+    if (av_new_packet(pkt, vbrs->packet_sizes[cur_packet]) < 0)
+        return AVERROR(ENOMEM);
+    avio_read(s->pb, pkt->data, vbrs->packet_sizes[cur_packet]);
+    rpc->pending_packets--;
     return 0;
 }
 
@@ -418,6 +437,11 @@ Interleaver ra_interleavers[] = {
         .interleaver_tag = DEINT_ID_GENR,
         .get_packet      = rm_get_genr_packet,
         .postread_packet = rm_postread_genr_packet
+    },
+    {
+        .interleaver_tag = DEINT_ID_VBRS,
+        /* No postread by design; it's too different. */
+        .get_packet      = rm_get_vbr_packet
     }
 };
 
@@ -484,6 +508,14 @@ static int ra_interleaver_specific_setup(AVFormatContext *s, AVStream *st,
         st->codec->block_align = rast->subpacket_size;
         radc->interleaver       = ra_find_interleaver(DEINT_ID_GENR);
         radc->interleaver_state = av_mallocz(sizeof(InterleaverState));
+        if (!radc->interleaver_state)
+            return AVERROR(ENOMEM);
+        break;
+    case DEINT_ID_VBRF:
+    case DEINT_ID_VBRS:
+        rast->full_pkt_size     = 1; /* A convenient fiction */
+        radc->interleaver       = ra_find_interleaver(DEINT_ID_VBRS);
+        radc->interleaver_state = av_mallocz(sizeof(VBRState));
         if (!radc->interleaver_state)
             return AVERROR(ENOMEM);
         break;
@@ -1412,6 +1444,16 @@ static int rm_assemble_video(AVFormatContext *s, RMStream *rmst,
 }
 
 
+static int rm_cache_vbr(AVFormatContext *s, RealPacketCache *rpc, VBRState *vbr)
+{
+    vbr->total_packets = (avio_rb16(s->pb) & 0xf0) >> 4;
+    for (int i = 0; i < vbr->total_packets; i++)
+        vbr->packet_sizes[i] = avio_rb16(s->pb);
+    rpc->pending_packets = vbr->total_packets;
+    return 0;
+}
+
+
 /* This should always start at a RM data chunk header, and consume
  * one or more of them. The stream is determined by the data.
  * The buffer information is found in the stream's private data.
@@ -1473,6 +1515,11 @@ static int rm_cache_packet(AVFormatContext *s, AVPacket *pkt)
         }
 
         inter = radc->interleaver;
+        /* VBR needs special handling; other interleavers are CBR */
+        if (inter->interleaver_tag == DEINT_ID_VBRS)
+        {
+            return rm_cache_vbr(s, rpc, radc->interleaver_state);
+        }
 
         /* FIXME: if chunk sizes aren't constant for a stream, this
            needs to be rewritten. */
