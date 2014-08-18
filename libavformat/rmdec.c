@@ -1499,16 +1499,17 @@ static int rm_cache_packet(AVFormatContext *s, AVPacket *pkt)
     Interleaver *inter;
     RADemuxContext *radc;
     RMDemuxContext *rm = s->priv_data;
-    int read_so_far        = 0;
-    uint8_t *read_to       = NULL;
-    int first_stream       = -1;
-    int bytes_read         = 0;
-    int data_bytes_to_read = -1;
-    int header_preread     = 1;
-    int chunk_size, pre_header_pos, header_bytes;
+    uint8_t *read_to;
+    int read_so_far, bytes_read, first_stream, data_bytes_to_read;
+    int chunk_size, pre_header_pos, header_bytes, header_preread;
     int data_header_ret, read_ret;
 
-    pre_header_pos = avio_tell(s->pb);
+setup:
+    read_so_far     = 0;
+    bytes_read      = 0;
+    read_to         = NULL;
+    header_preread  = 1;
+    pre_header_pos  = avio_tell(s->pb);
     data_header_ret = rm_read_data_chunk_header(s);
     if (data_header_ret)
     {
@@ -1535,6 +1536,9 @@ static int rm_cache_packet(AVFormatContext *s, AVPacket *pkt)
             /* It went horribly wrong; see if something else can be retrieved. */
             return rm_cache_packet(s, pkt);
         return vid_ok;
+    } else if (st->codec->codec_type == AVMEDIA_TYPE_DATA) {
+        avio_skip(s->pb, chunk_size);
+        goto setup;
     }
 
     inter = radc->interleaver;
