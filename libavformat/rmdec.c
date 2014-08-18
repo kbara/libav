@@ -82,6 +82,7 @@
 #define RA5_SIGNATURE MKTAG('.', 'r', 'a', '5')
 
 #define RM_VIDEO_TAG MKTAG('V', 'I', 'D', 'O')
+#define RM_CLEARVIDEO_ID 0x31564c43
 
 /* Deinterleaving constants from the old rmdec implementation */
 #define DEINT_ID_GENR MKTAG('g', 'e', 'n', 'r') ///< interleaving for Cooker/ATRAC
@@ -1859,8 +1860,14 @@ static int rm_read_media_properties_header(AVFormatContext *s,
         st->codec->codec_id = ff_codec_get_id(ff_rm_codec_tags,
                                               st->codec->codec_tag);
         if (st->codec->codec_id == AV_CODEC_ID_NONE) {
-            av_log(s, AV_LOG_ERROR, "RealMedia: failed to get codec id.\n");
-            return AVERROR_INVALIDDATA;
+            if (st->codec->codec_tag == RM_CLEARVIDEO_ID) {
+                av_log(s, AV_LOG_WARNING,
+                       "RealMedia: detected ClearVideo, skipping stream.\n");
+                goto after_embed;
+            } else {
+                av_log(s, AV_LOG_ERROR, "RealMedia: failed to get codec id.\n");
+                return AVERROR_INVALIDDATA;
+            }
         }
         /* Timestamp parsing is needed for RV30 and RV40 bframes */
         st->need_parsing  = AVSTREAM_PARSE_TIMESTAMPS;
@@ -1890,6 +1897,7 @@ static int rm_read_media_properties_header(AVFormatContext *s,
         printf("Deal with tag %x\n", content_tag);
     }
 
+after_embed:
     after_embed = avio_tell(s->pb);
     if (after_embed != (rmmp->type_specific_size + before_embed)) {
         fix_offset = (rmmp->type_specific_size + before_embed) - after_embed;
