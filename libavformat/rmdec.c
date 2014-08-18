@@ -1799,7 +1799,7 @@ static int rm_read_media_properties_header(AVFormatContext *s,
             }
         }
 
-        if (is_mp3) {
+        if (is_mp3) { /* TODO: this does not work yet */
             RMStream *rmst       = st->priv_data;
             RADemuxContext *radc = &(rmst->radc);
             int rpc_fail;
@@ -1812,7 +1812,8 @@ static int rm_read_media_properties_header(AVFormatContext *s,
             radc->avst            = st;
             rmst->full_pkt_size   = 1; /* A convenient fiction */
             st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
-            st->codec->codec_id   = AV_CODEC_ID_MP3;
+            st->codec->codec_id   = AV_CODEC_ID_MP3ADU;
+            st->need_parsing      = AVSTREAM_PARSE_FULL;
         } else {
             av_log(s, AV_LOG_ERROR, "RealMedia: non-MP3 embedded misc MDPR.\n");
             return AVERROR_PATCHWELCOME;
