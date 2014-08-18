@@ -1882,10 +1882,9 @@ static int rm_read_next_header(AVFormatContext *s)
             uint16_t possible_stream = avio_rb16(s->pb);
             if (possible_stream < rm->num_streams) { /* Probably a DCH... try */
                 avio_seek(s->pb, -6, SEEK_CUR); /* Unread header bytes */
-            av_log(s, AV_LOG_WARNING,
+                av_log(s, AV_LOG_WARNING,
                    "RealMedia: trying DCH at %"PRIx64"\n",
                    avio_tell(s->pb));
-            return rm_read_indices(s);
                 return rm_read_data_chunk_header(s);
             }
         }
