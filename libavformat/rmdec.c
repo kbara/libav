@@ -487,8 +487,9 @@ static int ra_interleaver_specific_setup(AVFormatContext *s, AVStream *st,
             return AVERROR(ENOMEM);
         break;
     default:
-            printf("Implement full_pkt_size for another interleaver.\n");
-            return -1; /* FIXME TODO */
+            printf("Implement full support for interleaver %"PRIx32"\n",
+                   rast->interleaver_id);
+            return AVERROR_PATCHWELCOME;
     }
     if (!radc->interleaver) {
         av_log(s, AV_LOG_ERROR, "RealAudio: failed to set up interleaver.\n");
@@ -787,7 +788,7 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size,
     printf("Header size (non-fixed): %x\n", variable_header_size);
 
 
-    rast->codec_flavor = avio_rb16(s->pb); /* TODO: use this? */
+    rast->codec_flavor = avio_rb16(s->pb);
     printf("Got codec flavor %"PRIx16"\n", rast->codec_flavor);
 
     rast->coded_frame_size = avio_rb32(s->pb);
@@ -805,12 +806,12 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size,
     rast->sample_size = avio_rb16(s->pb);
     st->codec->channels = avio_rb16(s->pb);
 
-    printf("Coded frame size: %x\n", rast->coded_frame_size);
-    printf("Subpacket_h: %x\n", rast->subpacket_h);
-    printf("Frame size: %x\n", rast->frame_size);
-    printf("Subpacket size: %x\n", rast->subpacket_size);
-    printf("Sample rate: %x\n", st->codec->sample_rate);
-    printf("Sample size: %x\n", rast->sample_size);
+    printf("Coded frame size: 0x%x\n", rast->coded_frame_size);
+    printf("Subpacket_h: 0x%x\n", rast->subpacket_h);
+    printf("Frame size: 0x%x\n", rast->frame_size);
+    printf("Subpacket size: 0x%x\n", rast->subpacket_size);
+    printf("Sample rate: 0x%x\n", st->codec->sample_rate);
+    printf("Sample size: 0x%x\n", rast->sample_size);
 
     interleaver_id_len = avio_r8(s->pb);
     if (interleaver_id_len != 4) {
@@ -963,6 +964,7 @@ static int ra_read_header_with(AVFormatContext *s, RADemuxContext *ra,
         av_log(s, AV_LOG_ERROR, "RealAudio: Unsupported version %"PRIx16"\n", version);
         ret = AVERROR_PATCHWELCOME;
     }
+    printf("st->codec->block align: %"PRIx32"\n", st->codec->block_align);
     if (ret < 0)
         av_freep(&ra->rpc);
     return ret;
