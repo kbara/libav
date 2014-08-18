@@ -304,7 +304,6 @@ static int rm_postread_sipr_packet(RADemuxContext *radc, int bytes_read)
     return 0;
 }
 
-
 static int rm_postread_genr_packet(RADemuxContext *radc, int bytes_read)
 {
     RealPacketCache *rpc = radc->rpc;
@@ -417,6 +416,18 @@ static int rm_get_int4_packet(AVFormatContext *s, AVPacket *pkt,
     return 0;
 }
 
+/* There's no metadata in the general case, so assume that
+   bytes read = one data chunk header's contents = one packet */
+static int rm_postread_mp3_packet(RADemuxContext *radc, int bytes_read)
+{
+    RealPacketCache *rpc = radc->rpc;
+
+    rpc->packets_read    = 1;
+    rpc->pending_packets = rpc->packets_read;
+    rpc->next_pkt_start  = rpc->pkt_buf;
+    return 0;
+}
+
 Interleaver ra_interleavers[] = {
     {
         .interleaver_tag = 0,
@@ -442,6 +453,11 @@ Interleaver ra_interleavers[] = {
         .interleaver_tag = DEINT_ID_VBRS,
         /* No postread by design; it's too different. */
         .get_packet      = rm_get_vbr_packet
+    },
+    {
+        .interleaver_tag = AV_CODEC_ID_MP3,
+        .get_packet      = rm_get_generic_packet,
+        .postread_packet = rm_postread_mp3_packet
     }
 };
 
@@ -1784,12 +1800,17 @@ static int rm_read_media_properties_header(AVFormatContext *s,
         }
 
         if (is_mp3) {
-            RMStream *rmst = st->priv_data;
+            RMStream *rmst       = st->priv_data;
+            RADemuxContext *radc = &(rmst->radc);
             int rpc_fail;
 
             rpc_fail = rm_initialize_pkt_buf(rmst->rpc, rmmp->largest_pkt);
             if (rpc_fail < 0)
                 return rpc_fail;
+            radc->interleaver     = ra_find_interleaver(AV_CODEC_ID_MP3);
+            radc->rpc             = rmst->rpc;
+            radc->avst            = st;
+            rmst->full_pkt_size   = 1; /* A convenient fiction */
             st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
             st->codec->codec_id   = AV_CODEC_ID_MP3;
         } else {
