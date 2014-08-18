@@ -1742,6 +1742,8 @@ static int rm_read_media_properties_header(AVFormatContext *s,
             av_log(s, AV_LOG_ERROR, "RealMedia: failed to get codec id.\n");
             return AVERROR_INVALIDDATA;
         }
+        /* Timestamp parsing is needed for RV30 and RV40 bframes */
+        st->need_parsing  = AVSTREAM_PARSE_TIMESTAMPS;
         st->codec->width  = avio_rb16(s->pb);
         st->codec->height = avio_rb16(s->pb);
         avio_skip(s->pb, 2); /* Old code said: maybe bits per sample? */
