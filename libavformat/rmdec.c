@@ -201,6 +201,11 @@ typedef struct RMDemuxContext {
 
 
 /* Utility code */
+static void *real_debug_mode(void)
+{
+    return getenv("LRMDEBUG");
+}
+
 static int real_initialize_pkt_buf(RealPacketCache *rpc, int size)
 {
     rpc->pkt_buf = av_mallocz(size);
@@ -552,7 +557,8 @@ static int ra_interleaver_specific_setup(AVFormatContext *s, AVStream *st,
 {
     RAStream *rast = &(radc->rast);
 
-    printf("rast->interleaver_id: %x\n", rast->interleaver_id);
+    if (real_debug_mode())
+        printf("rast->interleaver_id: %x\n", rast->interleaver_id);
     switch(rast->interleaver_id) {
     case DEINT_ID_INT4:
         /* Int4 is composed of several interleaved subpackets.
@@ -597,8 +603,9 @@ static int ra_interleaver_specific_setup(AVFormatContext *s, AVStream *st,
             return AVERROR(ENOMEM);
         break;
     default:
-            printf("Implement full support for interleaver %"PRIx32"\n",
-                   rast->interleaver_id);
+            if (real_debug_mode())
+                printf("Implement full support for interleaver %"PRIx32"\n",
+                       rast->interleaver_id);
             return AVERROR_PATCHWELCOME;
     }
     if (!radc->interleaver) {
@@ -678,7 +685,9 @@ static int ra_codec_specific_setup(enum AVCodecID codec_id, AVFormatContext *s,
     case AV_CODEC_ID_AAC:
         break;
     default:
-        printf("Add support for another codec.\n"); /* TODO */
+        av_log(s, AV_LOG_ERROR,
+               "RealAudio: Add support for codec %"PRIx32".\n",
+               (uint32_t) st->codec->codec_id);
         return AVERROR_INVALIDDATA;
     }
 
@@ -846,8 +855,8 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size,
 
     /* Data size - 0x27 (the fixed-length part) */
     variable_data_size = avio_rb32(s->pb);
-    printf("Data size (non-fixed): %x\n", variable_data_size);
-
+    if (real_debug_mode())
+        printf("Data size (non-fixed): %x\n", variable_data_size);
 
     version2 = avio_rb16(s->pb);
     if (version2 != 4) {
@@ -859,11 +868,14 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size,
 
     /* Header size - 16 */
     variable_header_size = avio_rb32(s->pb);
-    printf("Header size (non-fixed): %x\n", variable_header_size);
+
+    if (real_debug_mode())
+        printf("Header size (non-fixed): %x\n", variable_header_size);
 
 
     rast->codec_flavor = avio_rb16(s->pb);
-    printf("Got codec flavor %"PRIx16"\n", rast->codec_flavor);
+    if (real_debug_mode())
+        printf("Got codec flavor %"PRIx16"\n", rast->codec_flavor);
 
     rast->coded_frame_size = avio_rb32(s->pb);
     avio_skip(s->pb, 12); /* Unknown */
@@ -880,12 +892,14 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size,
     rast->sample_size = avio_rb16(s->pb);
     st->codec->channels = avio_rb16(s->pb);
 
-    printf("Coded frame size: 0x%x\n", rast->coded_frame_size);
-    printf("Subpacket_h: 0x%x\n", rast->subpacket_h);
-    printf("Frame size: 0x%x\n", rast->frame_size);
-    printf("Subpacket size: 0x%x\n", rast->subpacket_size);
-    printf("Sample rate: 0x%x\n", st->codec->sample_rate);
-    printf("Sample size: 0x%x\n", rast->sample_size);
+    if (real_debug_mode()) {
+        printf("Coded frame size: 0x%x\n", rast->coded_frame_size);
+        printf("Subpacket_h: 0x%x\n", rast->subpacket_h);
+        printf("Frame size: 0x%x\n", rast->frame_size);
+        printf("Subpacket size: 0x%x\n", rast->subpacket_size);
+        printf("Sample rate: 0x%x\n", st->codec->sample_rate);
+        printf("Sample size: 0x%x\n", rast->sample_size);
+    }
 
     interleaver_id_len = avio_r8(s->pb);
     if (interleaver_id_len != 4) {
@@ -896,10 +910,12 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size,
         return AVERROR_INVALIDDATA;
     }
     rast->interleaver_id = interleaver_id = avio_rl32(s->pb);
-    printf("Interleaver: %c%c%c%c\n", interleaver_id >> 24,
-           (interleaver_id >> 16) & 0xff,
-           (interleaver_id >> 8) & 0xff,
-           interleaver_id & 0xff);
+
+    if (real_debug_mode())
+        printf("Interleaver: %c%c%c%c\n", interleaver_id >> 24,
+               (interleaver_id >> 16) & 0xff,
+               (interleaver_id >> 8) & 0xff,
+               interleaver_id & 0xff);
 
     is_fourcc_ok = real_get_fourcc(s, &(rast->fourcc_tag));
     if (is_fourcc_ok < 0)
@@ -908,7 +924,8 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size,
     st->codec->codec_id   = ff_codec_get_id(ff_rm_codec_tags,
                                             st->codec->codec_tag);
     st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
-    printf("Codec id %x\n", st->codec->codec_id);
+    if (real_debug_mode())
+        printf("Codec id %x\n", st->codec->codec_id);
 
     avio_skip(s->pb, 3);
     racss_ret = ra_codec_specific_setup(st->codec->codec_id, s, st, ra);
@@ -952,7 +969,8 @@ static int ra_read_header_v5(AVFormatContext *s, uint16_t header_size,
 
     /* Data size - 0x27 (the fixed-length part) */
     variable_data_size = avio_rb32(s->pb);
-    printf("Data size (non-fixed): %x\n", variable_data_size);
+    if (real_debug_mode())
+        printf("Data size (non-fixed): %x\n", variable_data_size);
 
 
     version2 = avio_rb16(s->pb);
@@ -966,11 +984,13 @@ static int ra_read_header_v5(AVFormatContext *s, uint16_t header_size,
     avio_skip(s->pb, 2); /* rev */
     /* Header size - 16 */
     variable_header_size = avio_rb16(s->pb);
-    printf("Header size (non-fixed): %x\n", variable_header_size);
+    if (real_debug_mode())
+        printf("Header size (non-fixed): %x\n", variable_header_size);
 
 
-    rast->codec_flavor = avio_rb16(s->pb); /* TODO: use this? */
-    printf("Got codec flavor %"PRIx16"\n", rast->codec_flavor);
+    rast->codec_flavor = avio_rb16(s->pb);
+    if (real_debug_mode())
+        printf("Got codec flavor %"PRIx16"\n", rast->codec_flavor);
 
     rast->coded_frame_size = avio_rb32(s->pb);
     avio_skip(s->pb, 12); /* Unknown */
@@ -987,13 +1007,15 @@ static int ra_read_header_v5(AVFormatContext *s, uint16_t header_size,
     avio_skip(s->pb, 6); /* sample_rate2, sample_size2 */
     st->codec->channels    = avio_rb16(s->pb);
 
-    printf("Coded frame size: %x\n", rast->coded_frame_size);
-    printf("Subpacket_h: %x\n", rast->subpacket_h);
-    printf("Frame size: %x\n", rast->frame_size);
-    printf("Subpacket size: %x\n", rast->subpacket_size);
-    printf("Sample rate: %x\n", st->codec->sample_rate);
-    printf("Sample size: %x\n", rast->sample_size);
-    printf("Channels: %x\n", st->codec->channels);
+    if (real_debug_mode()) {
+        printf("Coded frame size: %x\n", rast->coded_frame_size);
+        printf("Subpacket_h: %x\n", rast->subpacket_h);
+        printf("Frame size: %x\n", rast->frame_size);
+        printf("Subpacket size: %x\n", rast->subpacket_size);
+        printf("Sample rate: %x\n", st->codec->sample_rate);
+        printf("Sample size: %x\n", rast->sample_size);
+        printf("Channels: %x\n", st->codec->channels);
+    }
 
     rast->interleaver_id  = interleaver_id = avio_rl32(s->pb);
     rast->fourcc_tag      = avio_rl32(s->pb);
@@ -1001,7 +1023,8 @@ static int ra_read_header_v5(AVFormatContext *s, uint16_t header_size,
     st->codec->codec_id   = ff_codec_get_id(ff_rm_codec_tags,
                                             st->codec->codec_tag);
     st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
-    printf("Codec id %x\n", st->codec->codec_id);
+    if (real_debug_mode())
+        printf("Codec id %x\n", st->codec->codec_id);
 
     avio_skip(s->pb, 3);
     interleave_info = avio_r8(s->pb);
@@ -1052,7 +1075,8 @@ static int ra_read_header_with(AVFormatContext *s, RADemuxContext *ra,
         av_log(s, AV_LOG_ERROR, "RealAudio: Unsupported version %"PRIx16"\n", version);
         ret = AVERROR_PATCHWELCOME;
     }
-    printf("st->codec->block align: %"PRIx32"\n", st->codec->block_align);
+    if (real_debug_mode())
+        printf("st->codec->block align: %"PRIx32"\n", st->codec->block_align);
     if (ret < 0)
         av_freep(&ra->rpc);
     return ret;
@@ -1578,9 +1602,10 @@ setup:
             header_bytes = avio_tell(s->pb) - pre_header_pos;
 
             if (first_stream != rm->cur_stream_number) {
-                printf("Looks like this does need partial packet support...\n");
+                av_log(s, AV_LOG_ERROR, 
+                       "RealMedia: implement partial packet support...\n");
                 /* TODO: implement that, and seek back to start_pos */
-                return -1;
+                return AVERROR_INVALIDDATA;
             }
         }
 
@@ -1914,7 +1939,7 @@ static int rm_read_media_properties_header(AVFormatContext *s,
         int bytes_already_read = avio_tell(s->pb) - before_embed;
         avio_skip(s->pb, rmmp->type_specific_size - bytes_already_read);
     } else {
-        printf("Deal with tag %x\n", content_tag);
+        av_log(s, AV_LOG_WARNING, "RealMedia: Deal with tag %x\n", content_tag);
     }
 
 after_embed:
