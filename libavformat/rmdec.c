@@ -201,7 +201,7 @@ typedef struct RMDemuxContext {
 
 
 /* Utility code */
-static int rm_initialize_pkt_buf(RealPacketCache *rpc, int size)
+static int real_initialize_pkt_buf(RealPacketCache *rpc, int size)
 {
     rpc->pkt_buf = av_mallocz(size);
     if (!rpc->pkt_buf)
@@ -210,7 +210,7 @@ static int rm_initialize_pkt_buf(RealPacketCache *rpc, int size)
     return 0;
 }
 
-static void rm_clear_rpc(RealPacketCache *rpc)
+static void real_clear_rpc(RealPacketCache *rpc)
 {
     av_free(rpc->pkt_buf);
     memset(rpc, '\0', sizeof(RealPacketCache));
@@ -237,7 +237,7 @@ static int real_read_extradata(AVIOContext *pb, AVCodecContext *avctx,
 
 /* Audio interleavers */
 
-static int rm_postread_generic_packet(RADemuxContext *radc, int bytes_read)
+static int real_postread_generic_packet(RADemuxContext *radc, int bytes_read)
 {
     RealPacketCache *rpc = radc->rpc;
     RAStream *rast       = &(radc->rast);
@@ -249,8 +249,8 @@ static int rm_postread_generic_packet(RADemuxContext *radc, int bytes_read)
 }
 
 /* TODO: if partial packets need to be implemented, the read needs to change.*/
-static int rm_get_generic_packet(AVFormatContext *s, AVPacket *pkt,
-                                 RADemuxContext *radc, int pkt_size)
+static int real_get_generic_packet(AVFormatContext *s, AVPacket *pkt,
+                                   RADemuxContext *radc, int pkt_size)
 {
     RealPacketCache *rpc = radc->rpc;
     AVStream *st         = radc->avst;
@@ -277,8 +277,8 @@ static int rm_get_generic_packet(AVFormatContext *s, AVPacket *pkt,
     return 0;
 }
 
-static int rm_get_vbr_packet(AVFormatContext *s, AVPacket *pkt,
-                             RADemuxContext *radc, int unused)
+static int real_get_vbr_packet(AVFormatContext *s, AVPacket *pkt,
+                               RADemuxContext *radc, int unused)
 {
     RealPacketCache *rpc = radc->rpc;
     VBRState *vbrs       = radc->interleaver_state;
@@ -292,7 +292,7 @@ static int rm_get_vbr_packet(AVFormatContext *s, AVPacket *pkt,
     return 0;
 }
 
-static int rm_postread_sipr_packet(RADemuxContext *radc, int bytes_read)
+static int real_postread_sipr_packet(RADemuxContext *radc, int bytes_read)
 {
     RealPacketCache *rpc = radc->rpc;
     RAStream *rast = &(radc->rast);
@@ -305,7 +305,7 @@ static int rm_postread_sipr_packet(RADemuxContext *radc, int bytes_read)
     return 0;
 }
 
-static int rm_postread_genr_packet(RADemuxContext *radc, int bytes_read)
+static int real_postread_genr_packet(RADemuxContext *radc, int bytes_read)
 {
     RealPacketCache *rpc = radc->rpc;
     RAStream *rast = &(radc->rast);
@@ -324,8 +324,8 @@ static int rm_postread_genr_packet(RADemuxContext *radc, int bytes_read)
 /* This provides a whole packet at a time, like the old implementation. */
 /* Note: subpacket_size is read from the header; calc_subpkt_size is
    subpacket_size * col_width, aka coded_frame_size, for genr */
-static int rm_get_genr_packet(AVFormatContext *s, AVPacket *pkt,
-                              RADemuxContext *radc, int pkt_size)
+static int real_get_genr_packet(AVFormatContext *s, AVPacket *pkt,
+                                RADemuxContext *radc, int pkt_size)
 {
     RAStream *rast              = &(radc->rast);
     RealPacketCache *rpc        = radc->rpc;
@@ -367,7 +367,7 @@ static int rm_get_genr_packet(AVFormatContext *s, AVPacket *pkt,
     return 0;
 }
 
-static int rm_postread_int4_packet(RADemuxContext *radc, int bytes_read)
+static int real_postread_int4_packet(RADemuxContext *radc, int bytes_read)
 {
     RealPacketCache *rpc        = radc->rpc;
     RAStream *rast              = &(radc->rast);
@@ -382,7 +382,7 @@ static int rm_postread_int4_packet(RADemuxContext *radc, int bytes_read)
     return 0;
 }
 
-static int rm_get_int4_packet(AVFormatContext *s, AVPacket *pkt,
+static int real_get_int4_packet(AVFormatContext *s, AVPacket *pkt,
                               RADemuxContext *radc, int pkt_size)
 {
     RAStream *rast              = &(radc->rast);
@@ -429,46 +429,46 @@ static int rm_postread_mp3_packet(RADemuxContext *radc, int bytes_read)
     return 0;
 }
 
-Interleaver ra_interleavers[] = {
+Interleaver real_interleavers[] = {
     {
         .interleaver_tag = 0,
-        .get_packet      = rm_get_generic_packet,
-        .postread_packet = rm_postread_generic_packet
+        .get_packet      = real_get_generic_packet,
+        .postread_packet = real_postread_generic_packet
     },
     {
         .interleaver_tag = DEINT_ID_INT4,
-        .get_packet      = rm_get_int4_packet,
-        .postread_packet = rm_postread_int4_packet
+        .get_packet      = real_get_int4_packet,
+        .postread_packet = real_postread_int4_packet
     },
     {
         .interleaver_tag = DEINT_ID_SIPR,
-        .get_packet      = rm_get_generic_packet,
-        .postread_packet = rm_postread_sipr_packet
+        .get_packet      = real_get_generic_packet,
+        .postread_packet = real_postread_sipr_packet
     },
     {
         .interleaver_tag = DEINT_ID_GENR,
-        .get_packet      = rm_get_genr_packet,
-        .postread_packet = rm_postread_genr_packet
+        .get_packet      = real_get_genr_packet,
+        .postread_packet = real_postread_genr_packet
     },
     {
         .interleaver_tag = DEINT_ID_VBRS,
         /* No postread by design; it's too different. */
-        .get_packet      = rm_get_vbr_packet
+        .get_packet      = real_get_vbr_packet
     },
     {
         .interleaver_tag = AV_CODEC_ID_MP3,
-        .get_packet      = rm_get_generic_packet,
+        .get_packet      = real_get_generic_packet,
         .postread_packet = rm_postread_mp3_packet
     }
 };
 
-static int ra_interleaver_count = sizeof(ra_interleavers);
+static int real_interleaver_count = sizeof(real_interleavers);
 
-static Interleaver *ra_find_interleaver(uint32_t tag)
+static Interleaver *real_find_interleaver(uint32_t tag)
 {
-    for (int i = 0; i < ra_interleaver_count; i++)
-        if (ra_interleavers[i].interleaver_tag == tag)
-            return &ra_interleavers[i];
+    for (int i = 0; i < real_interleaver_count; i++)
+        if (real_interleavers[i].interleaver_tag == tag)
+            return &real_interleavers[i];
     return NULL;
 }
 
@@ -501,7 +501,7 @@ static int ra_interleaver_specific_setup(AVFormatContext *s, AVStream *st,
                                   st->codec->block_align;
         rast->full_pkt_size     = rast->subpkt_pp * rast->coded_frame_size;
         rast->calc_subpkt_size  = rast->full_pkt_size / rast->subpkt_pp;
-        radc->interleaver       = ra_find_interleaver(DEINT_ID_INT4);
+        radc->interleaver       = real_find_interleaver(DEINT_ID_INT4);
         radc->interleaver_state = av_mallocz(sizeof(InterleaverState));
         if (!radc->interleaver_state)
             return AVERROR(ENOMEM);
@@ -510,20 +510,20 @@ static int ra_interleaver_specific_setup(AVFormatContext *s, AVStream *st,
         rast->full_pkt_size    = (rast->coded_frame_size *
                                   rast->subpacket_h) / 2;
         rast->calc_subpkt_size = rast->full_pkt_size;
-        radc->interleaver      = ra_find_interleaver(0); /* Generic's enough */
+        radc->interleaver      = real_find_interleaver(0); /* Generic's enough */
         break;
     case DEINT_ID_SIPR:
         rast->calc_subpkt_size = st->codec->block_align;
         rast->full_pkt_size    = rast->frame_size * rast->subpacket_h;
         rast->subpkt_pp        = rast->full_pkt_size / rast->calc_subpkt_size;
-        radc->interleaver      = ra_find_interleaver(DEINT_ID_SIPR);
+        radc->interleaver      = real_find_interleaver(DEINT_ID_SIPR);
         break;
     case DEINT_ID_GENR:
         rast->calc_subpkt_size  = st->codec->block_align;
         rast->full_pkt_size     = rast->frame_size * rast->subpacket_h;
         rast->subpkt_pp         = rast->full_pkt_size / rast->calc_subpkt_size;
-        st->codec->block_align = rast->subpacket_size;
-        radc->interleaver       = ra_find_interleaver(DEINT_ID_GENR);
+        st->codec->block_align  = rast->subpacket_size;
+        radc->interleaver       = real_find_interleaver(DEINT_ID_GENR);
         radc->interleaver_state = av_mallocz(sizeof(InterleaverState));
         if (!radc->interleaver_state)
             return AVERROR(ENOMEM);
@@ -531,7 +531,7 @@ static int ra_interleaver_specific_setup(AVFormatContext *s, AVStream *st,
     case DEINT_ID_VBRF:
     case DEINT_ID_VBRS:
         rast->full_pkt_size     = 1; /* A convenient fiction */
-        radc->interleaver       = ra_find_interleaver(DEINT_ID_VBRS);
+        radc->interleaver       = real_find_interleaver(DEINT_ID_VBRS);
         radc->interleaver_state = av_mallocz(sizeof(VBRState));
         if (!radc->interleaver_state)
             return AVERROR(ENOMEM);
@@ -793,7 +793,7 @@ static int ra_read_header_v3(AVFormatContext *s, uint16_t header_size,
     st->codec->sample_rate    = 8000;
 
     ra->avst        = st;
-    ra->interleaver = ra_find_interleaver(0);
+    ra->interleaver = real_find_interleaver(0);
 
     rast->subpkt_pp        = 1;
     rast->calc_subpkt_size = RA144_PKT_SIZE;
@@ -1066,7 +1066,7 @@ static int ra_read_header(AVFormatContext *s)
         return header_ret;
     }
 
-    return rm_initialize_pkt_buf(ra->rpc, rast->full_pkt_size);
+    return real_initialize_pkt_buf(ra->rpc, rast->full_pkt_size);
 }
 
 /* Exactly the same as in the old code */
@@ -1126,7 +1126,7 @@ static int ra_read_packet(AVFormatContext *s, AVPacket *pkt)
 static void ra_read_close_with(RADemuxContext *ra)
 {
     RealPacketCache *rpc = ra->rpc;
-    rm_clear_rpc(rpc);
+    real_clear_rpc(rpc);
     av_free(rpc);
     av_free(ra->interleaver_state);
 }
@@ -1444,8 +1444,8 @@ static int rm_assemble_video(AVFormatContext *s, RMStream *rmst,
         //pic_num = avio_r8(s->pb);
         avio_seek(s->pb, -1, SEEK_CUR);
         if (rpc->pkt_buf)
-            rm_clear_rpc(rpc);
-        if (rm_initialize_pkt_buf(rpc, dch_len))
+            real_clear_rpc(rpc);
+        if (real_initialize_pkt_buf(rpc, dch_len))
             return AVERROR(ENOMEM);
         avio_read(s->pb, rpc->pkt_buf, dch_len);
         rpc->pending_packets += RM_MULTIFRAME_PENDING;
@@ -1554,7 +1554,7 @@ setup:
 
     /* Initialize the packet buffer if necessary */
     if (!rpc->pkt_buf)
-        if (rm_initialize_pkt_buf(rpc, data_bytes_to_read))
+        if (real_initialize_pkt_buf(rpc, data_bytes_to_read))
             return AVERROR(ENOMEM);
 
     while (read_so_far < data_bytes_to_read) {
@@ -1580,7 +1580,7 @@ setup:
         /* Revisit this if adding partial packet support. */
         if (data_bytes_to_read > rpc->buf_size) {
             uint8_t *old_buf = rpc->pkt_buf;
-            if (rm_initialize_pkt_buf(rpc, data_bytes_to_read))
+            if (real_initialize_pkt_buf(rpc, data_bytes_to_read))
                 return AVERROR(ENOMEM);
             av_free(old_buf);
         }
@@ -1701,7 +1701,7 @@ static int rm_get_one_frame(AVFormatContext *s, AVStream *st, AVPacket *pkt,
 
 cleanup:
     av_free_packet(pkt);
-    rm_clear_rpc(rpc);
+    real_clear_rpc(rpc);
     return ret;
 }
 
@@ -1716,7 +1716,7 @@ static int rm_get_video_packet(AVFormatContext *s, AVStream *st,
         rpc->pending_packets--;
         pkt->stream_index = st->index;
         if (rpc->pending_packets == 0)
-            rm_clear_rpc(rpc);
+            real_clear_rpc(rpc);
         return 0;
     }
     /* Handle multiframe packets */
@@ -1818,10 +1818,10 @@ static int rm_read_media_properties_header(AVFormatContext *s,
             RADemuxContext *radc = &(rmst->radc);
             int rpc_fail;
 
-            rpc_fail = rm_initialize_pkt_buf(rmst->rpc, rmmp->largest_pkt);
+            rpc_fail = real_initialize_pkt_buf(rmst->rpc, rmmp->largest_pkt);
             if (rpc_fail < 0)
                 return rpc_fail;
-            radc->interleaver     = ra_find_interleaver(AV_CODEC_ID_MP3);
+            radc->interleaver     = real_find_interleaver(AV_CODEC_ID_MP3);
             radc->rpc             = rmst->rpc;
             radc->avst            = st;
             rmst->full_pkt_size   = 1; /* A convenient fiction */
@@ -2269,7 +2269,7 @@ static void rm_cleanup_stream(AVStream *st)
     if (rmst->is_realaudio)
         ra_read_close_with(radc);
     else {
-        rm_clear_rpc(rmst->rpc);
+        real_clear_rpc(rmst->rpc);
         av_free(rmst->rpc);
     }
 }
