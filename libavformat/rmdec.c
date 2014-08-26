@@ -24,7 +24,7 @@
  * https://common.helixcommunity.org/2003/HCS_SDK_r5/htmfiles/rmff.htm
  *
  * This is largely a from-scratch rewrite, but a few utility functions
- * such as as ra_ac3_swap_bytes are from the old implementation, and
+ * such as as real_ac3_swap_bytes are from the old implementation, and
  * it was the primary documentation on audio interleaving.
  *
  * Naming convention:
@@ -234,6 +234,66 @@ static int real_read_extradata(AVIOContext *pb, AVCodecContext *avctx,
     }
     return 0;
 }
+
+
+static int real_read_content_description_field(AVFormatContext *s,
+                                             const char *desc,
+                                             int length_bytes)
+{
+    uint16_t len;
+    uint8_t *val;
+
+    if (length_bytes == 1)
+        len = avio_r8(s->pb);
+    else // 2
+        len = avio_rb16(s->pb);
+    val = av_mallocz(len + 1);
+    if (!val)
+        return AVERROR(ENOMEM);
+    avio_read(s->pb, val, len);
+    av_dict_set(&s->metadata, desc, val, 0);
+    av_free(val);
+    return 0;
+}
+
+
+static int real_read_content_description(AVFormatContext *s, int length_bytes)
+{
+    int read_ret;
+    int lb = length_bytes;
+
+    read_ret = real_read_content_description_field(s, "title", lb);
+    if (read_ret < 0)
+        return read_ret;
+    read_ret = real_read_content_description_field(s, "author", lb);
+    if (read_ret < 0)
+        return read_ret;
+    read_ret = real_read_content_description_field(s, "copyright", lb);
+    if (read_ret < 0)
+        return read_ret;
+    read_ret = real_read_content_description_field(s, "comment", lb);
+    if (read_ret < 0)
+        return read_ret;
+
+    return 0;
+}
+
+
+/* Exactly the same as in the old code */
+static void real_ac3_swap_bytes(AVStream *st, AVPacket *pkt)
+{
+    uint8_t *ptr;
+    int j;
+
+    if (st->codec->codec_id == AV_CODEC_ID_AC3) {
+        ptr = pkt->data;
+        for (j = 0; j < pkt->size; j+= 2) {
+            FFSWAP(int, ptr[0], ptr[1]);
+            ptr += 2;
+        }
+    }
+}
+
 
 /* Audio interleavers */
 
@@ -681,54 +741,13 @@ static int ra_sanity_check_headers(uint32_t interleaver_id, RAStream *rast, AVSt
     return 0;
 }
 
-static int real_read_content_description_field(AVFormatContext *s,
-                                             const char *desc,
-                                             int length_bytes)
-{
-    uint16_t len;
-    uint8_t *val;
-
-    if (length_bytes == 1)
-        len = avio_r8(s->pb);
-    else // 2
-        len = avio_rb16(s->pb);
-    val = av_mallocz(len + 1);
-    if (!val)
-        return AVERROR(ENOMEM);
-    avio_read(s->pb, val, len);
-    av_dict_set(&s->metadata, desc, val, 0);
-    av_free(val);
-    return 0;
-}
-
-
-static int real_read_content_description(AVFormatContext *s, int length_bytes)
-{
-    int read_ret;
-    int lb = length_bytes;
-
-    read_ret = real_read_content_description_field(s, "title", lb);
-    if (read_ret < 0)
-        return read_ret;
-    read_ret = real_read_content_description_field(s, "author", lb);
-    if (read_ret < 0)
-        return read_ret;
-    read_ret = real_read_content_description_field(s, "copyright", lb);
-    if (read_ret < 0)
-        return read_ret;
-    read_ret = real_read_content_description_field(s, "comment", lb);
-    if (read_ret < 0)
-        return read_ret;
-
-    return 0;
-}
 
 static int ra_read_content_description(AVFormatContext *s)
 {
     return real_read_content_description(s, 1);
 }
 
-static int get_fourcc(AVFormatContext *s, uint32_t *fourcc)
+static int real_get_fourcc(AVFormatContext *s, uint32_t *fourcc)
 {
     uint8_t fourcc_len;
 
@@ -766,7 +785,7 @@ static int ra_read_header_v3(AVFormatContext *s, uint16_t header_size,
     /* An unknown byte, followed by FourCC data, is optionally present */
     if (header_bytes_read != header_size) { /* Looks like there is FourCC data */
         avio_skip(s->pb, 1); /* Unknown byte */
-        is_fourcc_ok = get_fourcc(s, &fourcc_tag);
+        is_fourcc_ok = real_get_fourcc(s, &fourcc_tag);
         if (is_fourcc_ok < 0)
             return is_fourcc_ok; /* Preserve the error code */
         if (fourcc_tag != RA3_FOURCC) {
@@ -882,7 +901,7 @@ static int ra_read_header_v4(AVFormatContext *s, uint16_t header_size,
            (interleaver_id >> 8) & 0xff,
            interleaver_id & 0xff);
 
-    is_fourcc_ok = get_fourcc(s, &(rast->fourcc_tag));
+    is_fourcc_ok = real_get_fourcc(s, &(rast->fourcc_tag));
     if (is_fourcc_ok < 0)
         return is_fourcc_ok; /* Preserve the error code */
     st->codec->codec_tag  = rast->fourcc_tag;
@@ -1069,20 +1088,6 @@ static int ra_read_header(AVFormatContext *s)
     return real_initialize_pkt_buf(ra->rpc, rast->full_pkt_size);
 }
 
-/* Exactly the same as in the old code */
-static void ra_ac3_swap_bytes(AVStream *st, AVPacket *pkt)
-{
-    uint8_t *ptr;
-    int j;
-
-    if (st->codec->codec_id == AV_CODEC_ID_AC3) {
-        ptr = pkt->data;
-        for (j = 0; j < pkt->size; j+= 2) {
-            FFSWAP(int, ptr[0], ptr[1]);
-            ptr += 2;
-        }
-    }
-}
 
 static int ra_store_cache(AVFormatContext *s, Interleaver *inter,
                     RealPacketCache *rpc, RADemuxContext *radc, int size)
@@ -1113,7 +1118,7 @@ static int ra_read_packet_with(AVFormatContext *s, AVPacket *pkt,
     }
     if (pkt_get_ret = inter->get_packet(s, pkt, radc, rast->full_pkt_size) < 0)
         return pkt_get_ret;
-    ra_ac3_swap_bytes(st, pkt); /* TODO: put this in get_packet? */
+    real_ac3_swap_bytes(st, pkt); /* TODO: put this in get_packet? */
     return 0;
 }
 
@@ -1246,6 +1251,8 @@ static int rm_read_indices(AVFormatContext *s)
 }
 
 /* Undocumented function from the old code */
+/* TODO: make the timestamp code use this? */
+/* Mask off the highest bit, then use the second bit as a length indicator. */
 static int rm_get_num(AVIOContext *pb)
 {
     int n, n1;
@@ -1650,7 +1657,7 @@ static int rm_get_one_frame(AVFormatContext *s, AVStream *st, AVPacket *pkt,
         frame_size = (first_bits << 8) + rpc->pkt_buf[cur_offset + 1];
         cur_offset += 2;
     } else {
-        frame_size = (first_bits                    << 24) +
+        frame_size = (first_bits                   << 24) +
                      (rpc->pkt_buf[cur_offset + 1] << 16) +
                      (rpc->pkt_buf[cur_offset + 2] <<  8) +
                       rpc->pkt_buf[cur_offset + 3];
@@ -1662,7 +1669,7 @@ static int rm_get_one_frame(AVFormatContext *s, AVStream *st, AVPacket *pkt,
         timestamp = (first_bits << 8) + rpc->pkt_buf[cur_offset + 1];
         cur_offset += 2;
     } else {
-        timestamp = (first_bits                    << 24) +
+        timestamp = (first_bits                   << 24) +
                     (rpc->pkt_buf[cur_offset + 1] << 16) +
                     (rpc->pkt_buf[cur_offset + 2] <<  8) +
                      rpc->pkt_buf[cur_offset + 3];
