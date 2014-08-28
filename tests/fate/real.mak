@@ -1,39 +1,21 @@
-<<<<<<< HEAD
 FATE_REALMEDIA_AUDIO-$(call DEMDEC, RM, RA_144) += fate-ra-144
 fate-ra-144: CMD = md5 -i $(TARGET_SAMPLES)/real/ra3_in_rm_file.rm -f s16le
 
 FATE_REALMEDIA_AUDIO-$(call DEMDEC, RM, RA_288) += fate-ra-288
-=======
-FATE_SAMPLES_REALAUDIO-$(call DEMDEC, RM, RA_144) += fate-ra-144
-fate-ra-144: CMD = md5 -i $(TARGET_SAMPLES)/real/ra3_in_rm_file.rm -f s16le
-
-FATE_SAMPLES_REALAUDIO-$(call DEMDEC, RM, RA_288) += fate-ra-288
->>>>>>> WIP: adding conditional test targets
 fate-ra-288: CMD = pcm -i $(TARGET_SAMPLES)/real/ra_288.rm
 fate-ra-288: CMP = oneoff
 fate-ra-288: REF = $(SAMPLES)/real/ra_288.pcm
 fate-ra-288: FUZZ = 2
 
-<<<<<<< HEAD
 FATE_REALMEDIA_AUDIO-$(call DEMDEC, RM, COOK) += fate-ra-cook
-=======
-FATE_SAMPLES_REALAUDIO-$(call DEMDEC, RM, COOK) += fate-ra-cook
->>>>>>> WIP: adding conditional test targets
 fate-ra-cook: CMD = pcm -i $(TARGET_SAMPLES)/real/ra_cook.rm
 fate-ra-cook: CMP = oneoff
 fate-ra-cook: REF = $(SAMPLES)/real/ra_cook.pcm
 
-<<<<<<< HEAD
 FATE_REALMEDIA_VIDEO-$(call DEMDEC, RM, RV30) += fate-rv30
 fate-rv30: CMD = framecrc -flags +bitexact -idct simple -i $(TARGET_SAMPLES)/real/rv30.rm -an
 
 FATE_REALMEDIA_VIDEO-$(call DEMDEC, RM, RV40) += fate-rv40
-=======
-FATE_SAMPLES_REALVIDEO-$(call DEMDEC, RM, RV30) += fate-rv30
-fate-rv30: CMD = framecrc -flags +bitexact -idct simple -i $(TARGET_SAMPLES)/real/rv30.rm -an
-
-FATE_SAMPLES_REALVIDEO-$(call DEMDEC, RM, RV40) += fate-rv40
->>>>>>> WIP: adding conditional test targets
 fate-rv40: CMD = framecrc -i $(TARGET_SAMPLES)/real/spygames-2MB.rmvb -t 10 -an -vsync 0
 
 FATE_SIPR += fate-sipr-5k0
@@ -54,7 +36,6 @@ fate-sipr-16k: REF = $(SAMPLES)/sipr/sipr_16k.pcm
 
 $(FATE_SIPR): CMP = oneoff
 
-<<<<<<< HEAD
 FATE_REALMEDIA_AUDIO-$(call DEMDEC, RM, SIPR) += $(FATE_SIPR)
 fate-sipr: $(FATE_SIPR)
 
@@ -63,13 +44,3 @@ fate-realmedia-video: $(FATE_REALMEDIA_VIDEO-yes)
 fate-realmedia: fate-realmedia-audio fate-realmedia-video
 
 FATE_SAMPLES_AVCONV += $(FATE_REALMEDIA_AUDIO-yes) $(FATE_REALMEDIA_VIDEO-yes)
-=======
-FATE_SAMPLES_REALAUDIO-$(call DEMDEC, RM, SIPR) += $(FATE_SIPR)
-fate-sipr: $(FATE_SIPR)
-fate-realaudio: $(FATE_SAMPLES_REALAUDIO-yes)
-fate-realvideo: $(FATE_SAMPLES_REALVIDEO-yes)
-#fate-realaudio: fate-sipr fate-ra-144 fate-ra-288 fate-ra-cook fate-ralf fate-rangecoder
-#fate-realvideo: fate-rv30 fate-rv40
-FATE_SAMPLES_AVCONV += $(FATE_SAMPLES_REALAUDIO-yes) $(FATE_SAMPLES_REALVIDEO-yes)
-
->>>>>>> WIP: adding conditional test targets
